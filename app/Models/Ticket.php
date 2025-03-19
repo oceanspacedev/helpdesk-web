@@ -172,6 +172,15 @@ class Ticket extends Model
 
         // Event listener untuk event 'saving'
         static::saving(function ($ticket) {
+            // Update responsible_id when problem_category_id changes
+            if ($ticket->isDirty('problem_category_id')) {
+                if (in_array($ticket->problem_category_id, [1, 2])) {
+                    $ticket->responsible_id = 10; // responsible_id = 10 untuk problem_category_id 1 atau 2
+                } elseif (in_array($ticket->problem_category_id, [9, 10])) {
+                    $ticket->responsible_id = 41; // responsible_id = 41 untuk problem_category_id 9 atau 10
+                }
+            }
+
             if ($ticket->isDirty('ticket_statuses_id')) {
                 $receiver = User::find($ticket->owner_id);
 
@@ -193,13 +202,6 @@ class Ticket extends Model
         // Event listener untuk event 'created'
         static::created(function ($ticket) {
             if (self::$isSeeding) return;
-
-            // Menentukan responsible_id berdasarkan problem_category_id
-            if (in_array($ticket->problem_category_id, [1, 2])) {
-                $ticket->responsible_id = 10; // responsible_id = 10 untuk problem_category_id 1 atau 2
-            } elseif (in_array($ticket->problem_category_id, [9, 10])) {
-                $ticket->responsible_id = 41; // responsible_id = 41 untuk problem_category_id 9 atau 10
-            }
 
             // Membuat riwayat tiket baru
             TicketHistory::create([

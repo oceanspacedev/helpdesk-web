@@ -71,6 +71,11 @@ class CommentNotification extends Notification implements ShouldQueue
         // Dapatkan nomor WhatsApp user
         $phoneNumber = $notifiable->phone; // Asumsi field `phone` ada di tabel user
 
+        if (!$phoneNumber) {
+            \Log::error("No phone number found for user: " . $notifiable->id);
+            return;
+        }
+
         // Buat instance Guzzle Client
         $client = new Client();
 

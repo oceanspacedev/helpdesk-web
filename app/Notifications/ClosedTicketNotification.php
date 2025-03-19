@@ -67,6 +67,11 @@ class ClosedTicketNotification extends Notification
         // Dapatkan nomor WhatsApp dari user yang akan dihubungi
         $phoneNumber = $notifiable->phone; // Asumsi bahwa nomor WhatsApp ada di field `phone`
 
+        if (!$phoneNumber) {
+            \Log::error("No phone number found for user: " . $notifiable->id);
+            return;
+        }
+
         // Buat instance Guzzle Client
         $client = new Client();
 
