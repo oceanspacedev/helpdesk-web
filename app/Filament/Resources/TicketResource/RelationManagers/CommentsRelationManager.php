@@ -37,7 +37,7 @@ class CommentsRelationManager extends RelationManager
                     Forms\Components\RichEditor::make('comment')
                         ->required(),
                     Forms\Components\FileUpload::make('attachments')
-                        ->disk('minio')
+                        ->disk('public')
                         ->directory('comment-attachments/' . date('m-y'))
                         ->maxSize(2000)
                         ->enableDownload(),
@@ -100,7 +100,7 @@ class CommentsRelationManager extends RelationManager
             ])
             ->actions([
                 Tables\Actions\Action::make('attachment')->action(function ($record) {
-                    return Storage::disk('minio')->download($record->attachments);
+                    return Storage::download($record->attachments);
                 })->hidden(fn ($record) => $record->attachments == ''),
                 Tables\Actions\EditAction::make(),
             ])

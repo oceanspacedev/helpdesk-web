@@ -194,6 +194,13 @@ class Ticket extends Model
         static::created(function ($ticket) {
             if (self::$isSeeding) return;
 
+            // Menentukan responsible_id berdasarkan problem_category_id
+            if (in_array($ticket->problem_category_id, [1, 2])) {
+                $ticket->responsible_id = 10; // responsible_id = 10 untuk problem_category_id 1 atau 2
+            } elseif (in_array($ticket->problem_category_id, [9, 10])) {
+                $ticket->responsible_id = 41; // responsible_id = 41 untuk problem_category_id 9 atau 10
+            }
+
             // Membuat riwayat tiket baru
             TicketHistory::create([
                 'ticket_id' => $ticket->id,
