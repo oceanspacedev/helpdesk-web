@@ -56,6 +56,7 @@ class SocialiteController extends Controller
                 'name' => $socialUser->getName(),
                 'email' => $socialUser->getEmail(),
                 'email_verified_at' => Carbon::now()->timestamp,
+		        'is_active' => true,
             ]);
             $user->assignRole('User');
         }

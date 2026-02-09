@@ -54,6 +54,7 @@ class Ticket extends Model
         'ticket_statuses_id' => 'int',
         'responsible_id' => 'int',
         'business_entities_id' => 'int',
+        'supporting_attachments' => 'array',
         'approved_at' => 'datetime',
         'solved_at' => 'datetime',
     ];
@@ -65,6 +66,7 @@ class Ticket extends Model
         'problem_category_id',
         'title',
         'description',
+        'supporting_attachments',
         'ticket_statuses_id',
         'responsible_id',
         'business_entities_id',
@@ -174,10 +176,10 @@ class Ticket extends Model
         static::saving(function ($ticket) {
             // Update responsible_id when problem_category_id changes
             if ($ticket->isDirty('problem_category_id')) {
-                if (in_array($ticket->problem_category_id, [1, 2])) {
-                    $ticket->responsible_id = 10; // responsible_id = 10 untuk problem_category_id 1 atau 2
+                if (in_array($ticket->problem_category_id, [1, 2, 8, 9, 10, 11, 12, 24, 25])) {
+                    $ticket->responsible_id = 10; // responsible_id = 10 (Teh Sekar/Lead OD)
                 } elseif (in_array($ticket->problem_category_id, [9, 10])) {
-                    $ticket->responsible_id = 41; // responsible_id = 41 untuk problem_category_id 9 atau 10
+                    $ticket->responsible_id = 41; // responsible_id = 41 (Staff OD)
                 }
             }
 

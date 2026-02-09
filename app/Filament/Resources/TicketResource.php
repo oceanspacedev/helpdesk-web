@@ -82,9 +82,50 @@ class TicketResource extends Resource
                     Forms\Components\RichEditor::make('description')
                         ->fileAttachmentsDisk('public')
                         ->fileAttachmentsDirectory('ticket-attachments/' . date('m-y'))
+                        ->fileAttachmentsVisibility('public')
                         ->label(__('Description'))
                         ->required()
                         ->maxLength(65535)
+                        ->columnSpan([
+                            'sm' => 2,
+                        ]),
+
+                    Forms\Components\FileUpload::make('supporting_attachments')
+                        ->label(__('Supporting Attachments'))
+                        ->multiple()
+                        ->disk('public')
+                        ->directory('ticket-supporting/' . date('m-y'))
+                        ->visibility('public')
+                        ->acceptedFileTypes([
+                            'application/pdf',
+                            'application/msword',
+                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                            'image/jpeg',
+                            'image/png',
+                        ])
+                        ->maxSize(10240)
+                        ->maxFiles(5)
+                        ->enableDownload()
+                        ->rules([
+                            function (string $attribute, $value, $fail): void {
+                                if (!is_array($value)) {
+                                    return;
+                                }
+
+                                $totalBytes = 0;
+
+                                foreach ($value as $file) {
+                                    if (is_object($file) && method_exists($file, 'getSize')) {
+                                        $totalBytes += $file->getSize();
+                                    }
+                                }
+
+                                if ($totalBytes > (10 * 1024 * 1024)) {
+                                    $fail('Total ukuran file maksimal 10MB.');
+                                }
+                            },
+                        ])
+                        ->helperText(__('Diizinkan: PDF, DOC/DOCX, JPG, PNG. Total maksimal 10MB (maks 5 file).'))
                         ->columnSpan([
                             'sm' => 2,
                         ]),
