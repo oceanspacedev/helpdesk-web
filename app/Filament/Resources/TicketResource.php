@@ -100,6 +100,16 @@ class TicketResource extends Resource
                             'application/pdf',
                             'application/msword',
                             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                            'application/vnd.ms-excel',
+                            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            'application/vnd.ms-powerpoint',
+                            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                            'text/plain',
+                            'text/csv',
+                            'application/zip',
+                            'application/x-zip-compressed',
+                            'application/vnd.rar',
+                            'application/x-rar-compressed',
                             'image/jpeg',
                             'image/png',
                         ])
@@ -107,7 +117,7 @@ class TicketResource extends Resource
                         ->maxFiles(5)
                         ->enableDownload()
                         ->rules([
-                            function (string $attribute, $value, $fail): void {
+                            fn () => function ($attribute, $value, $fail): void {
                                 if (!is_array($value)) {
                                     return;
                                 }
@@ -125,7 +135,7 @@ class TicketResource extends Resource
                                 }
                             },
                         ])
-                        ->helperText(__('Diizinkan: PDF, DOC/DOCX, JPG, PNG. Total maksimal 10MB (maks 5 file).'))
+                        ->helperText(__('Diizinkan: PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, ZIP, RAR, JPG, PNG. Total maksimal 10MB (maks 5 file).'))
                         ->columnSpan([
                             'sm' => 2,
                         ]),
