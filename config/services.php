@@ -36,4 +36,15 @@ return [
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
         'redirect' => env('GOOGLE_CLIENT_REDIRECT'),
     ],
+
+    'whatsapp_gateway' => [
+        'provider' => env('WHATSAPP_GATEWAY_PROVIDER', 'fonnte'),
+        'endpoint' => env('WHATSAPP_GATEWAY_ENDPOINT', 'https://api.fonnte.com/send'),
+        'token' => env('WHATSAPP_GATEWAY_TOKEN'),
+        'country_code' => env('WHATSAPP_GATEWAY_COUNTRY_CODE', '62'),
+        'timeout' => env('WHATSAPP_GATEWAY_TIMEOUT', 15),
+        'min_seconds_between_sends' => env('WHATSAPP_GATEWAY_MIN_SECONDS_BETWEEN_SENDS', 3),
+        'min_digits' => env('WHATSAPP_GATEWAY_MIN_DIGITS', 10),
+        'max_digits' => env('WHATSAPP_GATEWAY_MAX_DIGITS', 15),
+    ],
 ];

@@ -2,7 +2,7 @@
 
 namespace App\Notifications;
 
-use GuzzleHttp\Client;
+use App\Services\WhatsAppGateway;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -13,6 +13,7 @@ class CommentNotification extends Notification implements ShouldQueue
     use Queueable;
 
     protected $comment;
+
     protected $ticket;
 
     /**
@@ -39,11 +40,11 @@ class CommentNotification extends Notification implements ShouldQueue
     {
         // Kirim email notifikasi
         $mailMessage = (new MailMessage)
-            ->subject('Komentar Baru pada Tiket #' . $this->ticket->id)
-            ->greeting('Halo ' . $notifiable->name . '!')
-            ->line('Ada komentar baru pada tiket "' . $this->ticket->title . '".')
-            ->line('Komentar: ' . html_entity_decode(strip_tags($this->comment->comment)) . '')
-            ->action('Lihat Tiket', url('admin/tickets/' . $this->ticket->id));
+            ->subject('Komentar Baru pada Tiket #'.$this->ticket->id)
+            ->greeting('Halo '.$notifiable->name.'!')
+            ->line('Ada komentar baru pada tiket "'.$this->ticket->title.'".')
+            ->line('Komentar: '.html_entity_decode(strip_tags($this->comment->comment)).'')
+            ->action('Lihat Tiket', url('admin/tickets/'.$this->ticket->id));
 
         // Kirim pesan WhatsApp setelah email dikirim
         $this->toWhatsapp($notifiable);
@@ -71,42 +72,21 @@ class CommentNotification extends Notification implements ShouldQueue
         // Dapatkan nomor WhatsApp user
         $phoneNumber = $notifiable->phone; // Asumsi field `phone` ada di tabel user
 
-        if (!$phoneNumber) {
-            \Log::error("No phone number found for user: " . $notifiable->id);
+        if (! $phoneNumber) {
+            \Log::error('No phone number found for user: '.$notifiable->id);
+
             return;
         }
 
-        // Buat instance Guzzle Client
-        $client = new Client();
-
-        // Dapatkan endpoint API WhatsApp dari .env
-        $apiEndpoint = env('WHATSAPP_API_ENDPOINT');
-
         // Format pesan WhatsApp
         $message = "🔔 *Notifikasi Komentar Baru* 🔔\n\n";
-        $message .= "Halo *" . $notifiable->name . "*, ada komentar baru pada tiket Anda.\n\n";
-        $message .= "📝 Tiket: *" . $this->ticket->title . "*\n";
-        $message .= "💬 Komentar: *" . html_entity_decode(strip_tags($this->comment->comment)) . "*\n";
-        $message .= "📅 Tanggal: *" . now()->format('d M Y H:i') . "*\n";
-        $message .= "🔗 Lihat Tiket: " . url('admin/tickets/' . $this->ticket->id) . "\n\n";
-        $message .= "— Bot";
+        $message .= 'Halo *'.$notifiable->name."*, ada komentar baru pada tiket Anda.\n\n";
+        $message .= '📝 Tiket: *'.$this->ticket->title."*\n";
+        $message .= '💬 Komentar: *'.html_entity_decode(strip_tags($this->comment->comment))."*\n";
+        $message .= '📅 Tanggal: *'.now()->format('d M Y H:i')."*\n";
+        $message .= '🔗 Lihat Tiket: '.url('admin/tickets/'.$this->ticket->id)."\n\n";
+        $message .= '— Bot';
 
-        // Kirim request ke API WhatsApp
-        try {
-            $response = $client->post($apiEndpoint, [
-                'query' => [
-                    'apikey' => env('WHATSAPP_API_KEY'),
-                    'sender' => env('WHATSAPP_SENDER_NUMBER'),
-                    'receiver' => $phoneNumber,
-                    'message' => $message,
-                ]
-            ]);
-
-            if ($response->getStatusCode() !== 200) {
-                \Log::error('Gagal mengirim pesan WhatsApp: ' . $response->getBody());
-            }
-        } catch (\Exception $e) {
-            \Log::error('Gagal mengirim pesan WhatsApp: ' . $e->getMessage());
-        }
+        app(WhatsAppGateway::class)->send($phoneNumber, $message);
     }
 }

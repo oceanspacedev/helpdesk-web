@@ -2,9 +2,8 @@
 
 namespace App\Notifications;
 
-use GuzzleHttp\Client;
+use App\Services\WhatsAppGateway;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -41,7 +40,7 @@ class NewTicketNotification extends Notification
         $mailMessage = (new MailMessage)
             ->subject('Terdapat tiket baru')
             ->line('Terdapat tiket baru yang perlu Anda periksa.')
-            ->action('Lihat Tiket', url('/admin/tickets/' . $this->ticket->id));
+            ->action('Lihat Tiket', url('/admin/tickets/'.$this->ticket->id));
 
         // Kirim pesan WhatsApp setelah email dikirim
         $this->toWhatsapp($notifiable);
@@ -70,44 +69,16 @@ class NewTicketNotification extends Notification
         // Dapatkan nomor WhatsApp dari user yang akan dihubungi
         $phoneNumber = $notifiable->phone; // Asumsi bahwa nomor WhatsApp ada di field `phone`
 
-        // Buat instance Guzzle Client
-        $client = new Client();
-
-        // Dapatkan endpoint dari .env
-        $apiEndpoint = env('WHATSAPP_API_ENDPOINT');
-
-        if (empty($apiEndpoint)) {
-            \Log::error('WHATSAPP_API_ENDPOINT tidak diatur di file .env');
-            return;
-        }
-
         // Format pesan WhatsApp
         $message = "🔔 *Notifikasi Tiket Baru* 🔔\n\n";
-        $message .= "Halo *" . $notifiable->name . "*, terdapat tiket baru yang perlu Anda periksa.\n\n";
-        $message .= "📝 ID Tiket: *#" . $this->ticket->id . "*\n";
-        $message .= "📌 Subjek: *" . $this->ticket->title . "*\n"; // Menampilkan subjek tiket
-        $message .= "📅 Tanggal Dibuat: *" . $this->ticket->created_at->format('d M Y H:i') . "*\n";
-        $message .= "🔗 Lihat Tiket: " . url('/admin/tickets/' . $this->ticket->id) . "\n\n";
+        $message .= 'Halo *'.$notifiable->name."*, terdapat tiket baru yang perlu Anda periksa.\n\n";
+        $message .= '📝 ID Tiket: *#'.$this->ticket->id."*\n";
+        $message .= '📌 Subjek: *'.$this->ticket->title."*\n"; // Menampilkan subjek tiket
+        $message .= '📅 Tanggal Dibuat: *'.$this->ticket->created_at->format('d M Y H:i')."*\n";
+        $message .= '🔗 Lihat Tiket: '.url('/admin/tickets/'.$this->ticket->id)."\n\n";
         $message .= "Terima kasih, mohon segera ditindaklanjuti.\n\n";
-        $message .= "— Bot";
+        $message .= '— Bot';
 
-        // Kirim request ke API custom Anda
-        try {
-            $response = $client->post($apiEndpoint, [
-                'query' => [
-                    'apikey' => env('WHATSAPP_API_KEY'), // Ambil API key dari .env
-                    'sender' => env('WHATSAPP_SENDER_NUMBER'), // Ambil nomor pengirim dari .env
-                    'receiver' => $phoneNumber, // Nomor penerima
-                    'message' => $message // Gunakan pesan yang diformat
-                ]
-            ]);
-
-            // Cek apakah request berhasil
-            if ($response->getStatusCode() !== 200) {
-                \Log::error('Gagal mengirim pesan WhatsApp: ' . $response->getBody());
-            }
-        } catch (\Exception $e) {
-            \Log::error('Gagal mengirim pesan WhatsApp: ' . $e->getMessage());
-        }
+        app(WhatsAppGateway::class)->send($phoneNumber, $message);
     }
 }
