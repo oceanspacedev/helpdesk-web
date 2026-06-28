@@ -47,4 +47,11 @@ return [
         'min_digits' => env('WHATSAPP_GATEWAY_MIN_DIGITS', 10),
         'max_digits' => env('WHATSAPP_GATEWAY_MAX_DIGITS', 15),
     ],
+
+    'ita_helpdesk' => [
+        'token' => env('ITA_HELPDESK_API_TOKEN'),
+        'idempotency_ttl_minutes' => env('ITA_HELPDESK_IDEMPOTENCY_TTL_MINUTES', 15),
+        'default_unit_name' => env('ITA_HELPDESK_DEFAULT_UNIT_NAME', 'IT'),
+        'fallback_problem_category_name' => env('ITA_HELPDESK_FALLBACK_PROBLEM_CATEGORY_NAME', 'Laporan ITA'),
+    ],
 ];
