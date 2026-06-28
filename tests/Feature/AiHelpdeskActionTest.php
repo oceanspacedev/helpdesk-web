@@ -128,6 +128,50 @@ class AiHelpdeskActionTest extends TestCase
         $this->assertSame(1, Ticket::count());
     }
 
+    public function test_ita_matches_helpdesk_user_by_phone_before_email_metadata(): void
+    {
+        $phoneOwner = $this->helpdeskUser();
+        $emailOwner = User::create([
+            'name' => 'User Dengan Email Metadata',
+            'email' => 'metadata@example.test',
+            'password' => 'secret',
+            'phone' => '6289999999999',
+            'is_active' => true,
+        ]);
+        $category = $this->problemCategory();
+        Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+
+        $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+            'request_id' => 'trace-phone-first-001',
+            'idempotency_key' => 'ita:create:phone-first',
+            'action' => 'helpdesk.create_ticket',
+            'actor' => [
+                'name' => 'Apri',
+                'phone' => '0812-3456-7890',
+                'email' => $emailOwner->email,
+                'is_verified' => true,
+            ],
+            'ticket_data' => [
+                'issue_summary' => 'VPN error',
+                'affected_system' => 'VPN',
+                'impact' => 'Tidak bisa akses sistem kantor',
+                'problem_category_id' => $category->id,
+                'consent_to_create' => true,
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.ticket.owner.id', $phoneOwner->id);
+
+        $this->assertDatabaseHas('tickets', [
+            'id' => 1,
+            'owner_id' => $phoneOwner->id,
+        ]);
+        $this->assertDatabaseMissing('tickets', [
+            'owner_id' => $emailOwner->id,
+        ]);
+        $this->assertSame(2, User::count());
+    }
+
     public function test_ita_can_get_comment_and_close_an_existing_ticket(): void
     {
         $owner = $this->helpdeskUser();
