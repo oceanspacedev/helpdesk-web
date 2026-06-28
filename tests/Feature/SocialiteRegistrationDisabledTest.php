@@ -127,7 +127,8 @@ class FakeSocialiteUser
         public string $id,
         private string $name,
         private string $email,
-    ) {}
+    ) {
+    }
 
     public function getId(): string
     {

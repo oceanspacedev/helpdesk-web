@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\SocialiteUser;
 use App\Models\User;
-use Spatie\Permission\Models\Role;
 use Carbon\Carbon;
 use Laravel\Socialite\Facades\Socialite;
 
@@ -26,6 +25,14 @@ class SocialiteController extends Controller
         // find or create user and send params user get from socialite and provider
         $authUser = $this->findOrCreateUser($user, $provider);
 
+        if (! $authUser) {
+            return redirect()
+                ->route('filament.auth.login')
+                ->withErrors([
+                    'email' => 'Akun Helpdesk belum tersedia. Buat akun melalui ITA atau hubungi admin.',
+                ]);
+        }
+
         // login user
         Auth()->login($authUser, true);
 
@@ -33,7 +40,7 @@ class SocialiteController extends Controller
         return redirect()->route('filament.pages.dashboard');
     }
 
-    public function findOrCreateUser($socialUser, $provider)
+    public function findOrCreateUser($socialUser, $provider): ?User
     {
         // Get Social Account
         $socialAccount = SocialiteUser::where('provider_id', $socialUser->id)
@@ -50,13 +57,17 @@ class SocialiteController extends Controller
         $user = User::where('email', $socialUser->getEmail())->first();
 
         // If there are no users.
-        if (!$user) {
+        if (! $user) {
+            if (! config('filament-socialite.registration')) {
+                return null;
+            }
+
             // Create a new user
             $user = User::create([
                 'name' => $socialUser->getName(),
                 'email' => $socialUser->getEmail(),
                 'email_verified_at' => Carbon::now()->timestamp,
-		        'is_active' => true,
+                'is_active' => true,
             ]);
             $user->assignRole('User');
         }
