@@ -192,8 +192,13 @@ class AiHelpdeskActionService
             return $this->error('not_found', 'Tiket tidak ditemukan.', 404, 'HELPDESK_TICKET_NOT_FOUND');
         }
 
-        if (! $this->canAccessTicket($user, $ticket)) {
-            return $this->error('unauthorized', 'Anda tidak memiliki akses ke tiket ini.', 403, 'HELPDESK_TICKET_FORBIDDEN');
+        if (! $this->canCloseTicket($user, $ticket)) {
+            return $this->error(
+                'unauthorized',
+                'Penutupan tiket hanya dapat dilakukan oleh teknisi melalui alur Helpdesk.',
+                403,
+                'HELPDESK_CLOSE_REQUIRES_TECHNICIAN'
+            );
         }
 
         if (! $this->bool(data_get($this->ticketData($payload), 'consent_to_close'))) {
@@ -203,6 +208,10 @@ class AiHelpdeskActionService
         Auth::setUser($user);
 
         if ((int) $ticket->ticket_statuses_id !== TicketStatus::CLOSED) {
+            if ($ticket->responsible_id === null) {
+                $ticket->responsible_id = $user->id;
+            }
+
             $ticket->ticket_statuses_id = TicketStatus::CLOSED;
             $ticket->save();
         }
@@ -438,6 +447,23 @@ class AiHelpdeskActionService
 
         return method_exists($user, 'hasAnyRole')
             && $user->hasAnyRole(['Super Admin', 'Admin Unit', 'Staff Unit', 'Staf Unit']);
+    }
+
+    private function canCloseTicket(User $user, Ticket $ticket): bool
+    {
+        if (! method_exists($user, 'hasAnyRole') || ! $user->hasAnyRole(['Super Admin', 'Admin Unit'])) {
+            return false;
+        }
+
+        if ((int) $ticket->ticket_statuses_id === TicketStatus::OPEN) {
+            return $ticket->responsible_id === null || (int) $ticket->responsible_id === (int) $user->id;
+        }
+
+        if ((int) $ticket->ticket_statuses_id === TicketStatus::IN_PROGRESS) {
+            return (int) $ticket->responsible_id === (int) $user->id;
+        }
+
+        return false;
     }
 
     private function ticketData(array $payload): array
