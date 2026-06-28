@@ -90,6 +90,10 @@ class PhoneOtpLoginController extends Controller
         }
 
         Cache::forget($this->otpCacheKey($user->phone));
+        if ($user->email_verified_at === null) {
+            $user->forceFill(['email_verified_at' => now()])->save();
+        }
+
         Auth::login($user, true);
         $request->session()->regenerate();
 
