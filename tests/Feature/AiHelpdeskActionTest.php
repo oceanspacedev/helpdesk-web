@@ -246,7 +246,7 @@ class AiHelpdeskActionTest extends TestCase
             'idempotency_key' => 'ita:comment:external',
             'action' => 'helpdesk.add_comment',
             'actor' => [
-                'phone' => '0800-0000-000',
+                'phone' => '0800-0000-0000',
                 'is_verified' => true,
             ],
             'ticket_ref' => ['ticket_id' => '1'],
