@@ -200,7 +200,7 @@ class AiHelpdeskActionTest extends TestCase
         $this->assertNotNull($ticket->fresh()->solved_at);
     }
 
-    public function test_ita_can_create_and_continue_tickets_for_external_whatsapp_reporters(): void
+    public function test_ita_can_auto_register_internal_whatsapp_reporters_without_synthetic_email(): void
     {
         $category = $this->problemCategory();
         Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
@@ -228,13 +228,14 @@ class AiHelpdeskActionTest extends TestCase
             ->assertJsonPath('ok', true)
             ->assertJsonPath('result_status', 'ticket_created')
             ->assertJsonPath('data.ticket.ticket_id', 1)
-            ->assertJsonPath('data.ticket.owner.is_external_reporter', true);
+            ->assertJsonPath('data.ticket.owner.needs_profile_completion', true);
 
         $externalUser = User::where('phone', '6280000000000')->firstOrFail();
 
         $this->assertSame('Budi Outlet Depok', $externalUser->name);
-        $this->assertSame('ita-wa-6280000000000@external.helpdesk.local', $externalUser->email);
+        $this->assertNull($externalUser->email);
         $this->assertNull($externalUser->password);
+        $this->assertNull($externalUser->identity);
         $this->assertDatabaseHas('tickets', [
             'id' => 1,
             'owner_id' => $externalUser->id,
@@ -321,7 +322,7 @@ class AiHelpdeskActionTest extends TestCase
             $table->id();
             $table->unsignedBigInteger('unit_id')->nullable();
             $table->string('name');
-            $table->string('email')->unique();
+            $table->string('email')->nullable()->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password')->nullable();
             $table->string('remember_token')->nullable();
