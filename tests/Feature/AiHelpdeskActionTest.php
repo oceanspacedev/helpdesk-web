@@ -200,16 +200,17 @@ class AiHelpdeskActionTest extends TestCase
         $this->assertNotNull($ticket->fresh()->solved_at);
     }
 
-    public function test_ita_rejects_unregistered_whatsapp_actors(): void
+    public function test_ita_can_create_and_continue_tickets_for_external_whatsapp_reporters(): void
     {
-        $this->problemCategory();
+        $category = $this->problemCategory();
         Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
 
-        $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
-            'request_id' => 'trace-unregistered-001',
-            'idempotency_key' => 'ita:create:unregistered',
+        $create = $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+            'request_id' => 'trace-external-001',
+            'idempotency_key' => 'ita:create:external',
             'action' => 'helpdesk.create_ticket',
             'actor' => [
+                'name' => 'Budi Outlet Depok',
                 'phone' => '6280000000000',
                 'is_verified' => true,
             ],
@@ -217,14 +218,50 @@ class AiHelpdeskActionTest extends TestCase
                 'issue_summary' => 'Email error',
                 'affected_system' => 'Email',
                 'impact' => 'Tidak bisa kerja',
+                'problem_category_id' => $category->id,
                 'consent_to_create' => true,
             ],
-        ])
-            ->assertForbidden()
-            ->assertJsonPath('ok', false)
-            ->assertJsonPath('result_status', 'unauthorized');
+        ]);
 
-        $this->assertSame(0, Ticket::count());
+        $create
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('result_status', 'ticket_created')
+            ->assertJsonPath('data.ticket.ticket_id', 1)
+            ->assertJsonPath('data.ticket.owner.is_external_reporter', true);
+
+        $externalUser = User::where('phone', '6280000000000')->firstOrFail();
+
+        $this->assertSame('Budi Outlet Depok', $externalUser->name);
+        $this->assertSame('ita-wa-6280000000000@external.helpdesk.local', $externalUser->email);
+        $this->assertNull($externalUser->password);
+        $this->assertDatabaseHas('tickets', [
+            'id' => 1,
+            'owner_id' => $externalUser->id,
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+
+        $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+            'request_id' => 'trace-external-comment-001',
+            'idempotency_key' => 'ita:comment:external',
+            'action' => 'helpdesk.add_comment',
+            'actor' => [
+                'phone' => '0800-0000-000',
+                'is_verified' => true,
+            ],
+            'ticket_ref' => ['ticket_id' => '1'],
+            'ticket_data' => ['description' => 'Tambahan dari pelapor eksternal.'],
+        ])
+            ->assertOk()
+            ->assertJsonPath('result_status', 'comment_added');
+
+        $this->assertSame(1, Ticket::count());
+        $this->assertSame(1, User::count());
+        $this->assertDatabaseHas('comments', [
+            'tiket_id' => 1,
+            'user_id' => $externalUser->id,
+            'comment' => 'Tambahan dari pelapor eksternal.',
+        ]);
     }
 
     private function helpdeskUser(): User
