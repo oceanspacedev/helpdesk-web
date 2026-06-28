@@ -1,7 +1,8 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Auth\PhoneOtpLoginController;
 use App\Http\Controllers\Auth\SocialiteController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -18,6 +19,10 @@ Route::get('/', function () {
     return redirect('admin');
 });
 
+Route::get('/phone-login', [PhoneOtpLoginController::class, 'showPhoneForm'])->name('phone-login');
+Route::post('/phone-login/send', [PhoneOtpLoginController::class, 'sendOtp'])->name('phone-login.send');
+Route::get('/phone-login/verify', [PhoneOtpLoginController::class, 'showVerifyForm'])->name('phone-login.verify');
+Route::post('/phone-login/verify', [PhoneOtpLoginController::class, 'verifyOtp'])->name('phone-login.verify.submit');
 
 // socialite login
 Route::get('/auth/{provider}', [SocialiteController::class, 'redirectToProvider']);

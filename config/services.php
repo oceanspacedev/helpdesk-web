@@ -54,4 +54,8 @@ return [
         'default_unit_name' => env('ITA_HELPDESK_DEFAULT_UNIT_NAME', 'IT'),
         'fallback_problem_category_name' => env('ITA_HELPDESK_FALLBACK_PROBLEM_CATEGORY_NAME', 'Laporan ITA'),
     ],
+
+    'phone_otp_login' => [
+        'ttl_minutes' => env('PHONE_OTP_LOGIN_TTL_MINUTES', 5),
+    ],
 ];
