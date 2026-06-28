@@ -54,6 +54,7 @@ class PhoneOtpLoginTest extends TestCase
 
         $this->assertTrue(Auth::check());
         $this->assertTrue(Auth::user()->is($user));
+        $this->assertNotNull($user->fresh()->email_verified_at);
     }
 
     public function test_phone_otp_login_rejects_unknown_phone_numbers(): void
