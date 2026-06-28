@@ -216,6 +216,11 @@ class AiHelpdeskActionService
 
     private function resolveActorUser(array $actor): ?User
     {
+        $phoneUser = $this->resolveActorUserByPhone($actor);
+        if ($phoneUser) {
+            return $phoneUser;
+        }
+
         $id = (int) ($actor['helpdesk_user_id'] ?? data_get($actor, 'metadata.helpdesk_user_id') ?? data_get($actor, 'metadata.user_id') ?? 0);
         if ($id > 0) {
             $user = User::query()->whereKey($id)->where('is_active', true)->first();
@@ -232,6 +237,11 @@ class AiHelpdeskActionService
             }
         }
 
+        return null;
+    }
+
+    private function resolveActorUserByPhone(array $actor): ?User
+    {
         $phoneCandidates = array_values(array_unique(array_filter([
             $this->normalizePhone($actor['phone'] ?? ''),
             $this->normalizePhone($actor['identifier'] ?? ''),
