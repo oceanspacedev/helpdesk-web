@@ -52,7 +52,7 @@ class AiHelpdeskActionService
 
         $user = $this->resolveActorUser($actor);
         if (! $user && $action === 'helpdesk.create_ticket') {
-            $user = $this->createExternalReporter($actor);
+            $user = $this->createAutoRegisteredReporter($actor);
         }
 
         if (! $user) {
@@ -260,11 +260,16 @@ class AiHelpdeskActionService
             ->first();
     }
 
-    private function createExternalReporter(array $actor): ?User
+    private function createAutoRegisteredReporter(array $actor): ?User
     {
         $phone = $this->normalizePhone($actor['phone'] ?? $actor['identifier'] ?? $actor['sender_key'] ?? data_get($actor, 'metadata.phone'));
         if (! $phone) {
             return null;
+        }
+
+        $existing = User::query()->where('phone', $phone)->first();
+        if ($existing) {
+            return $existing->is_active ? $existing : null;
         }
 
         $name = $this->text($actor['name'] ?? data_get($actor, 'metadata.name'));
@@ -272,18 +277,14 @@ class AiHelpdeskActionService
             $name = 'Pelapor ITA '.substr($phone, -4);
         }
 
-        $email = "ita-wa-{$phone}@external.helpdesk.local";
-
-        return User::query()->firstOrCreate(
-            ['email' => $email],
-            [
-                'name' => $name,
-                'phone' => $phone,
-                'password' => null,
-                'identity' => 'ita_external_reporter',
-                'is_active' => true,
-            ],
-        );
+        return User::query()->create([
+            'name' => $name,
+            'email' => null,
+            'phone' => $phone,
+            'password' => null,
+            'identity' => null,
+            'is_active' => true,
+        ]);
     }
 
     private function resolveUnit(array $ticketData): ?Unit
@@ -572,7 +573,7 @@ class AiHelpdeskActionService
             'owner' => $ticket->owner ? [
                 'id' => $ticket->owner->id,
                 'name' => $ticket->owner->name,
-                'is_external_reporter' => $this->isExternalReporter($ticket->owner),
+                'needs_profile_completion' => $this->needsProfileCompletion($ticket->owner),
             ] : null,
             'assigned_to' => $ticket->responsible?->name,
             'created_at' => optional($ticket->created_at)->toISOString(),
@@ -602,10 +603,9 @@ class AiHelpdeskActionService
         ]);
     }
 
-    private function isExternalReporter(User $user): bool
+    private function needsProfileCompletion(User $user): bool
     {
-        return $user->identity === 'ita_external_reporter'
-            || Str::endsWith($user->email, '@external.helpdesk.local');
+        return $this->text($user->email) === '' || $this->text($user->password) === '';
     }
 
     private function normalizePhone(mixed $value): ?string
