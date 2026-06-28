@@ -172,7 +172,7 @@ class AiHelpdeskActionTest extends TestCase
         $this->assertSame(2, User::count());
     }
 
-    public function test_ita_can_get_comment_and_close_an_existing_ticket(): void
+    public function test_ita_can_get_and_comment_on_an_existing_ticket(): void
     {
         $owner = $this->helpdeskUser();
         $category = $this->problemCategory();
@@ -222,12 +222,77 @@ class AiHelpdeskActionTest extends TestCase
             'comment' => 'Tambahan info: error muncul jam 09.00.',
         ]);
 
+        $this->assertDatabaseHas('tickets', [
+            'id' => $ticket->id,
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+        $this->assertNull($ticket->fresh()->solved_at);
+    }
+
+    public function test_ita_rejects_close_ticket_from_reporter_because_closing_is_technician_level(): void
+    {
+        $owner = $this->helpdeskUser();
+        $category = $this->problemCategory();
+        Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        Auth::setUser($owner);
+        $ticket = Ticket::create([
+            'priority_id' => Priority::MEDIUM,
+            'unit_id' => $category->unit_id,
+            'owner_id' => $owner->id,
+            'problem_category_id' => $category->id,
+            'title' => 'Email error',
+            'description' => 'Tidak bisa login.',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+
         $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
-            'request_id' => 'trace-close-001',
-            'idempotency_key' => 'ita:close:001',
+            'request_id' => 'trace-close-reporter-001',
+            'idempotency_key' => 'ita:close:reporter',
             'action' => 'helpdesk.close_ticket',
             'actor' => [
                 'phone' => '6281234567890',
+                'is_verified' => true,
+            ],
+            'ticket_ref' => ['ticket_id' => (string) $ticket->id],
+            'ticket_data' => ['consent_to_close' => true],
+        ])
+            ->assertForbidden()
+            ->assertJsonPath('result_status', 'unauthorized')
+            ->assertJsonPath('error.code', 'HELPDESK_CLOSE_REQUIRES_TECHNICIAN');
+
+        $this->assertDatabaseHas('tickets', [
+            'id' => $ticket->id,
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+        $this->assertNull($ticket->fresh()->solved_at);
+    }
+
+    public function test_ita_allows_responsible_technician_to_close_ticket(): void
+    {
+        $owner = $this->helpdeskUser();
+        $technician = $this->technicianUser();
+        $category = $this->problemCategory();
+        Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        Auth::setUser($owner);
+        $ticket = Ticket::create([
+            'priority_id' => Priority::MEDIUM,
+            'unit_id' => $category->unit_id,
+            'owner_id' => $owner->id,
+            'problem_category_id' => $category->id,
+            'title' => 'Email error',
+            'description' => 'Tidak bisa login.',
+            'ticket_statuses_id' => TicketStatus::IN_PROGRESS,
+        ]);
+        $ticket->forceFill([
+            'responsible_id' => $technician->id,
+        ])->saveQuietly();
+
+        $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+            'request_id' => 'trace-close-tech-001',
+            'idempotency_key' => 'ita:close:technician',
+            'action' => 'helpdesk.close_ticket',
+            'actor' => [
+                'phone' => '6287777777777',
                 'is_verified' => true,
             ],
             'ticket_ref' => ['ticket_id' => (string) $ticket->id],
@@ -239,6 +304,7 @@ class AiHelpdeskActionTest extends TestCase
 
         $this->assertDatabaseHas('tickets', [
             'id' => $ticket->id,
+            'responsible_id' => $technician->id,
             'ticket_statuses_id' => TicketStatus::CLOSED,
         ]);
         $this->assertNotNull($ticket->fresh()->solved_at);
@@ -318,6 +384,26 @@ class AiHelpdeskActionTest extends TestCase
             'phone' => '6281234567890',
             'is_active' => true,
         ]);
+    }
+
+    private function technicianUser(): User
+    {
+        $technician = User::create([
+            'name' => 'Teknisi IT',
+            'email' => 'teknisi@example.test',
+            'password' => 'secret',
+            'phone' => '6287777777777',
+            'is_active' => true,
+        ]);
+
+        \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'Admin Unit',
+            'guard_name' => 'web',
+        ]);
+
+        $technician->assignRole('Admin Unit');
+
+        return $technician;
     }
 
     private function problemCategory(): ProblemCategory
