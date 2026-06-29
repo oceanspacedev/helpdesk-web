@@ -2,25 +2,20 @@
 
 namespace App\Services\Integrations;
 
-use App\Models\BusinessEntity;
 use App\Models\Comment;
-use App\Models\Priority;
-use App\Models\ProblemCategory;
 use App\Models\Ticket;
 use App\Models\TicketStatus;
-use App\Models\Unit;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
-class AiHelpdeskActionService
+class WhatsappHelpdeskActionService
 {
     private const SUPPORTED_ACTIONS = [
         'helpdesk.create_ticket',
         'helpdesk.get_ticket',
         'helpdesk.add_comment',
-        'helpdesk.close_ticket',
     ];
 
     public function handle(array $payload): array
@@ -63,7 +58,6 @@ class AiHelpdeskActionService
             'helpdesk.create_ticket' => $this->createTicket($payload, $actor, $user),
             'helpdesk.get_ticket' => $this->getTicket($payload, $user),
             'helpdesk.add_comment' => $this->addComment($payload, $actor, $user),
-            'helpdesk.close_ticket' => $this->closeTicket($payload, $user),
         };
 
         if ($idempotencyKey) {
@@ -83,24 +77,64 @@ class AiHelpdeskActionService
     private function createTicket(array $payload, array $actor, User $owner): array
     {
         $ticketData = $this->ticketData($payload);
+        $resolver = app(WhatsappHelpdeskClassificationResolver::class);
+        $formOptionsService = app(WhatsappHelpdeskFormOptionsService::class);
 
         foreach (['issue_summary', 'affected_system', 'impact'] as $field) {
             if ($this->text($ticketData[$field] ?? '') === '') {
-                return $this->error('validation_error', "Field {$field} wajib diisi.", 422, 'MISSING_TICKET_FIELD');
+                return $this->validationError(
+                    "Field {$field} wajib diisi.",
+                    'MISSING_TICKET_FIELD',
+                    [$field],
+                    $formOptionsService->formOptions(),
+                    $resolver->nextQuestionForField($field),
+                );
             }
         }
 
         if (! $this->bool($ticketData['consent_to_create'] ?? false)) {
-            return $this->error('validation_error', 'Konfirmasi pembuatan tiket belum tersedia.', 422, 'MISSING_CREATE_CONSENT');
+            return $this->validationError(
+                'Konfirmasi pembuatan tiket belum tersedia.',
+                'MISSING_CREATE_CONSENT',
+                ['consent_to_create'],
+                $formOptionsService->formOptions(),
+                'Buat tiket sekarang?',
+            );
         }
 
-        $unit = $this->resolveUnit($ticketData);
-        $category = $this->resolveProblemCategory($ticketData, $unit);
-        $priority = $this->resolvePriority($ticketData);
-        $businessEntity = $this->resolveBusinessEntity($ticketData);
+        $classification = $resolver->evaluate($ticketData, $owner);
+        if ($classification['issues'] !== []) {
+            $firstIssue = $classification['issues'][0];
+            $formOptions = $formOptionsService->formOptions($classification['unit']?->id);
+            $message = $resolver->buildFieldValidationMessage($firstIssue, $formOptions);
+            $code = $firstIssue['reason'] === 'not_found'
+                ? 'HELPDESK_VALUE_NOT_FOUND'
+                : 'HELPDESK_FORM_INCOMPLETE';
 
-        if (! $unit || ! $category || ! $priority) {
-            return $this->error('validation_error', 'Master data unit, kategori, atau prioritas Helpdesk belum lengkap.', 422, 'HELPDESK_MASTER_DATA_INCOMPLETE');
+            return $this->validationError(
+                $message,
+                $code,
+                array_column($classification['issues'], 'field'),
+                $formOptions,
+                $resolver->nextQuestionForField($firstIssue['field']),
+                $classification['issues'],
+            );
+        }
+
+        $businessEntity = $classification['businessEntity'];
+        $unit = $classification['unit'];
+        $category = $classification['category'];
+        $priority = $classification['priority'];
+
+        $description = $this->buildTicketDescription($ticketData, $actor, $payload);
+        if ($this->text(strip_tags($description)) === '') {
+            return $this->validationError(
+                'Deskripsi tiket belum tersedia.',
+                'MISSING_TICKET_DESCRIPTION',
+                ['description'],
+                $formOptionsService->formOptions($unit->id),
+                'Jelaskan detail kendala atau langkah yang sudah dicoba.',
+            );
         }
 
         Auth::setUser($owner);
@@ -111,9 +145,9 @@ class AiHelpdeskActionService
             'owner_id' => $owner->id,
             'problem_category_id' => $category->id,
             'title' => Str::limit($this->text($ticketData['title'] ?? $ticketData['issue_summary']), 250, ''),
-            'description' => $this->buildTicketDescription($ticketData, $actor, $payload),
+            'description' => $description,
             'ticket_statuses_id' => TicketStatus::OPEN,
-            'business_entities_id' => $businessEntity?->id,
+            'business_entities_id' => $businessEntity->id,
         ]);
 
         $ticket = $this->loadTicket($ticket);
@@ -179,47 +213,8 @@ class AiHelpdeskActionService
             'actor' => [
                 'id' => $user->id,
                 'name' => $user->name,
-                'phone' => $this->normalizePhone($actor['phone'] ?? $actor['identifier'] ?? ''),
+                'phone' => $this->reporterPhone($actor['phone'] ?? $actor['identifier'] ?? '') ?: '',
             ],
-        ]);
-    }
-
-    private function closeTicket(array $payload, User $user): array
-    {
-        $ticket = $this->findTicket($payload);
-
-        if (! $ticket) {
-            return $this->error('not_found', 'Tiket tidak ditemukan.', 404, 'HELPDESK_TICKET_NOT_FOUND');
-        }
-
-        if (! $this->canCloseTicket($user, $ticket)) {
-            return $this->error(
-                'unauthorized',
-                'Penutupan tiket hanya dapat dilakukan oleh teknisi melalui alur Helpdesk.',
-                403,
-                'HELPDESK_CLOSE_REQUIRES_TECHNICIAN'
-            );
-        }
-
-        if (! $this->bool(data_get($this->ticketData($payload), 'consent_to_close'))) {
-            return $this->error('validation_error', 'Konfirmasi penutupan tiket belum tersedia.', 422, 'MISSING_CLOSE_CONSENT');
-        }
-
-        Auth::setUser($user);
-
-        if ((int) $ticket->ticket_statuses_id !== TicketStatus::CLOSED) {
-            if ($ticket->responsible_id === null) {
-                $ticket->responsible_id = $user->id;
-            }
-
-            $ticket->ticket_statuses_id = TicketStatus::CLOSED;
-            $ticket->save();
-        }
-
-        $ticket = $this->loadTicket($ticket->fresh());
-
-        return $this->success('closed', "Tiket {$this->ticketNumber($ticket)} berhasil ditutup.", [
-            'ticket' => $this->ticketResource($ticket),
         ]);
     }
 
@@ -252,11 +247,10 @@ class AiHelpdeskActionService
     private function resolveActorUserByPhone(array $actor): ?User
     {
         $phoneCandidates = array_values(array_unique(array_filter([
-            $this->normalizePhone($actor['phone'] ?? ''),
-            $this->normalizePhone($actor['identifier'] ?? ''),
-            $this->normalizePhone($actor['sender_key'] ?? ''),
-            $this->normalizePhone(data_get($actor, 'metadata.phone')),
-            $this->normalizePhone(data_get($actor, 'metadata.sender_phone')),
+            $this->reporterPhone($actor['phone'] ?? ''),
+            $this->reporterPhone($actor['identifier'] ?? ''),
+            $this->reporterPhone(data_get($actor, 'metadata.phone')),
+            $this->reporterPhone(data_get($actor, 'metadata.sender_phone')),
         ])));
 
         if ($phoneCandidates === []) {
@@ -281,7 +275,10 @@ class AiHelpdeskActionService
 
     private function createAutoRegisteredReporter(array $actor): ?User
     {
-        $phone = $this->normalizePhone($actor['phone'] ?? $actor['identifier'] ?? $actor['sender_key'] ?? data_get($actor, 'metadata.phone'));
+        $phone = $this->reporterPhone($actor['phone'] ?? '')
+            ?? $this->reporterPhone($actor['identifier'] ?? '')
+            ?? $this->reporterPhone(data_get($actor, 'metadata.phone'))
+            ?? $this->reporterPhone(data_get($actor, 'metadata.sender_phone'));
         if (! $phone) {
             return null;
         }
@@ -306,105 +303,34 @@ class AiHelpdeskActionService
         ]);
     }
 
-    private function resolveUnit(array $ticketData): ?Unit
-    {
-        $id = (int) ($ticketData['unit_id'] ?? 0);
-        if ($id > 0 && $unit = Unit::find($id)) {
-            return $unit;
-        }
-
-        $unitName = $this->text($ticketData['unit'] ?? $ticketData['unit_name'] ?? config('services.ita_helpdesk.default_unit_name', 'IT'));
-        if ($unitName !== '') {
-            $unit = Unit::query()->whereRaw('LOWER(name) = ?', [Str::lower($unitName)])->first();
-            if ($unit) {
-                return $unit;
-            }
-        }
-
-        return Unit::query()->whereRaw('LOWER(name) = ?', ['it'])->first() ?: Unit::query()->first();
-    }
-
-    private function resolveProblemCategory(array $ticketData, ?Unit $unit): ?ProblemCategory
-    {
-        $id = (int) ($ticketData['problem_category_id'] ?? $ticketData['category_id'] ?? 0);
-        if ($id > 0 && $category = ProblemCategory::find($id)) {
-            return $category;
-        }
-
-        $name = $this->text($ticketData['problem_category'] ?? $ticketData['category'] ?? $ticketData['category_name'] ?? '');
-        $query = ProblemCategory::query();
-        if ($unit) {
-            $query->where('unit_id', $unit->id);
-        }
-
-        if ($name !== '') {
-            $category = (clone $query)->whereRaw('LOWER(name) = ?', [Str::lower($name)])->first()
-                ?: (clone $query)->where('name', 'like', '%'.$name.'%')->first();
-            if ($category) {
-                return $category;
-            }
-        }
-
-        $affectedSystem = $this->text($ticketData['affected_system'] ?? '');
-        if ($affectedSystem !== '') {
-            $category = (clone $query)->where('name', 'like', '%'.$affectedSystem.'%')->first();
-            if ($category) {
-                return $category;
-            }
-        }
-
-        $existing = $query->first();
-        if ($existing) {
-            return $existing;
-        }
-
-        if (! $unit) {
-            return null;
-        }
-
-        return ProblemCategory::create([
-            'unit_id' => $unit->id,
-            'name' => (string) config('services.ita_helpdesk.fallback_problem_category_name', 'Laporan ITA'),
-        ]);
-    }
-
-    private function resolvePriority(array $ticketData): ?Priority
-    {
-        $id = (int) ($ticketData['priority_id'] ?? 0);
-        if ($id > 0 && $priority = Priority::find($id)) {
-            return $priority;
-        }
-
-        $text = Str::lower($this->text(($ticketData['priority'] ?? '').' '.($ticketData['urgency'] ?? '').' '.($ticketData['impact'] ?? '').' '.($ticketData['issue_summary'] ?? '')));
-        $wanted = Priority::MEDIUM;
-
-        if (Str::contains($text, ['critical', 'urgent', 'darurat', 'down', 'berhenti total'])) {
-            $wanted = Priority::CRITICAL;
-        } elseif (Str::contains($text, ['high', 'tinggi', 'sangat terganggu'])) {
-            $wanted = Priority::HIGHT;
-        } elseif (Str::contains($text, ['low', 'rendah', 'minor'])) {
-            $wanted = Priority::LOW;
-        } elseif (Str::contains($text, ['enhancement', 'fitur', 'request'])) {
-            $wanted = Priority::ENHANCEMENT;
-        }
-
-        return Priority::find($wanted) ?: Priority::query()->where('name', 'like', '%Medium%')->first() ?: Priority::query()->first();
-    }
-
-    private function resolveBusinessEntity(array $ticketData): ?BusinessEntity
-    {
-        $id = (int) ($ticketData['business_entities_id'] ?? $ticketData['business_entity_id'] ?? 0);
-        if ($id > 0 && $entity = BusinessEntity::find($id)) {
-            return $entity;
-        }
-
-        $name = $this->text($ticketData['business_entity'] ?? $ticketData['business_entity_name'] ?? '');
-        if ($name === '') {
-            return null;
-        }
-
-        return BusinessEntity::query()->whereRaw('LOWER(name) = ?', [Str::lower($name)])->first()
-            ?: BusinessEntity::create(['name' => $name]);
+    private function validationError(
+        string $message,
+        string $code,
+        array $missingFields,
+        array $formOptions,
+        ?string $nextQuestion = null,
+        array $fieldErrors = [],
+    ): array {
+        return [
+            'http_status' => 422,
+            'body' => [
+                'ok' => false,
+                'status' => 'validation_error',
+                'result_status' => 'validation_error',
+                'message' => $message,
+                'next_question' => $nextQuestion,
+                'data' => [
+                    'missing_fields' => array_values(array_unique($missingFields)),
+                    'form_options' => $formOptions,
+                    'field_errors' => array_values($fieldErrors),
+                ],
+                'count' => 0,
+                'error' => [
+                    'code' => $code,
+                    'message' => $message,
+                ],
+            ],
+        ];
     }
 
     private function findTicket(array $payload): ?Ticket
@@ -449,23 +375,6 @@ class AiHelpdeskActionService
             && $user->hasAnyRole(['Super Admin', 'Admin Unit', 'Staff Unit', 'Staf Unit']);
     }
 
-    private function canCloseTicket(User $user, Ticket $ticket): bool
-    {
-        if (! method_exists($user, 'hasAnyRole') || ! $user->hasAnyRole(['Super Admin', 'Admin Unit'])) {
-            return false;
-        }
-
-        if ((int) $ticket->ticket_statuses_id === TicketStatus::OPEN) {
-            return $ticket->responsible_id === null || (int) $ticket->responsible_id === (int) $user->id;
-        }
-
-        if ((int) $ticket->ticket_statuses_id === TicketStatus::IN_PROGRESS) {
-            return (int) $ticket->responsible_id === (int) $user->id;
-        }
-
-        return false;
-    }
-
     private function ticketData(array $payload): array
     {
         $ticketData = is_array($payload['ticket_data'] ?? null) ? $payload['ticket_data'] : [];
@@ -492,7 +401,10 @@ class AiHelpdeskActionService
         $actor = is_array($payload['actor'] ?? null) ? $payload['actor'] : [];
 
         if (! isset($actor['identifier'])) {
-            $actor['identifier'] = $actor['phone'] ?? $actor['sender_key'] ?? data_get($actor, 'metadata.phone') ?? '';
+            $actor['identifier'] = $this->reporterPhone($actor['phone'] ?? '')
+                ?? $this->reporterPhone(data_get($actor, 'metadata.phone'))
+                ?? $this->reporterPhone(data_get($actor, 'metadata.sender_phone'))
+                ?? '';
         }
 
         return $actor;
@@ -502,7 +414,7 @@ class AiHelpdeskActionService
     {
         $items = [
             'Pelapor' => $this->text($actor['name'] ?? '') ?: '-',
-            'Nomor WhatsApp' => $this->normalizePhone($actor['phone'] ?? $actor['identifier'] ?? '') ?: '-',
+            'Nomor WhatsApp' => $this->reporterPhone($actor['phone'] ?? $actor['identifier'] ?? '') ?: '-',
             'Sistem/Perangkat' => $this->text($ticketData['affected_system'] ?? '-'),
             'Dampak' => $this->text($ticketData['impact'] ?? '-'),
             'Urgensi' => $this->text($ticketData['urgency'] ?? 'normal'),
@@ -644,10 +556,24 @@ class AiHelpdeskActionService
         return $this->text($user->email) === '' || $this->text($user->password) === '';
     }
 
+    private function reporterPhone(mixed $value): ?string
+    {
+        $raw = strtolower($this->text($value));
+        if ($raw === '' || str_contains($raw, '@lid')) {
+            return null;
+        }
+
+        return $this->normalizePhone($value);
+    }
+
     private function normalizePhone(mixed $value): ?string
     {
         $phone = $this->text($value);
         if ($phone === '') {
+            return null;
+        }
+
+        if (str_contains(strtolower($phone), '@lid')) {
             return null;
         }
 

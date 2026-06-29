@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
-class AiHelpdeskActionTest extends TestCase
+class WhatsappHelpdeskActionTest extends TestCase
 {
     protected function setUp(): void
     {
@@ -25,7 +25,6 @@ class AiHelpdeskActionTest extends TestCase
         $this->createTestSchema();
         Cache::flush();
         Notification::fake();
-        config()->set('services.ita_helpdesk.token', 'secret-ita-token');
     }
 
     public function test_ita_can_create_a_helpdesk_ticket_for_a_registered_whatsapp_actor(): void
@@ -35,7 +34,7 @@ class AiHelpdeskActionTest extends TestCase
         $priority = Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
         $businessEntity = BusinessEntity::create(['name' => 'Complete Selular']);
 
-        $response = $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+        $response = $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
             'request_id' => 'trace-create-001',
             'idempotency_key' => 'ita:create:001',
             'action' => 'helpdesk.create_ticket',
@@ -52,6 +51,7 @@ class AiHelpdeskActionTest extends TestCase
                 'description' => 'Muncul invalid credentials setelah reset password.',
                 'urgency' => 'normal',
                 'problem_category_id' => $category->id,
+                'unit_id' => $category->unit_id,
                 'priority_id' => $priority->id,
                 'business_entities_id' => $businessEntity->id,
                 'consent_to_create' => true,
@@ -97,7 +97,8 @@ class AiHelpdeskActionTest extends TestCase
     {
         $this->helpdeskUser();
         $category = $this->problemCategory();
-        Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        $priority = Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        $businessEntity = BusinessEntity::create(['name' => 'Complete Selular']);
 
         $payload = [
             'request_id' => 'trace-create-002',
@@ -111,13 +112,16 @@ class AiHelpdeskActionTest extends TestCase
                 'issue_summary' => 'Printer kasir error',
                 'affected_system' => 'Printer',
                 'impact' => 'Tidak bisa cetak struk',
+                'unit_id' => $category->unit_id,
                 'problem_category_id' => $category->id,
+                'priority_id' => $priority->id,
+                'business_entities_id' => $businessEntity->id,
                 'consent_to_create' => true,
             ],
         ];
 
-        $first = $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', $payload);
-        $second = $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', $payload);
+        $first = $this->postJson('/api/integrations/whatsapp/helpdesk/actions', $payload);
+        $second = $this->postJson('/api/integrations/whatsapp/helpdesk/actions', $payload);
 
         $first->assertOk()->assertJsonPath('data.ticket.ticket_id', 1);
         $second
@@ -139,9 +143,10 @@ class AiHelpdeskActionTest extends TestCase
             'is_active' => true,
         ]);
         $category = $this->problemCategory();
-        Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        $priority = Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        $businessEntity = BusinessEntity::create(['name' => 'Complete Selular']);
 
-        $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+        $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
             'request_id' => 'trace-phone-first-001',
             'idempotency_key' => 'ita:create:phone-first',
             'action' => 'helpdesk.create_ticket',
@@ -155,7 +160,10 @@ class AiHelpdeskActionTest extends TestCase
                 'issue_summary' => 'VPN error',
                 'affected_system' => 'VPN',
                 'impact' => 'Tidak bisa akses sistem kantor',
+                'unit_id' => $category->unit_id,
                 'problem_category_id' => $category->id,
+                'priority_id' => $priority->id,
+                'business_entities_id' => $businessEntity->id,
                 'consent_to_create' => true,
             ],
         ])
@@ -188,7 +196,7 @@ class AiHelpdeskActionTest extends TestCase
             'ticket_statuses_id' => TicketStatus::OPEN,
         ]);
 
-        $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+        $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
             'request_id' => 'trace-get-001',
             'idempotency_key' => 'ita:get:001',
             'action' => 'helpdesk.get_ticket',
@@ -202,7 +210,7 @@ class AiHelpdeskActionTest extends TestCase
             ->assertJsonPath('result_status', 'found')
             ->assertJsonPath('data.ticket.ticket_id', $ticket->id);
 
-        $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+        $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
             'request_id' => 'trace-comment-001',
             'idempotency_key' => 'ita:comment:001',
             'action' => 'helpdesk.add_comment',
@@ -229,7 +237,7 @@ class AiHelpdeskActionTest extends TestCase
         $this->assertNull($ticket->fresh()->solved_at);
     }
 
-    public function test_ita_rejects_close_ticket_from_reporter_because_closing_is_technician_level(): void
+    public function test_ita_rejects_close_ticket_action_from_reporter_contract(): void
     {
         $owner = $this->helpdeskUser();
         $category = $this->problemCategory();
@@ -245,7 +253,7 @@ class AiHelpdeskActionTest extends TestCase
             'ticket_statuses_id' => TicketStatus::OPEN,
         ]);
 
-        $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+        $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
             'request_id' => 'trace-close-reporter-001',
             'idempotency_key' => 'ita:close:reporter',
             'action' => 'helpdesk.close_ticket',
@@ -256,9 +264,9 @@ class AiHelpdeskActionTest extends TestCase
             'ticket_ref' => ['ticket_id' => (string) $ticket->id],
             'ticket_data' => ['consent_to_close' => true],
         ])
-            ->assertForbidden()
-            ->assertJsonPath('result_status', 'unauthorized')
-            ->assertJsonPath('error.code', 'HELPDESK_CLOSE_REQUIRES_TECHNICIAN');
+            ->assertStatus(422)
+            ->assertJsonPath('result_status', 'validation_error')
+            ->assertJsonPath('error.code', 'UNSUPPORTED_HELPDESK_ACTION');
 
         $this->assertDatabaseHas('tickets', [
             'id' => $ticket->id,
@@ -267,7 +275,7 @@ class AiHelpdeskActionTest extends TestCase
         $this->assertNull($ticket->fresh()->solved_at);
     }
 
-    public function test_ita_allows_responsible_technician_to_close_ticket(): void
+    public function test_ita_rejects_close_ticket_action_even_for_responsible_technician_contract(): void
     {
         $owner = $this->helpdeskUser();
         $technician = $this->technicianUser();
@@ -287,7 +295,7 @@ class AiHelpdeskActionTest extends TestCase
             'responsible_id' => $technician->id,
         ])->saveQuietly();
 
-        $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+        $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
             'request_id' => 'trace-close-tech-001',
             'idempotency_key' => 'ita:close:technician',
             'action' => 'helpdesk.close_ticket',
@@ -298,24 +306,25 @@ class AiHelpdeskActionTest extends TestCase
             'ticket_ref' => ['ticket_id' => (string) $ticket->id],
             'ticket_data' => ['consent_to_close' => true],
         ])
-            ->assertOk()
-            ->assertJsonPath('result_status', 'closed')
-            ->assertJsonPath('data.ticket.status', 'Closed');
+            ->assertStatus(422)
+            ->assertJsonPath('result_status', 'validation_error')
+            ->assertJsonPath('error.code', 'UNSUPPORTED_HELPDESK_ACTION');
 
         $this->assertDatabaseHas('tickets', [
             'id' => $ticket->id,
             'responsible_id' => $technician->id,
-            'ticket_statuses_id' => TicketStatus::CLOSED,
+            'ticket_statuses_id' => TicketStatus::IN_PROGRESS,
         ]);
-        $this->assertNotNull($ticket->fresh()->solved_at);
+        $this->assertNull($ticket->fresh()->solved_at);
     }
 
     public function test_ita_can_auto_register_internal_whatsapp_reporters_without_synthetic_email(): void
     {
         $category = $this->problemCategory();
-        Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        $priority = Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        $businessEntity = BusinessEntity::create(['name' => 'Complete Selular']);
 
-        $create = $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+        $create = $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
             'request_id' => 'trace-external-001',
             'idempotency_key' => 'ita:create:external',
             'action' => 'helpdesk.create_ticket',
@@ -328,7 +337,10 @@ class AiHelpdeskActionTest extends TestCase
                 'issue_summary' => 'Email error',
                 'affected_system' => 'Email',
                 'impact' => 'Tidak bisa kerja',
+                'unit_id' => $category->unit_id,
                 'problem_category_id' => $category->id,
+                'priority_id' => $priority->id,
+                'business_entities_id' => $businessEntity->id,
                 'consent_to_create' => true,
             ],
         ]);
@@ -352,7 +364,7 @@ class AiHelpdeskActionTest extends TestCase
             'ticket_statuses_id' => TicketStatus::OPEN,
         ]);
 
-        $this->withToken('secret-ita-token')->postJson('/api/integrations/ai/helpdesk/actions', [
+        $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
             'request_id' => 'trace-external-comment-001',
             'idempotency_key' => 'ita:comment:external',
             'action' => 'helpdesk.add_comment',
@@ -373,6 +385,136 @@ class AiHelpdeskActionTest extends TestCase
             'user_id' => $externalUser->id,
             'comment' => 'Tambahan dari pelapor eksternal.',
         ]);
+    }
+
+    public function test_ita_rejects_lid_identity_for_helpdesk_actor_phone(): void
+    {
+        $category = $this->problemCategory();
+        $priority = Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        $businessEntity = BusinessEntity::create(['name' => 'Complete Selular']);
+
+        $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
+            'request_id' => 'trace-lid-create-001',
+            'idempotency_key' => 'ita:create:lid-only',
+            'action' => 'helpdesk.create_ticket',
+            'actor' => [
+                'name' => 'Pelapor LID',
+                'phone' => '123456789012345@lid',
+                'identifier' => '123456789012345@lid',
+                'sender_key' => 'default:123456789012345@lid',
+                'is_verified' => true,
+            ],
+            'ticket_data' => [
+                'issue_summary' => 'Email error',
+                'affected_system' => 'Email',
+                'impact' => 'Tidak bisa kerja',
+                'unit_id' => $category->unit_id,
+                'problem_category_id' => $category->id,
+                'priority_id' => $priority->id,
+                'business_entities_id' => $businessEntity->id,
+                'consent_to_create' => true,
+            ],
+        ])
+            ->assertStatus(403)
+            ->assertJsonPath('error.code', 'HELPDESK_ACTOR_NOT_REGISTERED');
+
+        $this->assertSame(0, User::count());
+        $this->assertSame(0, Ticket::count());
+    }
+
+    public function test_ita_master_data_endpoint_returns_web_form_options(): void
+    {
+        $category = $this->problemCategory();
+        Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        $businessEntity = BusinessEntity::create(['name' => 'Complete Selular']);
+
+        $this->getJson('/api/integrations/whatsapp/helpdesk/master-data')
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('data.form_options.units.0.name', 'IT')
+            ->assertJsonPath('data.form_options.problem_categories.0.name', $category->name)
+            ->assertJsonPath('data.form_options.priorities.0.name', 'Medium')
+            ->assertJsonPath('data.form_options.business_entities.0.name', $businessEntity->name);
+    }
+
+    public function test_ita_create_ticket_returns_form_options_when_classification_missing(): void
+    {
+        $this->helpdeskUser();
+
+        $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
+            'request_id' => 'trace-validation-001',
+            'idempotency_key' => 'ita:create:validation',
+            'action' => 'helpdesk.create_ticket',
+            'actor' => [
+                'phone' => '6281234567890',
+                'is_verified' => true,
+            ],
+            'ticket_data' => [
+                'issue_summary' => 'Email error',
+                'affected_system' => 'Email',
+                'impact' => 'Tidak bisa kerja',
+                'consent_to_create' => true,
+            ],
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('result_status', 'validation_error')
+            ->assertJsonPath('error.code', 'HELPDESK_FORM_INCOMPLETE')
+            ->assertJsonPath('data.missing_fields.0', 'business_entities_id')
+            ->assertJsonPath('data.field_errors.0.reason', 'missing')
+            ->assertJsonPath('message', 'Entitas bisnis belum dipilih.')
+            ->assertJsonStructure([
+                'data' => [
+                    'form_options' => [
+                        'units',
+                        'problem_categories',
+                        'priorities',
+                        'business_entities',
+                    ],
+                    'field_errors',
+                ],
+            ]);
+    }
+
+    public function test_ita_create_ticket_reports_unknown_business_entity_with_valid_options(): void
+    {
+        $this->helpdeskUser();
+        $category = $this->problemCategory();
+        $priority = Priority::create(['id' => Priority::MEDIUM, 'name' => 'Medium']);
+        BusinessEntity::create(['name' => 'Complete Selular']);
+
+        $response = $this->postJson('/api/integrations/whatsapp/helpdesk/actions', [
+            'request_id' => 'trace-validation-002',
+            'idempotency_key' => 'ita:create:unknown-entity',
+            'action' => 'helpdesk.create_ticket',
+            'actor' => [
+                'phone' => '6281234567890',
+                'is_verified' => true,
+            ],
+            'ticket_data' => [
+                'business_entity' => 'Toko Mars',
+                'unit_id' => $category->unit_id,
+                'problem_category_id' => $category->id,
+                'priority_id' => $priority->id,
+                'issue_summary' => 'Email error',
+                'affected_system' => 'Email',
+                'impact' => 'Tidak bisa kerja',
+                'consent_to_create' => true,
+            ],
+        ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('result_status', 'validation_error')
+            ->assertJsonPath('error.code', 'HELPDESK_VALUE_NOT_FOUND')
+            ->assertJsonPath('data.field_errors.0.field', 'business_entities_id')
+            ->assertJsonPath('data.field_errors.0.reason', 'not_found')
+            ->assertJsonPath('data.field_errors.0.provided_value', 'Toko Mars');
+
+        $message = $response->json('message');
+        $this->assertStringContainsString('Toko Mars', $message);
+        $this->assertStringContainsString('tidak ditemukan di Helpdesk', $message);
+        $this->assertStringContainsString('1. Complete Selular', $message);
+        $this->assertStringContainsString('Balas nomor atau tulis nama persis seperti di daftar.', $message);
     }
 
     private function helpdeskUser(): User
