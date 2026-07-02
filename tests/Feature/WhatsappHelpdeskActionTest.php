@@ -70,7 +70,8 @@ class WhatsappHelpdeskActionTest extends TestCase
             ->assertJsonPath('ok', true)
             ->assertJsonPath('result_status', 'ticket_created')
             ->assertJsonPath('data.ticket.ticket_id', 1)
-            ->assertJsonPath('data.ticket.status', 'Open');
+            ->assertJsonPath('data.ticket.status', 'Open')
+            ->assertJsonPath('data.ticket.supporting_attachments.0', 'https://storage.example.test/screenshot.png');
 
         $this->assertDatabaseHas('tickets', [
             'id' => 1,
@@ -91,6 +92,7 @@ class WhatsappHelpdeskActionTest extends TestCase
         $this->assertStringContainsString('Dilaporkan via ITA', $ticket->description);
         $this->assertStringContainsString('Tidak bisa kirim invoice', $ticket->description);
         $this->assertStringContainsString('https://storage.example.test/screenshot.png', $ticket->description);
+        $this->assertSame(['https://storage.example.test/screenshot.png'], $ticket->supporting_attachments);
     }
 
     public function test_ita_create_ticket_replays_the_same_idempotency_key_without_duplicate_tickets(): void

@@ -146,6 +146,7 @@ class WhatsappHelpdeskActionService
             'problem_category_id' => $category->id,
             'title' => Str::limit($this->text($ticketData['title'] ?? $ticketData['issue_summary']), 250, ''),
             'description' => $description,
+            'supporting_attachments' => $this->supportingAttachments($payload['attachments'] ?? []),
             'ticket_statuses_id' => TicketStatus::OPEN,
             'business_entities_id' => $businessEntity->id,
         ]);
@@ -479,6 +480,26 @@ class WhatsappHelpdeskActionService
         return $comment."\n\nLampiran ITA:\n- ".implode("\n- ", array_map(fn (string $link): string => trim(strip_tags($link)), $links));
     }
 
+    private function supportingAttachments(array $attachments): ?array
+    {
+        $paths = [];
+
+        foreach (array_slice($attachments, 0, 5) as $attachment) {
+            if (! is_array($attachment)) {
+                continue;
+            }
+
+            $url = $this->text($attachment['url'] ?? $attachment['source_url'] ?? $attachment['public_url'] ?? $attachment['download_url'] ?? '');
+            if ($url !== '') {
+                $paths[] = $url;
+            }
+        }
+
+        $paths = array_values(array_unique($paths));
+
+        return $paths === [] ? null : $paths;
+    }
+
     private function attachmentLinks(array $attachments, bool $html = true): array
     {
         $links = [];
@@ -518,6 +539,7 @@ class WhatsappHelpdeskActionService
             'unit' => $ticket->unit?->name,
             'problem_category' => $ticket->problemCategory?->name,
             'business_entity' => $ticket->businessEntity?->name,
+            'supporting_attachments' => $ticket->supporting_attachments ?? [],
             'owner' => $ticket->owner ? [
                 'id' => $ticket->owner->id,
                 'name' => $ticket->owner->name,
