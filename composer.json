@@ -1,46 +1,46 @@
 {
     "name": "laravel/laravel",
     "type": "project",
-    "description": "The Laravel Framework.",
+    "description": "The skeleton application for the Laravel framework.",
     "keywords": [
-        "framework",
-        "laravel"
+        "laravel",
+        "framework"
     ],
     "license": "MIT",
     "require": {
-        "php": "^8.1",
-        "althinect/filament-spatie-roles-permissions": "^1.2",
-        "awcodes/overlook": "^1.2",
-        "bezhansalleh/filament-exceptions": "^1.1",
-        "bezhansalleh/filament-language-switch": "^1.0",
-        "bezhansalleh/filament-shield": "^2.4",
-        "dutchcodingcompany/filament-socialite": "^0.2.5",
-        "filament/filament": "^2.0",
+        "php": "^8.2",
+        "awcodes/overlook": "^2.2",
+        "bezhansalleh/filament-exceptions": "^2.1",
+        "bezhansalleh/filament-language-switch": "^3.1",
+        "bezhansalleh/filament-shield": "^3.2",
+        "dutchcodingcompany/filament-socialite": "^2.4",
+        "filament/filament": "^3.2",
+        "filament/infolists": "^3.2",
         "guzzlehttp/guzzle": "^7.2",
-        "jeffgreco13/filament-breezy": "^1.5",
-        "laravel/framework": "^10.10",
-        "laravel/sanctum": "^3.2",
+        "jeffgreco13/filament-breezy": "^2.6",
+        "laravel/framework": "^11.00",
+        "laravel/sanctum": "^4.0",
+        "laravel/socialite": "^5.28",
         "laravel/tinker": "^2.8",
         "league/flysystem-aws-s3-v3": "^3.28",
-        "leandrocfe/filament-apex-charts": "^2.0",
-        "owenvoke/blade-fontawesome": "^2.3",
-        "pusher/pusher-php-server": "*",
-        "pxlrbt/filament-excel": "^1.1",
-        "stechstudio/filament-impersonate": "^2.18",
-        "z3d0x/filament-logger": "^0.5.6"
+        "leandrocfe/filament-apex-charts": "^3.2",
+        "owenvoke/blade-fontawesome": "^2.9",
+        "pusher/pusher-php-server": "^7.2",
+        "pxlrbt/filament-excel": "^2.3",
+        "stechstudio/filament-impersonate": "^3.16",
+        "z3d0x/filament-logger": "^0.7.2"
     },
     "require-dev": {
         "andyabih/laravel-to-uml": "^1.0",
-        "barryvdh/laravel-debugbar": "^3.8",
-        "doctrine/dbal": "^3.6",
-        "fakerphp/faker": "^1.9.1",
+        "barryvdh/laravel-debugbar": "^4.3",
+        "doctrine/dbal": "^4.2",
+        "fakerphp/faker": "^1.23",
         "friendsofphp/php-cs-fixer": "^3.17",
-        "kitloong/laravel-migrations-generator": "^6.10",
+        "kitloong/laravel-migrations-generator": "^7.4",
         "laravel/pint": "^1.0",
         "laravel/sail": "^1.18",
         "mockery/mockery": "^1.4.4",
-        "nunomaduro/collision": "^7.0",
-        "nunomaduro/larastan": "^2.0",
+        "nunomaduro/collision": "^8.1",
         "phpunit/phpunit": "^10.1",
         "reliese/laravel": "^1.2",
         "spatie/laravel-ignition": "^2.0"
@@ -60,7 +60,8 @@
     "scripts": {
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
-            "@php artisan package:discover --ansi"
+            "@php artisan package:discover --ansi",
+            "@php artisan filament:upgrade"
         ],
         "post-update-cmd": [
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
@@ -87,11 +88,5 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true,
-    "sniff": [
-        "./vendor/bin/php-cs-fixer fix -vvv --dry-run --show-progress=dots"
-   ],
-   "lint": [
-       "./vendor/bin/php-cs-fixer fix -vvv --show-progress=dots"
-   ]
+    "prefer-stable": true
 }

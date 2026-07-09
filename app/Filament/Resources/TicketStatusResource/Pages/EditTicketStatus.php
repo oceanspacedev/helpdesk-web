@@ -3,7 +3,7 @@
 namespace App\Filament\Resources\TicketStatusResource\Pages;
 
 use App\Filament\Resources\TicketStatusResource;
-use Filament\Pages\Actions;
+use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
 class EditTicketStatus extends EditRecord

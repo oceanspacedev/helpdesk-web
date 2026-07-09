@@ -15,9 +15,9 @@ use App\Models\User;
 use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Components\Card;
-use Filament\Resources\Form;
+use Filament\Forms\Form;
 use Filament\Resources\Resource;
-use Filament\Resources\Table;
+use Filament\Tables\Table;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder;
@@ -395,7 +395,7 @@ class TicketResource extends Resource
     }
 
 
-    protected static function getNavigationBadge(): ?string
+    public static function getNavigationBadge(): ?string
     {
         if (auth()->user()->hasRole(['Super Admin', 'Admin Unit'])) {
             return Ticket::where('ticket_statuses_id', 1)

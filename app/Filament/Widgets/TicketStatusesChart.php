@@ -12,7 +12,7 @@ class TicketStatusesChart extends ApexChartWidget
      *
      * @var string
      */
-    protected static string $chartId = 'ticketStatusesChart';
+    protected static ?string $chartId = 'ticketStatusesChart';
 
     /**
      * Widget Title

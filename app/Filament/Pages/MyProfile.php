@@ -4,7 +4,7 @@ namespace App\Filament\Pages;
 
 use Filament\Forms;
 use App\Models\UserLevel;
-use JeffGreco13\FilamentBreezy\Pages\MyProfile as BaseProfile;
+use Jeffgreco13\FilamentBreezy\Pages\MyProfilePage as BaseProfile;
 
 class MyProfile extends BaseProfile
 {

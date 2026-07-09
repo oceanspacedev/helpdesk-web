@@ -439,6 +439,22 @@ class WhatsappHelpdeskActionTest extends TestCase
             ->assertJsonPath('data.form_options.business_entities.0.name', $businessEntity->name);
     }
 
+    public function test_ita_integration_method_errors_do_not_expose_laravel_debug_details(): void
+    {
+        config(['app.debug' => true]);
+
+        $response = $this->postJson('/api/integrations/whatsapp/helpdesk/master-data');
+
+        $response
+            ->assertStatus(405)
+            ->assertJsonPath('ok', false)
+            ->assertJsonPath('result_status', 'validation_error')
+            ->assertJsonPath('error.code', 'method_not_allowed')
+            ->assertJsonMissingPath('exception')
+            ->assertJsonMissingPath('file')
+            ->assertJsonMissingPath('trace');
+    }
+
     public function test_ita_create_ticket_returns_form_options_when_classification_missing(): void
     {
         $this->helpdeskUser();

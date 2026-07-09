@@ -4,6 +4,7 @@ namespace App\Exceptions;
 
 use BezhanSalleh\FilamentExceptions\FilamentExceptions;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Throwable;
 
 class Handler extends ExceptionHandler
@@ -29,5 +30,34 @@ class Handler extends ExceptionHandler
                 FilamentExceptions::report($e);
             }
         });
+    }
+
+    /**
+     * Render integration API errors without exposing debug internals.
+     */
+    public function render($request, Throwable $e)
+    {
+        if (
+            $e instanceof MethodNotAllowedHttpException
+            && $request->is('api/integrations/whatsapp/*')
+        ) {
+            $message = 'Metode HTTP tidak didukung untuk endpoint integrasi WhatsApp.';
+
+            return response()->json([
+                'ok' => false,
+                'status' => 'validation_error',
+                'result_status' => 'validation_error',
+                'message' => $message,
+                'data' => null,
+                'count' => 0,
+                'error' => [
+                    'code' => 'method_not_allowed',
+                    'message' => $message,
+                    'allowed_methods' => $e->getHeaders()['Allow'] ?? null,
+                ],
+            ], 405);
+        }
+
+        return parent::render($request, $e);
     }
 }

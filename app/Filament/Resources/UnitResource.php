@@ -7,9 +7,9 @@ use App\Filament\Resources\UnitResource\RelationManagers\ProblemCategoriesRelati
 use App\Filament\Resources\UnitResource\RelationManagers\UsersRelationManager;
 use App\Models\Unit;
 use Filament\Forms;
-use Filament\Resources\Form;
+use Filament\Forms\Form;
 use Filament\Resources\Resource;
-use Filament\Resources\Table;
+use Filament\Tables\Table;
 use Filament\Tables;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
