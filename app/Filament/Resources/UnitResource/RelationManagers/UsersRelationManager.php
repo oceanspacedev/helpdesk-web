@@ -31,7 +31,8 @@ class UsersRelationManager extends RelationManager
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name'),
-                Tables\Columns\TagsColumn::make('roles.name'),
+                Tables\Columns\TextColumn::make('roles.name')
+                    ->badge(),
             ])
             ->filters([
             ])

@@ -31,9 +31,10 @@ class UserResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\MultiSelect::make('units')
+                Forms\Components\Select::make('units')
                     ->relationship('units', 'name') // Menggunakan relasi 'units' dengan mengambil 'name' dari Unit
                     ->options(Unit::all()->pluck('name', 'id'))
+                    ->multiple()
                     ->searchable(),
                 Forms\Components\TextInput::make('name')
                     ->required()
@@ -74,8 +75,10 @@ class UserResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('email'),
-                Tables\Columns\TagsColumn::make('roles.name'),
-                Tables\Columns\TagsColumn::make('units.name'),
+                Tables\Columns\TextColumn::make('roles.name')
+                    ->badge(),
+                Tables\Columns\TextColumn::make('units.name')
+                    ->badge(),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean(),
             ])
