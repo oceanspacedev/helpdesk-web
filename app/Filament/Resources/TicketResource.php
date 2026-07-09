@@ -17,6 +17,8 @@ use Filament\Forms;
 use Filament\Actions;
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Resources\Resource;
 use Filament\Tables\Table;
 use Filament\Tables;
@@ -46,7 +48,7 @@ class TicketResource extends Resource
                             ->pluck('name', 'id'))
                         ->searchable()
                         ->required()
-                        ->afterStateUpdated(function ($state, callable $get, callable $set) {
+                        ->afterStateUpdated(function (?int $state, Get $get, Set $set): void {
                             $unit = Unit::find($state);
                             if ($unit) {
                                 $problemCategoryId = (int) $get('problem_category_id');
@@ -57,17 +59,17 @@ class TicketResource extends Resource
                                 }
                             }
                         })
-                        ->reactive(),
+                        ->live(),
 
                     Forms\Components\Select::make('problem_category_id')
                         ->label(__('Problem Category'))
-                        ->options(function (callable $get, callable $set) {
+                        ->options(function (Get $get): array {
                             $unit = Unit::find($get('unit_id'));
                             if ($unit) {
-                                return $unit->problemCategories->pluck('name', 'id');
+                                return $unit->problemCategories->pluck('name', 'id')->all();
                             }
 
-                            return ProblemCategory::all()->pluck('name', 'id');
+                            return ProblemCategory::all()->pluck('name', 'id')->all();
                         })
                         ->searchable()
                         ->required(),
