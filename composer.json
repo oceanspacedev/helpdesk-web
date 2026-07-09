@@ -15,8 +15,8 @@
         "bezhansalleh/filament-language-switch": "^5.0",
         "bezhansalleh/filament-shield": "^4.2",
         "dutchcodingcompany/filament-socialite": "^3.2",
-        "filament/filament": "^4.12@beta",
-        "filament/infolists": "^4.12@beta",
+        "filament/filament": "^4.11",
+        "filament/infolists": "^4.11",
         "guzzlehttp/guzzle": "^7.2",
         "jeffgreco13/filament-breezy": "^3.2",
         "laravel/framework": "^12.61",
@@ -97,6 +97,6 @@
             "php-http/discovery": true
         }
     },
-    "minimum-stability": "beta",
+    "minimum-stability": "stable",
     "prefer-stable": true
 }
