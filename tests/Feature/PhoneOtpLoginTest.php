@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Auth\Pages\PhoneLogin;
 use App\Models\User;
 use App\Services\WhatsAppGateway;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class PhoneOtpLoginTest extends TestCase
@@ -35,9 +37,9 @@ class PhoneOtpLoginTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->post('/phone-login/send', [
-            'phone' => '0800-0000-0000',
-        ])
+        Livewire::test(PhoneLogin::class)
+            ->fillForm(['phone' => '0800-0000-0000'])
+            ->call('send')
             ->assertRedirect(route('phone-login.verify'));
 
         $this->assertCount(1, $this->whatsAppGateway->messages);
@@ -59,10 +61,10 @@ class PhoneOtpLoginTest extends TestCase
 
     public function test_phone_otp_login_rejects_unknown_phone_numbers(): void
     {
-        $this->post('/phone-login/send', [
-            'phone' => '0812-0000-9999',
-        ])
-            ->assertSessionHasErrors('phone');
+        Livewire::test(PhoneLogin::class)
+            ->fillForm(['phone' => '0812-0000-9999'])
+            ->call('send')
+            ->assertHasFormErrors(['phone' => 'Nomor HP belum terdaftar atau tidak aktif.']);
 
         $this->assertSame([], $this->whatsAppGateway->messages);
         $this->assertSame(0, User::count());
@@ -78,9 +80,10 @@ class PhoneOtpLoginTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->post('/phone-login/send', [
-            'phone' => '0800-0000-0000',
-        ]);
+        Livewire::test(PhoneLogin::class)
+            ->fillForm(['phone' => '0800-0000-0000'])
+            ->call('send')
+            ->assertRedirect(route('phone-login.verify'));
 
         $this->post('/phone-login/verify', [
             'phone' => '6280000000000',

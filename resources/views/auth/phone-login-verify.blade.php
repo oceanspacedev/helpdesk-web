@@ -1,45 +1,76 @@
-<!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Verifikasi OTP</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="min-h-screen bg-gray-100 text-gray-900">
-    <main class="flex min-h-screen items-center justify-center px-4">
-        <section class="w-full max-w-md rounded-xl border border-gray-200 bg-white p-8 shadow-xl">
-            <h1 class="text-2xl font-semibold">Verifikasi OTP</h1>
-            <p class="mt-2 text-sm text-gray-600">Masukkan 6 digit kode yang dikirim ke WhatsApp.</p>
+@php
+    use Filament\Support\Icons\Heroicon;
+@endphp
 
-            @if (session('status'))
-                <div class="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">
-                    {{ session('status') }}
+@extends('auth.layout')
+
+@section('content')
+    @include('auth.partials.header', [
+        'icon' => Heroicon::ChatBubbleLeftRight,
+        'title' => 'Verifikasi OTP',
+        'description' => 'Masukkan 6 digit kode yang dikirim ke WhatsApp (' . old('phone', $phone) . ')',
+        'backUrl' => route('phone-login'),
+        'backLabel' => 'Kirim ulang OTP atau ganti nomor',
+    ])
+
+    <div class="mt-8 space-y-6">
+        @if (session('status'))
+            <div class="rounded-lg bg-emerald-50 p-3 text-sm font-medium text-emerald-800 ring-1 ring-emerald-600/20 dark:bg-emerald-950/50 dark:text-emerald-300">
+                {{ session('status') }}
+            </div>
+        @endif
+
+        @if ($errors->has('phone'))
+            <div data-validation-error class="fi-fo-field-wrp-error-message text-sm text-danger-600 dark:text-danger-400">
+                {{ $errors->first('phone') }}
+            </div>
+        @endif
+
+        <form method="POST" action="{{ route('phone-login.verify.submit') }}" class="fi-sc-form">
+            @csrf
+            <input type="hidden" name="phone" value="{{ old('phone', $phone) }}">
+
+            <div class="fi-grid fi-sc fi-sc-has-gap" style="--cols-default: repeat(1, minmax(0, 1fr));">
+                <div class="fi-grid-col" style="--col-span-default: span 1 / span 1;">
+                    <div class="fi-sc-component">
+                        <div data-field-wrapper class="fi-fo-field">
+                            <div class="fi-fo-field-label-col">
+                                <div class="fi-fo-field-label-ctn">
+                                    <label for="otp" class="fi-fo-field-label">
+                                        <span class="fi-fo-field-label-content">
+                                            Kode OTP<sup class="fi-fo-field-label-required-mark">*</sup>
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="fi-fo-field-content-col">
+                                <x-filament::input.wrapper :valid="! $errors->has('otp')">
+                                    <x-filament::input
+                                        id="otp"
+                                        name="otp"
+                                        type="text"
+                                        inputmode="numeric"
+                                        autocomplete="one-time-code"
+                                        required
+                                        maxlength="6"
+                                        autofocus
+                                        class="text-center text-xl font-mono tracking-widest"
+                                    />
+                                </x-filament::input.wrapper>
+
+                                @if ($errors->has('otp'))
+                                    <div data-validation-error class="fi-fo-field-wrp-error-message mt-2 text-sm text-danger-600 dark:text-danger-400">
+                                        {{ $errors->first('otp') }}
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            @endif
+            </div>
 
-            @if ($errors->any())
-                <div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
-                    {{ $errors->first() }}
-                </div>
-            @endif
-
-            <form class="mt-6 space-y-4" method="POST" action="{{ route('phone-login.verify.submit') }}">
-                @csrf
-                <input type="hidden" name="phone" value="{{ old('phone', $phone) }}">
-                <label class="block">
-                    <span class="text-sm font-medium text-gray-700">Kode OTP</span>
-                    <input name="otp" autocomplete="one-time-code" inputmode="numeric" required maxlength="6"
-                        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-center text-xl tracking-widest focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                </label>
-
-                <button type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700">
-                    Login
-                </button>
-            </form>
-
-            <a class="mt-4 block text-center text-sm text-blue-600" href="{{ route('phone-login') }}">Kirim ulang OTP</a>
-        </section>
-    </main>
-</body>
-</html>
+            @include('auth.partials.submit-button', ['label' => 'Verifikasi & Login'])
+        </form>
+    </div>
+@endsection
