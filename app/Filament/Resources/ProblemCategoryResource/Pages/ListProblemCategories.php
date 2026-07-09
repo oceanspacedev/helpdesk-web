@@ -10,7 +10,7 @@ class ListProblemCategories extends ListRecords
 {
     protected static string $resource = ProblemCategoryResource::class;
 
-    protected function getActions(): array
+    protected function getHeaderActions(): array
     {
         return [
             Actions\CreateAction::make(),

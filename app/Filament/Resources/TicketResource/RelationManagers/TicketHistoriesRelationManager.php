@@ -3,7 +3,7 @@
 namespace App\Filament\Resources\TicketResource\RelationManagers;
 
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Schemas\Schema;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Table;
 use Filament\Tables;
@@ -16,7 +16,7 @@ class TicketHistoriesRelationManager extends RelationManager
 
     protected static ?string $recordTitleAttribute = 'tiket_id';
 
-    public function form(Form $form): Form
+    public function form(Schema $form): Schema
     {
         return $form
             ->schema([

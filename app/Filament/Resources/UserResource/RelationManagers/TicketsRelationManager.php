@@ -4,7 +4,8 @@ namespace App\Filament\Resources\UserResource\RelationManagers;
 
 use App\Models\Ticket;
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Actions;
+use Filament\Schemas\Schema;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Table;
 use Filament\Tables;
@@ -15,7 +16,7 @@ class TicketsRelationManager extends RelationManager
 
     protected static ?string $recordTitleAttribute = 'title';
 
-    public function form(Form $form): Form
+    public function form(Schema $form): Schema
     {
         return $form
             ->schema([
@@ -50,8 +51,8 @@ class TicketsRelationManager extends RelationManager
             ->headerActions([
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()
-                    ->url(fn (Ticket $record): string => route('filament.resources.tickets.view', $record)),
+                Actions\ViewAction::make()
+                    ->url(fn (Ticket $record): string => route('filament.admin.resources.tickets.view', $record)),
             ])
             ->bulkActions([
             ])

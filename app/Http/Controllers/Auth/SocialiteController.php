@@ -27,7 +27,7 @@ class SocialiteController extends Controller
 
         if (! $authUser) {
             return redirect()
-                ->route('filament.auth.login')
+                ->route('filament.admin.auth.login')
                 ->withErrors([
                     'email' => 'Akun Helpdesk belum tersedia. Buat akun melalui ITA atau hubungi admin.',
                 ]);
@@ -37,7 +37,7 @@ class SocialiteController extends Controller
         Auth()->login($authUser, true);
 
         // setelah login redirect ke dashboard
-        return redirect()->route('filament.pages.dashboard');
+        return redirect()->route('filament.admin.pages.dashboard');
     }
 
     public function findOrCreateUser($socialUser, $provider): ?User

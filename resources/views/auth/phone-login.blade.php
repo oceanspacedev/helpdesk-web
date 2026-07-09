@@ -31,7 +31,7 @@
                 </button>
             </form>
 
-            <a class="mt-4 block text-center text-sm text-blue-600" href="{{ route('filament.auth.login') }}">Login pakai email</a>
+            <a class="mt-4 block text-center text-sm text-blue-600" href="{{ route('filament.admin.auth.login') }}">Login pakai email</a>
         </section>
     </main>
 </body>

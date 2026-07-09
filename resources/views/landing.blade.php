@@ -19,7 +19,7 @@
                         class="self-center text-xl font-semibold whitespace-nowrap dark:text-white">{{ config('app.name') }}</span>
                 </a>
                 <div class="flex items-center lg:order-2">
-                    <a href="{{ route('filament.auth.login') }}"
+                    <a href="{{ route('filament.admin.auth.login') }}"
                         class="text-white bg-primary-700 hover:bg-primary-800 focus:ring-4 focus:ring-primary-300 font-medium rounded-lg text-sm px-5 py-2.5 mr-2 dark:bg-primary-600 dark:hover:bg-primary-700 focus:outline-none dark:focus:ring-primary-800">
                         {{ __('Login') }}</a>
                 </div>
@@ -35,7 +35,7 @@
                     {{ config('app.name') }}</h1>
                 <p class="mb-6 max-w-2xl font-light text-gray-500 lg:mb-8 md:text-lg lg:text-xl dark:text-gray-400">
                     {{ env('APP_DESCRIPTION', 'This is descriptions') }}</p>
-                <a href="{{ route('filament.auth.login') }}"
+                <a href="{{ route('filament.admin.auth.login') }}"
                     class="inline-flex justify-center items-center py-3 px-5 mr-3 text-base font-medium text-center text-white rounded-lg bg-primary-700 hover:bg-primary-800 focus:ring-4 focus:ring-primary-300 dark:focus:ring-primary-900">
                     {{ __('Login') }}
                 </a>

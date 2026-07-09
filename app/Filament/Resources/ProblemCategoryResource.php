@@ -7,7 +7,8 @@ use App\Filament\Resources\ProblemCategoryResource\RelationManagers\TicketsRelat
 use App\Models\ProblemCategory;
 use App\Models\Unit;
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Actions;
+use Filament\Schemas\Schema;
 use Filament\Resources\Resource;
 use Filament\Tables\Table;
 use Filament\Tables;
@@ -18,11 +19,11 @@ class ProblemCategoryResource extends Resource
 {
     protected static ?string $model = ProblemCategory::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-link';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-link';
 
     protected static ?int $navigationSort = 5;
 
-    public static function form(Form $form): Form
+    public static function form(Schema $form): Schema
     {
         return $form
             ->schema([
@@ -62,13 +63,13 @@ class ProblemCategoryResource extends Resource
                  Tables\Filters\TrashedFilter::make(),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                Actions\ViewAction::make(),
+                Actions\EditAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\DeleteBulkAction::make(),
-                Tables\Actions\ForceDeleteBulkAction::make(),
-                Tables\Actions\RestoreBulkAction::make(),
+                Actions\DeleteBulkAction::make(),
+                Actions\ForceDeleteBulkAction::make(),
+                Actions\RestoreBulkAction::make(),
             ]);
     }
 

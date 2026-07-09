@@ -15,12 +15,12 @@ return [
 
     /** Icons to use for navigation (if enabled) and pills */
     'icons' => [
-        'navigation' => 'heroicon-o-chip',
-        'exception' => 'heroicon-o-chip',
-        'headers' => 'heroicon-o-switch-horizontal',
-        'cookies' => 'heroicon-o-database',
-        'body' => 'heroicon-s-code',
-        'queries' => 'heroicon-s-database',
+        'navigation' => 'heroicon-o-cpu-chip',
+        'exception' => 'heroicon-o-cpu-chip',
+        'headers' => 'heroicon-o-arrows-right-left',
+        'cookies' => 'heroicon-o-circle-stack',
+        'body' => 'heroicon-s-code-bracket',
+        'queries' => 'heroicon-s-circle-stack',
     ],
 
     'is_globally_searchable' => false,

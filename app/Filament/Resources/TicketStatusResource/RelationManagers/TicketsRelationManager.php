@@ -4,7 +4,8 @@ namespace App\Filament\Resources\TicketStatusResource\RelationManagers;
 
 use App\Models\Ticket;
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Actions;
+use Filament\Schemas\Schema;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Table;
 use Filament\Tables;
@@ -38,8 +39,8 @@ class TicketsRelationManager extends RelationManager
             ->filters([])
             ->headerActions([])
             ->actions([
-                Tables\Actions\ViewAction::make()
-                    ->url(fn (Ticket $record): string => route('filament.resources.tickets.view', $record)),
+                Actions\ViewAction::make()
+                    ->url(fn (Ticket $record): string => route('filament.admin.resources.tickets.view', $record)),
             ])
             ->bulkActions([]);
     }

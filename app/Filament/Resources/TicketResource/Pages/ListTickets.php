@@ -13,12 +13,12 @@ class ListTickets extends ListRecords
 {
     protected static string $resource = TicketResource::class;
 
-    protected function getActions(): array
+    protected function getHeaderActions(): array
     {
         return [
             ExportAction::make('export')
             ->label('Export')
-            ->icon('heroicon-o-document-download')
+            ->icon('heroicon-o-document-arrow-down')
             ->color('success')
             ->exports([
                 ExcelExport::make()->fromTable()->withColumns([

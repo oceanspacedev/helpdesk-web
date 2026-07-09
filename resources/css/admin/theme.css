@@ -1,0 +1,84 @@
+@import '../../../vendor/apriansyahrs/mekaya-theme/resources/css/theme.css';
+
+@source '../../../vendor/awcodes/overlook/resources/views/**/*.blade.php';
+
+@layer components {
+    #overlook-widget > div {
+        display: grid;
+        grid-template-columns: var(--cols-default, repeat(1, minmax(0, 1fr)));
+        gap: 1rem;
+    }
+
+    #overlook-widget .overlook-card {
+        position: relative;
+        min-height: 6rem;
+        overflow: hidden;
+        border-radius: 0.75rem;
+    }
+
+    #overlook-widget .overlook-card .fi-section-content,
+    #overlook-widget .overlook-card .fi-section-content-ctn {
+        min-height: 6rem;
+        padding: 0;
+    }
+
+    #overlook-widget .overlook-link {
+        position: absolute;
+        inset: 0;
+        display: block;
+        padding: 0.75rem 1rem;
+    }
+
+    #overlook-widget .overlook-name {
+        position: relative;
+        z-index: 1;
+        display: block;
+        max-width: calc(100% - 4rem);
+        font-size: 0.875rem;
+        font-weight: 600;
+        line-height: 1.25rem;
+    }
+
+    #overlook-widget .overlook-count {
+        position: absolute;
+        right: 1rem;
+        bottom: 0.75rem;
+        z-index: 1;
+        font-size: 1.875rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    #overlook-widget .overlook-icon {
+        position: absolute;
+        left: 0;
+        top: 2rem;
+        height: 6rem;
+        width: auto;
+        opacity: 0.2;
+    }
+
+    @media (min-width: 640px) {
+        #overlook-widget > div {
+            grid-template-columns: var(--cols-sm, repeat(2, minmax(0, 1fr)));
+        }
+    }
+
+    @media (min-width: 768px) {
+        #overlook-widget > div {
+            grid-template-columns: var(--cols-md, repeat(3, minmax(0, 1fr)));
+        }
+    }
+
+    @media (min-width: 1024px) {
+        #overlook-widget > div {
+            grid-template-columns: var(--cols-lg, repeat(4, minmax(0, 1fr)));
+        }
+    }
+
+    @media (min-width: 1280px) {
+        #overlook-widget > div {
+            grid-template-columns: var(--cols-xl, repeat(4, minmax(0, 1fr)));
+        }
+    }
+}

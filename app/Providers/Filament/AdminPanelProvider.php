@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\MyProfile;
+use Apriansyahrs\MekayaTheme\MekayaPlugin;
 use Awcodes\Overlook\OverlookPlugin;
 use Awcodes\Overlook\Widgets\OverlookWidget;
 use BezhanSalleh\FilamentExceptions\FilamentExceptionsPlugin;
@@ -14,7 +15,7 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Support\Enums\MaxWidth;
+use Filament\Support\Enums\Width;
 use Filament\Widgets;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -87,6 +88,7 @@ class AdminPanelProvider extends PanelProvider
                 Authenticate::class,
             ])
             ->plugins([
+                MekayaPlugin::make(),
                 BreezyCore::make()
                     ->myProfile(
                         shouldRegisterUserMenu: true,
@@ -131,9 +133,7 @@ class AdminPanelProvider extends PanelProvider
                         '2xl' => null,
                     ]),
             ])
-            ->maxContentWidth(MaxWidth::Full)
-            ->resources([
-                config('filament-logger.activity_resource'),
-            ]);
+            ->viteTheme('resources/css/admin/theme.css')
+            ->maxContentWidth(Width::Full);
     }
 }

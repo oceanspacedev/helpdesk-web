@@ -6,7 +6,8 @@ use App\Filament\Resources\BusinessEntityResource\Pages;
 use App\Filament\Resources\BusinessEntityResource\RelationManagers;
 use App\Models\BusinessEntity;
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Actions;
+use Filament\Schemas\Schema;
 use Filament\Resources\Resource;
 use Filament\Tables\Table;
 use Filament\Tables;
@@ -17,11 +18,11 @@ class BusinessEntityResource extends Resource
 {
     protected static ?string $model = BusinessEntity::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-collection';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-rectangle-stack';
 
-    protected static ?string $navigationGroup = 'Master Data';
+    protected static string | \UnitEnum | null $navigationGroup = 'Master Data';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $form): Schema
     {
         return $form
             ->schema([
@@ -41,13 +42,13 @@ class BusinessEntityResource extends Resource
                 Tables\Filters\TrashedFilter::make(),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Actions\EditAction::make(),
+                Actions\DeleteAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\DeleteBulkAction::make(),
-                Tables\Actions\ForceDeleteBulkAction::make(),
-                Tables\Actions\RestoreBulkAction::make(),
+                Actions\DeleteBulkAction::make(),
+                Actions\ForceDeleteBulkAction::make(),
+                Actions\RestoreBulkAction::make(),
             ]);
     }
 

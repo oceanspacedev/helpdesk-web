@@ -1,77 +1,118 @@
 <?php
 
+declare(strict_types=1);
+
+use BezhanSalleh\FilamentShield\Resources\Roles\RoleResource;
+use Filament\Pages\Dashboard;
+use Filament\Widgets\AccountWidget;
+use Filament\Widgets\FilamentInfoWidget;
+
 return [
     'shield_resource' => [
-        'should_register_navigation' => true,
         'slug' => 'shield/roles',
-        'navigation_sort' => -1,
-        'navigation_badge' => true,
-        'navigation_group' => true,
-        'is_globally_searchable' => false,
         'show_model_path' => true,
+        'cluster' => null,
+        'tabs' => [
+            'pages' => false,
+            'widgets' => false,
+            'resources' => true,
+            'custom_permissions' => false,
+        ],
     ],
 
-    'auth_provider_model' => [
-        'fqcn' => 'App\\Models\\User',
-    ],
+    'tenant_model' => null,
+
+    'auth_provider_model' => App\Models\User::class,
 
     'super_admin' => [
         'enabled' => true,
         'name' => 'Super Admin',
         'define_via_gate' => false,
-        'intercept_gate' => 'before', // after
+        'intercept_gate' => 'before',
     ],
 
-    'filament_user' => [
+    'panel_user' => [
         'enabled' => true,
         'name' => 'User',
     ],
 
-    'permission_prefixes' => [
-        'resource' => [
+    'permissions' => [
+        'separator' => ':',
+        'case' => 'pascal',
+        'generate' => true,
+    ],
+
+    'policies' => [
+        'path' => app_path('Policies'),
+        'merge' => true,
+        'generate' => true,
+        'methods' => [
+            'viewAny',
             'view',
-            'view_any',
             'create',
             'update',
-            'restore',
-            'restore_any',
             'delete',
-            'delete_any',
-            'force_delete',
-            'force_delete_any',
+            'deleteAny',
+            'restore',
+            'forceDelete',
+            'forceDeleteAny',
+            'restoreAny',
+            'replicate',
+            'reorder',
         ],
-
-        'page' => 'page',
-        'widget' => 'widget',
-    ],
-
-    'entities' => [
-        'pages' => false,
-        'widgets' => false,
-        'resources' => true,
-        'custom_permissions' => false,
-    ],
-
-    'generator' => [
-        'option' => 'policies_and_permissions',
-    ],
-
-    'exclude' => [
-        'enabled' => true,
-
-        'pages' => [
-            'Dashboard',
+        'single_parameter_methods' => [
+            'viewAny',
+            'create',
+            'deleteAny',
+            'forceDeleteAny',
+            'restoreAny',
+            'reorder',
         ],
+    ],
 
-        'widgets' => [
-            'AccountWidget', 'FilamentInfoWidget',
+    'localization' => [
+        'enabled' => false,
+        'key' => 'filament-shield::filament-shield.resource_permission_prefixes_labels',
+    ],
+
+    'resources' => [
+        'subject' => 'model',
+        'manage' => [
+            RoleResource::class => [
+                'viewAny',
+                'view',
+                'create',
+                'update',
+                'delete',
+            ],
         ],
-
-        'resources' => [],
+        'exclude' => [],
     ],
 
-    'register_role_policy' => [
-        'enabled' => true,
+    'pages' => [
+        'subject' => 'class',
+        'prefix' => 'view',
+        'exclude' => [
+            Dashboard::class,
+        ],
     ],
 
+    'widgets' => [
+        'subject' => 'class',
+        'prefix' => 'view',
+        'exclude' => [
+            AccountWidget::class,
+            FilamentInfoWidget::class,
+        ],
+    ],
+
+    'custom_permissions' => [],
+
+    'discovery' => [
+        'discover_all_resources' => false,
+        'discover_all_widgets' => false,
+        'discover_all_pages' => false,
+    ],
+
+    'register_role_policy' => true,
 ];

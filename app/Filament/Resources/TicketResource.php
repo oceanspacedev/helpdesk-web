@@ -14,8 +14,9 @@ use App\Models\Unit;
 use App\Models\User;
 use Carbon\Carbon;
 use Filament\Forms;
-use Filament\Forms\Components\Card;
-use Filament\Forms\Form;
+use Filament\Actions;
+use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Section;
 use Filament\Resources\Resource;
 use Filament\Tables\Table;
 use Filament\Tables;
@@ -28,17 +29,17 @@ class TicketResource extends Resource
 {
     protected static ?string $model = Ticket::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-ticket';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-ticket';
 
     protected static ?int $navigationSort = 3;
 
     protected static ?string $recordTitleAttribute = 'title';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $form): Schema
     {
         return $form
             ->schema([
-                Card::make()->schema([
+                Section::make()->schema([
                     Forms\Components\Select::make('unit_id')
                         ->label(__('Work Unit'))
                         ->options(Unit::all()
@@ -157,7 +158,7 @@ class TicketResource extends Resource
                     'sm' => 2,
                 ])->columnSpan(2),
 
-                Card::make()->schema([
+                Section::make()->schema([
                     Forms\Components\Select::make('priority_id')
                         ->label(__('Priority'))
                         ->options(Priority::all()
@@ -264,7 +265,7 @@ class TicketResource extends Resource
                     ->icons([
                         'heroicon-o-sparkles' => static fn ($state): bool => $state === 'Open',
                         'heroicon-o-paper-airplane' => static fn ($state): bool => $state === 'In Progress',
-                        'heroicon-o-x' => static fn ($state): bool => $state === 'Cancel',
+                        'heroicon-o-x-mark' => static fn ($state): bool => $state === 'Cancel',
                         'heroicon-o-check' => static fn ($state): bool => $state === 'Closed',
                     ]),
                 Tables\Columns\TextColumn::make('created_at')
@@ -330,14 +331,14 @@ class TicketResource extends Resource
                 Tables\Filters\TrashedFilter::make(),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\ForceDeleteAction::make(),
+                Actions\ViewAction::make(),
+                Actions\EditAction::make(),
+                Actions\ForceDeleteAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\DeleteBulkAction::make(),
-                Tables\Actions\ForceDeleteBulkAction::make(),
-                Tables\Actions\RestoreBulkAction::make(),
+                Actions\DeleteBulkAction::make(),
+                Actions\ForceDeleteBulkAction::make(),
+                Actions\RestoreBulkAction::make(),
             ])
             ->defaultSort('created_at', 'desc');
     }

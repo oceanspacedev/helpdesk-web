@@ -148,6 +148,11 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
         return (bool) $this->is_active;
     }
 
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole(config('filament-shield.super_admin.name', 'Super Admin'));
+    }
+
     /**
      * Add scope to display users based on their role.
      *

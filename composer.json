@@ -9,26 +9,26 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
-        "awcodes/overlook": "^2.2",
-        "bezhansalleh/filament-exceptions": "^2.1",
-        "bezhansalleh/filament-language-switch": "^3.1",
-        "bezhansalleh/filament-shield": "^3.2",
-        "dutchcodingcompany/filament-socialite": "^2.4",
-        "filament/filament": "^3.2",
-        "filament/infolists": "^3.2",
+        "apriansyahrs/mekaya-theme": "@dev",
+        "awcodes/overlook": "^3.0",
+        "bezhansalleh/filament-exceptions": "^4.2",
+        "bezhansalleh/filament-language-switch": "^5.0",
+        "bezhansalleh/filament-shield": "^4.2",
+        "dutchcodingcompany/filament-socialite": "^3.2",
+        "filament/filament": "^4.12@beta",
+        "filament/infolists": "^4.12@beta",
         "guzzlehttp/guzzle": "^7.2",
-        "jeffgreco13/filament-breezy": "^2.6",
-        "laravel/framework": "^11.00",
+        "jeffgreco13/filament-breezy": "^3.2",
+        "laravel/framework": "^12.61",
         "laravel/sanctum": "^4.0",
         "laravel/socialite": "^5.28",
         "laravel/tinker": "^2.8",
         "league/flysystem-aws-s3-v3": "^3.28",
-        "leandrocfe/filament-apex-charts": "^3.2",
+        "leandrocfe/filament-apex-charts": "^5.1",
         "owenvoke/blade-fontawesome": "^2.9",
         "pusher/pusher-php-server": "^7.2",
-        "pxlrbt/filament-excel": "^2.3",
-        "stechstudio/filament-impersonate": "^3.16",
-        "z3d0x/filament-logger": "^0.7.2"
+        "pxlrbt/filament-excel": "^3.6",
+        "stechstudio/filament-impersonate": "^5.6"
     },
     "require-dev": {
         "andyabih/laravel-to-uml": "^1.0",
@@ -40,8 +40,8 @@
         "laravel/pint": "^1.0",
         "laravel/sail": "^1.18",
         "mockery/mockery": "^1.4.4",
-        "nunomaduro/collision": "^8.1",
-        "phpunit/phpunit": "^10.1",
+        "nunomaduro/collision": "^8.8.2",
+        "phpunit/phpunit": "^11.5",
         "reliese/laravel": "^1.2",
         "spatie/laravel-ignition": "^2.0"
     },
@@ -73,6 +73,13 @@
             "@php artisan key:generate --ansi"
         ]
     },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/apriansyahrs/mekaya-theme.git",
+            "no-api": true
+        }
+    ],
     "extra": {
         "laravel": {
             "dont-discover": []
@@ -80,13 +87,16 @@
     },
     "config": {
         "optimize-autoloader": true,
-        "preferred-install": "dist",
+        "preferred-install": {
+            "apriansyahrs/mekaya-theme": "source",
+            "*": "dist"
+        },
         "sort-packages": true,
         "allow-plugins": {
             "pestphp/pest-plugin": true,
             "php-http/discovery": true
         }
     },
-    "minimum-stability": "stable",
+    "minimum-stability": "beta",
     "prefer-stable": true
 }

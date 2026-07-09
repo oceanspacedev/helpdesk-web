@@ -5,10 +5,11 @@ namespace App\Filament\Resources\TicketResource\RelationManagers;
 use App\Filament\Resources\TicketResource;
 use App\Models\User;
 use Filament\Forms;
-use Filament\Forms\Components\Card;
-use Filament\Notifications\Actions\Action;
+use Filament\Actions;
+use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
-use Filament\Forms\Form;
+use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Section;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Table;
 use Filament\Tables;
@@ -29,11 +30,11 @@ class CommentsRelationManager extends RelationManager
         return false;
     }
 
-    public function form(Form $form): Form
+    public function form(Schema $form): Schema
     {
         return $form
             ->schema([
-                Card::make()->schema([
+                Section::make()->schema([
                     Forms\Components\RichEditor::make('comment')
                         ->required(),
                     Forms\Components\FileUpload::make('attachments')
@@ -67,7 +68,7 @@ class CommentsRelationManager extends RelationManager
             ])
             ->filters([])
             ->headerActions([
-                Tables\Actions\CreateAction::make()->mutateFormDataUsing(function (array $data): array {
+                Actions\CreateAction::make()->mutateFormDataUsing(function (array $data): array {
                     $data['user_id'] = auth()->id();
 
                     return $data;
@@ -92,17 +93,17 @@ class CommentsRelationManager extends RelationManager
                         Notification::make()
                             ->title('Terdapat komentar baru pada tiket Anda')
                             ->actions([
-                                Action::make('Lihat')
+                                NotificationAction::make('Lihat')
                                     ->url(TicketResource::getUrl('view', ['record' => $ticket->id])),
                             ])
                             ->sendToDatabase($receiver);
                     }),
             ])
             ->actions([
-                Tables\Actions\Action::make('attachment')->action(function ($record) {
+                Actions\Action::make('attachment')->action(function ($record) {
                     return Storage::download($record->attachments);
                 })->hidden(fn ($record) => $record->attachments == ''),
-                Tables\Actions\EditAction::make(),
+                Actions\EditAction::make(),
             ])
             ->bulkActions([]);
     }
