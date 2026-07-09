@@ -1,7 +1,7 @@
  <img src="screenshot/create-ticket.png" width="100%"></img> 
 ## Helpdesk Laravel
 
-The Helpdesk Laravel repository is a project aimed at providing a web-based helpdesk system using the [**Laravel Framewrok v10**](https://laravel.com)   and [**Filament v2**](https://github.com/filamentphp). Helpdesk is a system that allows users to submit questions, request assistance, or report issues related to a company's products or services.
+The Helpdesk Laravel repository is a project aimed at providing a web-based helpdesk system using [**Laravel 12**](https://laravel.com) and [**Filament 4**](https://github.com/filamentphp/filament). Helpdesk is a system that allows users to submit questions, request assistance, or report issues related to a company's products or services.
 
 In this repository, you will find the complete source code implemented using Laravel, a popular and powerful PHP framework. This project is designed to assist web developers in building and managing helpdesk systems with ease.
 
@@ -27,7 +27,9 @@ Feel free to explore this repository and start building a robust and responsive 
 <hr/>
 
 ## Requirements
-* PHP 8.1 or higher
+* PHP 8.2 or higher
+* Laravel 12.x
+* Filament 4.x
 * Database (eg: MySQL, PostgreSQL, SQLite)
 * Web Server (eg: Apache, Nginx, IIS)
 
