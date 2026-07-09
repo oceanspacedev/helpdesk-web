@@ -43,7 +43,7 @@ class AdminPanelProvider extends PanelProvider
                 fn () => view('auth.login-extra'),
             )
             ->colors([
-                'primary' => Color::Blue,
+                'primary' => Color::Orange,
 
                 'slate' => Color::Slate,
                 'gray' => Color::Gray,
@@ -94,7 +94,8 @@ class AdminPanelProvider extends PanelProvider
                 Authenticate::class,
             ])
             ->plugins([
-                MekayaPlugin::make(),
+                MekayaPlugin::make()
+                    ->colors(['primary' => Color::Orange]),
                 BreezyCore::make()
                     ->myProfile(
                         shouldRegisterUserMenu: true,

@@ -3,6 +3,12 @@
 @source '../../../vendor/awcodes/overlook/resources/views/**/*.blade.php';
 
 @layer components {
+    .whatsapp-login-icon,
+    .whatsapp-login-icon path {
+        fill: #25d366 !important;
+        color: #25d366 !important;
+    }
+
     #overlook-widget > div {
         display: grid;
         grid-template-columns: var(--cols-default, repeat(1, minmax(0, 1fr)));
