@@ -37,6 +37,7 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->brandName('Helpdesk')
+            ->favicon(asset('images/icon.svg'))
             ->login()
             ->renderHook(
                 PanelsRenderHook::AUTH_LOGIN_FORM_AFTER,

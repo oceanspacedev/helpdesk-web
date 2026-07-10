@@ -16,7 +16,7 @@ return [
         'brand_logo_height' => '2rem',
 
         // Favicon path (relative to /public).
-        'favicon' => 'admin/images/favicons/favicon.ico',
+        'favicon' => 'images/icon.svg',
     ],
 
     'settings' => [
