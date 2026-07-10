@@ -9,7 +9,6 @@ use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
-use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
@@ -183,26 +182,7 @@ return [
         'polling_interval' => '30s',
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Broadcasting
-    |--------------------------------------------------------------------------
-    |
-    | By uncommenting the Laravel Echo configuration, you may connect your
-    | admin panel to any Pusher-compatible websockets server.
-    |
-    | This will allow your admin panel to receive real-time notifications.
-    |
-    */
 
-    'broadcasting' => [
-        'echo' => [
-            'broadcaster' => 'pusher',
-            'key' => env('VITE_PUSHER_APP_KEY'),
-            'cluster' => env('VITE_PUSHER_APP_CLUSTER'),
-            'forceTLS' => true,
-        ],
-    ],
 
     /*
     |--------------------------------------------------------------------------
@@ -318,7 +298,6 @@ return [
             EncryptCookies::class,
             AddQueuedCookiesToResponse::class,
             StartSession::class,
-            AuthenticateSession::class,
             ShareErrorsFromSession::class,
             VerifyCsrfToken::class,
             SubstituteBindings::class,
