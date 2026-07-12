@@ -1,7 +1,6 @@
 <?php
 
 use App\Filament\Auth\Pages\PhoneLogin;
-use App\Http\Controllers\Auth\PhoneOtpLoginController;
 use App\Http\Controllers\Auth\SocialiteController;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -28,9 +27,6 @@ Route::get('/phone-login', PhoneLogin::class)
         DispatchServingFilamentEvent::class,
     ])
     ->name('phone-login');
-
-Route::get('/phone-login/verify', [PhoneOtpLoginController::class, 'showVerifyForm'])->name('phone-login.verify');
-Route::post('/phone-login/verify', [PhoneOtpLoginController::class, 'verifyOtp'])->name('phone-login.verify.submit');
 
 // socialite login
 Route::get('/auth/{provider}', [SocialiteController::class, 'redirectToProvider']);

@@ -45,7 +45,8 @@ class PhoneOtpLoginTest extends TestCase
             ->call('send')
             ->assertNoRedirect()
             ->assertSet('awaitingOtp', true)
-            ->assertSet('data.phone', '6280000000000');
+            ->assertSet('data.phone', '6280000000000')
+            ->assertSeeHtml('wire:submit="verify"');
 
         $this->assertCount(1, $this->whatsAppGateway->messages);
         $this->assertSame('6280000000000', $this->whatsAppGateway->messages[0]['phone']);
@@ -109,13 +110,9 @@ class PhoneOtpLoginTest extends TestCase
         Livewire::test(PhoneLogin::class)
             ->fillForm(['phone' => '0800-0000-0000'])
             ->call('send')
-            ->assertRedirect(route('phone-login.verify'));
-
-        $this->post('/phone-login/verify', [
-            'phone' => '6280000000000',
-            'otp' => '000000',
-        ])
-            ->assertSessionHasErrors('otp');
+            ->set('data.otp', '000000')
+            ->call('verify')
+            ->assertHasFormErrors(['otp' => 'Kode OTP tidak valid atau sudah kedaluwarsa.']);
 
         $this->assertFalse(Auth::check());
     }

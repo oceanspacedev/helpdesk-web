@@ -18,6 +18,7 @@ use Filament\Support\Facades\FilamentIcon;
 use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsIconAlias;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +36,8 @@ class PhoneLogin extends SimplePage
      * @var array<string, mixed>|null
      */
     public ?array $data = [];
+
+    public bool $awaitingOtp = false;
 
     public function mount(): void
     {
@@ -78,10 +81,45 @@ class PhoneLogin extends SimplePage
             'otp_hash' => Hash::make($otp),
         ], now()->addMinutes($ttlMinutes));
 
-        session()->flashInput(['phone' => $user->phone]);
-        session()->flash('status', 'Kode OTP sudah dikirim ke WhatsApp.');
+        $this->awaitingOtp = true;
+        $this->form->fill([
+            'phone' => $user->phone,
+            'otp' => null,
+        ]);
+    }
 
-        $this->redirect(route('phone-login.verify'));
+    public function verify(): void
+    {
+        $data = $this->form->getState();
+        $phone = $this->normalizePhone($data['phone'] ?? null);
+        $user = $phone ? $this->findActiveUserByPhone($phone) : null;
+        $cached = $user ? Cache::get($this->otpCacheKey($user->phone)) : null;
+
+        if (! $user || ! is_array($cached)
+            || (int) ($cached['user_id'] ?? 0) !== (int) $user->id
+            || ! Hash::check((string) ($data['otp'] ?? ''), (string) ($cached['otp_hash'] ?? ''))
+        ) {
+            throw ValidationException::withMessages([
+                'data.otp' => 'Kode OTP tidak valid atau sudah kedaluwarsa.',
+            ]);
+        }
+
+        Cache::forget($this->otpCacheKey($user->phone));
+
+        if ($user->email_verified_at === null) {
+            $user->forceFill(['email_verified_at' => now()])->save();
+        }
+
+        Auth::login($user, true);
+        session()->regenerate();
+
+        $this->redirect('/admin');
+    }
+
+    public function changePhone(): void
+    {
+        $this->awaitingOtp = false;
+        $this->form->fill();
     }
 
     public function defaultForm(Schema $schema): Schema
@@ -95,6 +133,15 @@ class PhoneLogin extends SimplePage
         return $schema
             ->components([
                 $this->getPhoneFormComponent(),
+                TextInput::make('otp')
+                    ->label('Kode OTP')
+                    ->helperText('Masukkan 6 digit kode yang dikirim ke WhatsApp.')
+                    ->required()
+                    ->numeric()
+                    ->length(6)
+                    ->autocomplete('one-time-code')
+                    ->autofocus()
+                    ->visible(fn (): bool => $this->awaitingOtp),
             ]);
     }
 
@@ -106,6 +153,8 @@ class PhoneLogin extends SimplePage
             ->required()
             ->maxLength(30)
             ->autocomplete('tel')
+            ->disabled(fn (): bool => $this->awaitingOtp)
+            ->dehydrated()
             ->autofocus();
     }
 
@@ -121,12 +170,12 @@ class PhoneLogin extends SimplePage
             ->url(filament()->getLoginUrl());
     }
 
-    public function getTitle(): string | Htmlable
+    public function getTitle(): string|Htmlable
     {
         return 'Masuk dengan Nomor HP';
     }
 
-    public function getHeading(): string | Htmlable | null
+    public function getHeading(): string|Htmlable|null
     {
         return 'Masuk dengan Nomor HP';
     }
@@ -137,7 +186,7 @@ class PhoneLogin extends SimplePage
     protected function getFormActions(): array
     {
         return [
-            $this->getSendFormAction(),
+            $this->awaitingOtp ? $this->getVerifyFormAction() : $this->getSendFormAction(),
         ];
     }
 
@@ -148,13 +197,27 @@ class PhoneLogin extends SimplePage
             ->submit('send');
     }
 
+    protected function getVerifyFormAction(): Action
+    {
+        return Action::make('verify')
+            ->label('Verifikasi dan Masuk')
+            ->submit('verify');
+    }
+
     protected function hasFullWidthFormActions(): bool
     {
         return true;
     }
 
-    public function getSubheading(): string | Htmlable | null
+    public function getSubheading(): string|Htmlable|null
     {
+        if ($this->awaitingOtp) {
+            return Action::make('changePhone')
+                ->link()
+                ->label('Ganti nomor atau kirim ulang OTP')
+                ->action('changePhone');
+        }
+
         if (! filament()->hasLogin()) {
             return null;
         }
@@ -174,7 +237,7 @@ class PhoneLogin extends SimplePage
     {
         return Form::make([EmbeddedSchema::make('form')])
             ->id('form')
-            ->livewireSubmitHandler('send')
+            ->livewireSubmitHandler(fn (): string => $this->awaitingOtp ? 'verify' : 'send')
             ->footer([
                 Actions::make($this->getFormActions())
                     ->alignment($this->getFormActionsAlignment())
