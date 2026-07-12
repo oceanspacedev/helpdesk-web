@@ -40,10 +40,12 @@ class PhoneOtpLoginTest extends TestCase
             'is_active' => true,
         ]);
 
-        Livewire::test(PhoneLogin::class)
+        $component = Livewire::test(PhoneLogin::class)
             ->fillForm(['phone' => '0800-0000-0000'])
             ->call('send')
-            ->assertRedirect(route('phone-login.verify'));
+            ->assertNoRedirect()
+            ->assertSet('awaitingOtp', true)
+            ->assertSet('data.phone', '6280000000000');
 
         $this->assertCount(1, $this->whatsAppGateway->messages);
         $this->assertSame('6280000000000', $this->whatsAppGateway->messages[0]['phone']);
@@ -51,15 +53,20 @@ class PhoneOtpLoginTest extends TestCase
 
         preg_match('/(\d{6})/', $this->whatsAppGateway->messages[0]['message'], $matches);
 
-        $this->post('/phone-login/verify', [
-            'phone' => '6280000000000',
-            'otp' => $matches[1],
-        ])
+        $component
+            ->set('data.otp', $matches[1])
+            ->call('verify')
             ->assertRedirect('/admin');
 
         $this->assertTrue(Auth::check());
         $this->assertTrue(Auth::user()->is($user));
         $this->assertNotNull($user->fresh()->email_verified_at);
+    }
+
+    public function test_phone_login_does_not_expose_a_separate_web_verification_form(): void
+    {
+        $this->assertNull(app('router')->getRoutes()->getByName('phone-login.verify'));
+        $this->assertNull(app('router')->getRoutes()->getByName('phone-login.verify.submit'));
     }
 
     public function test_phone_login_route_does_not_run_web_session_and_csrf_middleware_twice(): void
