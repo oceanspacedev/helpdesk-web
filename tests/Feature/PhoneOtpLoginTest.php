@@ -5,7 +5,10 @@ namespace Tests\Feature;
 use App\Filament\Auth\Pages\PhoneLogin;
 use App\Models\User;
 use App\Services\WhatsAppGateway;
+use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
@@ -65,13 +68,13 @@ class PhoneOtpLoginTest extends TestCase
         $middleware = app('router')->gatherRouteMiddleware($route);
 
         $this->assertSame(1, collect($middleware)->filter(
-            fn (string $class): bool => is_a($class, \Illuminate\Cookie\Middleware\EncryptCookies::class, true),
+            fn (string $class): bool => is_a($class, EncryptCookies::class, true),
         )->count());
         $this->assertSame(1, collect($middleware)->filter(
-            fn (string $class): bool => $class === \Illuminate\Session\Middleware\StartSession::class,
+            fn (string $class): bool => $class === StartSession::class,
         )->count());
         $this->assertSame(1, collect($middleware)->filter(
-            fn (string $class): bool => is_a($class, \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class, true),
+            fn (string $class): bool => is_a($class, VerifyCsrfToken::class, true),
         )->count());
     }
 
