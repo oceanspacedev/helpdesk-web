@@ -59,6 +59,22 @@ class PhoneOtpLoginTest extends TestCase
         $this->assertNotNull($user->fresh()->email_verified_at);
     }
 
+    public function test_phone_login_route_does_not_run_web_session_and_csrf_middleware_twice(): void
+    {
+        $route = app('router')->getRoutes()->getByName('phone-login');
+        $middleware = app('router')->gatherRouteMiddleware($route);
+
+        $this->assertSame(1, collect($middleware)->filter(
+            fn (string $class): bool => is_a($class, \Illuminate\Cookie\Middleware\EncryptCookies::class, true),
+        )->count());
+        $this->assertSame(1, collect($middleware)->filter(
+            fn (string $class): bool => $class === \Illuminate\Session\Middleware\StartSession::class,
+        )->count());
+        $this->assertSame(1, collect($middleware)->filter(
+            fn (string $class): bool => is_a($class, \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class, true),
+        )->count());
+    }
+
     public function test_phone_otp_login_rejects_unknown_phone_numbers(): void
     {
         Livewire::test(PhoneLogin::class)
