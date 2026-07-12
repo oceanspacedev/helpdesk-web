@@ -9,7 +9,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
-        "apriansyahrs/mekaya-theme": "@dev",
+        "kungfufafa/mekaya-theme": "@dev",
         "awcodes/overlook": "^3.0",
         "bezhansalleh/filament-exceptions": "^4.2",
         "bezhansalleh/filament-language-switch": "^5.0",
@@ -76,7 +76,7 @@
     "repositories": [
         {
             "type": "vcs",
-            "url": "https://github.com/apriansyahrs/mekaya-theme.git",
+            "url": "https://github.com/kungfufafa/mekaya-theme.git",
             "no-api": true
         }
     ],

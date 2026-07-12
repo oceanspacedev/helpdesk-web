@@ -9,7 +9,7 @@ export default defineConfig({
                 'resources/css/app.css',
                 'resources/css/admin/theme.css',
                 'resources/js/app.js',
-                'vendor/apriansyahrs/mekaya-theme/resources/js/mekaya.js',
+                'vendor/kungfufafa/mekaya-theme/resources/js/mekaya.js',
             ],
             refresh: true,
         }),

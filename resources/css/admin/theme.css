@@ -1,15 +1,16 @@
-@import '../../../vendor/apriansyahrs/mekaya-theme/resources/css/theme.css';
+@import '../../../vendor/kungfufafa/mekaya-theme/resources/css/theme.css';
 
 @source '../../../vendor/awcodes/overlook/resources/views/**/*.blade.php';
 
 @layer components {
+
     .whatsapp-login-icon,
     .whatsapp-login-icon path {
         fill: #25d366 !important;
         color: #25d366 !important;
     }
 
-    #overlook-widget > div {
+    #overlook-widget>div {
         display: grid;
         grid-template-columns: var(--cols-default, repeat(1, minmax(0, 1fr)));
         gap: 1rem;
@@ -65,25 +66,25 @@
     }
 
     @media (min-width: 640px) {
-        #overlook-widget > div {
+        #overlook-widget>div {
             grid-template-columns: var(--cols-sm, repeat(2, minmax(0, 1fr)));
         }
     }
 
     @media (min-width: 768px) {
-        #overlook-widget > div {
+        #overlook-widget>div {
             grid-template-columns: var(--cols-md, repeat(3, minmax(0, 1fr)));
         }
     }
 
     @media (min-width: 1024px) {
-        #overlook-widget > div {
+        #overlook-widget>div {
             grid-template-columns: var(--cols-lg, repeat(4, minmax(0, 1fr)));
         }
     }
 
     @media (min-width: 1280px) {
-        #overlook-widget > div {
+        #overlook-widget>div {
             grid-template-columns: var(--cols-xl, repeat(4, minmax(0, 1fr)));
         }
     }
