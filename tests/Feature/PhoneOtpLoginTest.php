@@ -70,6 +70,26 @@ class PhoneOtpLoginTest extends TestCase
         $this->assertNull(app('router')->getRoutes()->getByName('phone-login.verify.submit'));
     }
 
+    public function test_phone_login_accepts_a_real_livewire_http_update(): void
+    {
+        $html = $this->get('/phone-login')->assertOk()->getContent();
+
+        preg_match('/wire:snapshot="([^"]+)"/', $html, $matches);
+        $snapshot = html_entity_decode($matches[1] ?? '', ENT_QUOTES | ENT_HTML5);
+
+        $this->postJson('/livewire/update', [
+            'components' => [[
+                'snapshot' => $snapshot,
+                'updates' => ['data.phone' => '081200009999'],
+                'calls' => [[
+                    'path' => '',
+                    'method' => 'send',
+                    'params' => [],
+                ]],
+            ]],
+        ])->assertOk();
+    }
+
     public function test_phone_login_route_does_not_run_web_session_and_csrf_middleware_twice(): void
     {
         $route = app('router')->getRoutes()->getByName('phone-login');
