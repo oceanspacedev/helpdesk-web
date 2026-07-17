@@ -4,6 +4,7 @@ namespace App\Filament\Resources\TicketResource\Pages;
 
 use App\Filament\Resources\TicketResource;
 use Filament\Actions;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Support\Facades\Auth;
 
@@ -30,7 +31,10 @@ class ViewTicket extends ViewRecord
                         $record->responsible_id = Auth::id();
                         $record->ticket_statuses_id = 3;
                         $record->save();
-                        $this->notify('success', 'Ticket status updated to Cancelled');
+                        Notification::make()
+                            ->title('Ticket status updated to Cancelled')
+                            ->success()
+                            ->send();
                         $this->redirect($this->getResource()::getUrl('view', ['record' => $record->getKey()]));
                     });
                 $actions[] = Actions\Action::make('proses')
@@ -41,7 +45,10 @@ class ViewTicket extends ViewRecord
                         $record->responsible_id = Auth::id();
                         $record->ticket_statuses_id = 2;
                         $record->save();
-                        $this->notify('success', 'Ticket status updated to In Process');
+                        Notification::make()
+                            ->title('Ticket status updated to In Process')
+                            ->success()
+                            ->send();
                         $this->redirect($this->getResource()::getUrl('view', ['record' => $record->getKey()]));
                     });
                 $actions[] = Actions\Action::make('selesai')
@@ -52,7 +59,10 @@ class ViewTicket extends ViewRecord
                         $record->responsible_id = Auth::id();
                         $record->ticket_statuses_id = 4;
                         $record->save();
-                        $this->notify('success', 'Ticket status updated to Completed');
+                        Notification::make()
+                            ->title('Ticket status updated to Completed')
+                            ->success()
+                            ->send();
                         $this->redirect($this->getResource()::getUrl('view', ['record' => $record->getKey()]));
                     });
             } elseif ($record->ticket_statuses_id == 2 && $record->responsible_id == Auth::id()) {
@@ -64,7 +74,10 @@ class ViewTicket extends ViewRecord
                         $record->responsible_id = Auth::id();
                         $record->ticket_statuses_id = 3;
                         $record->save();
-                        $this->notify('success', 'Ticket status updated to Cancelled');
+                        Notification::make()
+                            ->title('Ticket status updated to Cancelled')
+                            ->success()
+                            ->send();
                         $this->redirect($this->getResource()::getUrl('view', ['record' => $record->getKey()]));
                     });
                 $actions[] = Actions\Action::make('selesai')
@@ -75,7 +88,10 @@ class ViewTicket extends ViewRecord
                         $record->responsible_id = Auth::id();
                         $record->ticket_statuses_id = 4;
                         $record->save();
-                        $this->notify('success', 'Ticket status updated to Completed');
+                        Notification::make()
+                            ->title('Ticket status updated to Completed')
+                            ->success()
+                            ->send();
                         $this->redirect($this->getResource()::getUrl('view', ['record' => $record->getKey()]));
                     });
             }
@@ -84,3 +100,4 @@ class ViewTicket extends ViewRecord
         return $actions;
     }
 }
+
