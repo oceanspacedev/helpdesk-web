@@ -59,4 +59,14 @@ class Unit extends Model
     {
         return $this->morphToMany(User::class, 'entity', 'user_entities');
     }
+
+    /**
+     * Get all of the SLAs for the Unit
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function slas()
+    {
+        return $this->hasMany(UnitSla::class);
+    }
 }

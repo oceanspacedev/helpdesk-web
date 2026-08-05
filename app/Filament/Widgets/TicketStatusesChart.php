@@ -3,10 +3,13 @@
 namespace App\Filament\Widgets;
 
 use App\Models\TicketStatus;
+use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Leandrocfe\FilamentApexCharts\Widgets\ApexChartWidget;
 
 class TicketStatusesChart extends ApexChartWidget
 {
+    use InteractsWithPageFilters;
+
     /**
      * Chart Id
      *
@@ -21,6 +24,14 @@ class TicketStatusesChart extends ApexChartWidget
      */
     protected static ?string $heading = 'Ticket Statuses';
 
+    protected static ?int $sort = 3;
+
+    protected int | string | array $columnSpan = [
+        'default' => 'full',
+        'md' => 1,
+        'lg' => 1,
+    ];
+
     /**
      * Chart options (series, labels, types, size, animations...)
      * https://apexcharts.com/docs/options
@@ -30,11 +41,24 @@ class TicketStatusesChart extends ApexChartWidget
     protected function getOptions(): array
     {
         $user = auth()->user();
+
+        // Page Filters (Bulan & Tahun)
+        $month = $this->filters['month'] ?? null;
+        $year = $this->filters['year'] ?? null;
+
         $ticketStatusesQuery = TicketStatus::select('id', 'name')
-            ->withCount(['tickets' => function ($query) use ($user) {
+            ->withCount(['tickets' => function ($query) use ($user, $month, $year) {
+                if ($year && $year !== 'all') {
+                    $query->whereYear('tickets.created_at', $year);
+                }
+                if ($month && $month !== 'all') {
+                    $query->whereMonth('tickets.created_at', $month);
+                }
                 if (!$user->hasRole('Super Admin')) {
-                    $query->where('unit_id', $user->unit_id)
-                    ->orWhere('owner_id', $user->id);
+                    $query->where(function($sub) use ($user) {
+                        $sub->where('unit_id', $user->unit_id)
+                            ->orWhere('owner_id', $user->id);
+                    });
                 }
             }]);
 

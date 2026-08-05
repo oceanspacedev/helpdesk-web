@@ -1,151 +1,75 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Policies;
 
-use App\Models\User;
+use Illuminate\Foundation\Auth\User as AuthUser;
 use BezhanSalleh\FilamentExceptions\Models\Exception;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
 class ExceptionPolicy
 {
     use HandlesAuthorization;
-
-    /**
-     * Determine whether the user can view any models.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function viewAny(User $user): bool
+    
+    public function viewAny(AuthUser $authUser): bool
     {
-        return $user->can('view_any_exception');
+        return $authUser->can('ViewAny:Exception');
     }
 
-    /**
-     * Determine whether the user can view the model.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \BezhanSalleh\FilamentExceptions\Models\Exception  $exception
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function view(User $user, Exception $exception): bool
+    public function view(AuthUser $authUser, Exception $exception): bool
     {
-        return $user->can('view_exception');
+        return $authUser->can('View:Exception');
     }
 
-    /**
-     * Determine whether the user can create models.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function create(User $user): bool
+    public function create(AuthUser $authUser): bool
     {
-        return $user->can('create_exception');
+        return $authUser->can('Create:Exception');
     }
 
-    /**
-     * Determine whether the user can update the model.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \BezhanSalleh\FilamentExceptions\Models\Exception  $exception
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function update(User $user, Exception $exception): bool
+    public function update(AuthUser $authUser, Exception $exception): bool
     {
-        return $user->can('update_exception');
+        return $authUser->can('Update:Exception');
     }
 
-    /**
-     * Determine whether the user can delete the model.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \BezhanSalleh\FilamentExceptions\Models\Exception  $exception
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function delete(User $user, Exception $exception): bool
+    public function delete(AuthUser $authUser, Exception $exception): bool
     {
-        return $user->can('delete_exception');
+        return $authUser->can('Delete:Exception');
     }
 
-    /**
-     * Determine whether the user can bulk delete.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function deleteAny(User $user): bool
+    public function deleteAny(AuthUser $authUser): bool
     {
-        return $user->can('delete_any_exception');
+        return $authUser->can('DeleteAny:Exception');
     }
 
-    /**
-     * Determine whether the user can permanently delete.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \BezhanSalleh\FilamentExceptions\Models\Exception  $exception
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function forceDelete(User $user, Exception $exception): bool
+    public function restore(AuthUser $authUser, Exception $exception): bool
     {
-        return $user->can('force_delete_exception');
+        return $authUser->can('Restore:Exception');
     }
 
-    /**
-     * Determine whether the user can permanently bulk delete.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function forceDeleteAny(User $user): bool
+    public function forceDelete(AuthUser $authUser, Exception $exception): bool
     {
-        return $user->can('force_delete_any_exception');
+        return $authUser->can('ForceDelete:Exception');
     }
 
-    /**
-     * Determine whether the user can restore.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \BezhanSalleh\FilamentExceptions\Models\Exception  $exception
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function restore(User $user, Exception $exception): bool
+    public function forceDeleteAny(AuthUser $authUser): bool
     {
-        return $user->can('restore_exception');
+        return $authUser->can('ForceDeleteAny:Exception');
     }
 
-    /**
-     * Determine whether the user can bulk restore.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function restoreAny(User $user): bool
+    public function restoreAny(AuthUser $authUser): bool
     {
-        return $user->can('restore_any_exception');
+        return $authUser->can('RestoreAny:Exception');
     }
 
-    /**
-     * Determine whether the user can replicate.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \BezhanSalleh\FilamentExceptions\Models\Exception  $exception
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function replicate(User $user, Exception $exception): bool
+    public function replicate(AuthUser $authUser, Exception $exception): bool
     {
-        return $user->can('{{ Replicate }}');
+        return $authUser->can('Replicate:Exception');
     }
 
-    /**
-     * Determine whether the user can reorder.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function reorder(User $user): bool
+    public function reorder(AuthUser $authUser): bool
     {
-        return $user->can('{{ Reorder }}');
+        return $authUser->can('Reorder:Exception');
     }
 
 }

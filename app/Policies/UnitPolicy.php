@@ -1,151 +1,75 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Policies;
 
-use App\Models\User;
+use Illuminate\Foundation\Auth\User as AuthUser;
 use App\Models\Unit;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
 class UnitPolicy
 {
     use HandlesAuthorization;
-
-    /**
-     * Determine whether the user can view any models.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function viewAny(User $user): bool
+    
+    public function viewAny(AuthUser $authUser): bool
     {
-        return $user->can('view_any_unit');
+        return $authUser->can('ViewAny:Unit');
     }
 
-    /**
-     * Determine whether the user can view the model.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Unit  $unit
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function view(User $user, Unit $unit): bool
+    public function view(AuthUser $authUser, Unit $unit): bool
     {
-        return $user->can('view_unit');
+        return $authUser->can('View:Unit');
     }
 
-    /**
-     * Determine whether the user can create models.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function create(User $user): bool
+    public function create(AuthUser $authUser): bool
     {
-        return $user->can('create_unit');
+        return $authUser->can('Create:Unit');
     }
 
-    /**
-     * Determine whether the user can update the model.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Unit  $unit
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function update(User $user, Unit $unit): bool
+    public function update(AuthUser $authUser, Unit $unit): bool
     {
-        return $user->can('update_unit');
+        return $authUser->can('Update:Unit');
     }
 
-    /**
-     * Determine whether the user can delete the model.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Unit  $unit
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function delete(User $user, Unit $unit): bool
+    public function delete(AuthUser $authUser, Unit $unit): bool
     {
-        return $user->can('delete_unit');
+        return $authUser->can('Delete:Unit');
     }
 
-    /**
-     * Determine whether the user can bulk delete.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function deleteAny(User $user): bool
+    public function deleteAny(AuthUser $authUser): bool
     {
-        return $user->can('delete_any_unit');
+        return $authUser->can('DeleteAny:Unit');
     }
 
-    /**
-     * Determine whether the user can permanently delete.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Unit  $unit
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function forceDelete(User $user, Unit $unit): bool
+    public function restore(AuthUser $authUser, Unit $unit): bool
     {
-        return $user->can('force_delete_unit');
+        return $authUser->can('Restore:Unit');
     }
 
-    /**
-     * Determine whether the user can permanently bulk delete.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function forceDeleteAny(User $user): bool
+    public function forceDelete(AuthUser $authUser, Unit $unit): bool
     {
-        return $user->can('force_delete_any_unit');
+        return $authUser->can('ForceDelete:Unit');
     }
 
-    /**
-     * Determine whether the user can restore.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Unit  $unit
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function restore(User $user, Unit $unit): bool
+    public function forceDeleteAny(AuthUser $authUser): bool
     {
-        return $user->can('restore_unit');
+        return $authUser->can('ForceDeleteAny:Unit');
     }
 
-    /**
-     * Determine whether the user can bulk restore.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function restoreAny(User $user): bool
+    public function restoreAny(AuthUser $authUser): bool
     {
-        return $user->can('restore_any_unit');
+        return $authUser->can('RestoreAny:Unit');
     }
 
-    /**
-     * Determine whether the user can replicate.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Unit  $unit
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function replicate(User $user, Unit $unit): bool
+    public function replicate(AuthUser $authUser, Unit $unit): bool
     {
-        return $user->can('{{ Replicate }}');
+        return $authUser->can('Replicate:Unit');
     }
 
-    /**
-     * Determine whether the user can reorder.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Auth\Access\Response|bool
-     */
-    public function reorder(User $user): bool
+    public function reorder(AuthUser $authUser): bool
     {
-        return $user->can('{{ Reorder }}');
+        return $authUser->can('Reorder:Unit');
     }
 
 }

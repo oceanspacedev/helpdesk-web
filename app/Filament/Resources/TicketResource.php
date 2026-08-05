@@ -224,6 +224,20 @@ class TicketResource extends Resource
                         ->content(fn (
                             ?Ticket $record,
                         ): string => $record ? $record->updated_at->diffForHumans() : '-'),
+                        
+                    Forms\Components\Placeholder::make('sla_due_at')
+                        ->translateLabel()
+                        ->content(fn (
+                            ?Ticket $record,
+                        ): string => $record && $record->sla_due_at ? $record->sla_due_at->format('d M Y H:i') : '-')
+                        ->hiddenOn('create'),
+
+                    Forms\Components\Placeholder::make('is_sla_met')
+                        ->translateLabel()
+                        ->content(fn (
+                            ?Ticket $record,
+                        ): string => $record && $record->is_sla_met !== null ? ($record->is_sla_met ? __('Yes') : __('No')) : '-')
+                        ->hiddenOn('create'),
                 ])->columnSpan(1),
             ])->columns(3);
     }
@@ -273,6 +287,43 @@ class TicketResource extends Resource
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime('F j, Y')
                     ->translateLabel()
+                    ->sortable()
+                    ->toggleable(true),
+                Tables\Columns\TextColumn::make('sla_due_at')
+                    ->translateLabel()
+                    ->dateTime('F j, Y H:i')
+                    ->sortable()
+                    ->toggleable(true)
+                    ->color(fn (Ticket $record): string => 
+                        $record->sla_due_at && \Carbon\Carbon::now()->gt($record->sla_due_at) && $record->ticket_statuses_id !== 4 
+                            ? 'danger' 
+                            : 'success'
+                    ),
+                Tables\Columns\TextColumn::make('is_sla_met')
+                    ->label('SLA Status')
+                    ->translateLabel()
+                    ->badge()
+                    ->getStateUsing(function ($record) {
+                        if ($record->is_sla_met === null) {
+                            if ($record->sla_due_at && \Carbon\Carbon::now()->gt($record->sla_due_at)) {
+                                return 'Missed';
+                            }
+                            return $record->sla_due_at ? 'Pending' : 'N/A';
+                        }
+                        return $record->is_sla_met ? 'Achieved' : 'Missed';
+                    })
+                    ->color(fn (string $state): string => match ($state) {
+                        'Achieved' => 'success',
+                        'Missed' => 'danger',
+                        'Pending' => 'warning',
+                        'N/A' => 'gray',
+                    })
+                    ->icon(fn (string $state): string => match ($state) {
+                        'Achieved' => 'heroicon-o-check-circle',
+                        'Missed' => 'heroicon-o-x-circle',
+                        'Pending' => 'heroicon-o-clock',
+                        'N/A' => 'heroicon-o-minus-circle',
+                    })
                     ->sortable()
                     ->toggleable(true),
             ])

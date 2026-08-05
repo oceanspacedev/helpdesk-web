@@ -57,6 +57,9 @@ class Ticket extends Model
         'supporting_attachments' => 'array',
         'approved_at' => 'datetime',
         'solved_at' => 'datetime',
+        'sla_due_at' => 'datetime',
+        'is_sla_met' => 'boolean',
+        'sla_warning_sent_at' => 'datetime',
     ];
 
     protected $fillable = [
@@ -72,6 +75,9 @@ class Ticket extends Model
         'business_entities_id',
         'approved_at',
         'solved_at',
+        'sla_due_at',
+        'is_sla_met',
+        'sla_warning_sent_at',
     ];
 
     // Preventif error in migration
@@ -193,10 +199,36 @@ class Ticket extends Model
 
                 // Set solved_at dan kirim notifikasi jika status adalah 4
                 if ($ticket->ticket_statuses_id == 4) {
-                    $ticket->solved_at = Carbon::now();
+                    if (is_null($ticket->solved_at)) {
+                        $ticket->solved_at = Carbon::now();
+                    }
+                    
+                    if ($ticket->sla_due_at) {
+                        $ticket->is_sla_met = Carbon::parse($ticket->solved_at)->lte($ticket->sla_due_at);
+                    }
+
                     if ($receiver) {
                         $receiver->notify(new ClosedTicketNotification($ticket));
                     }
+                } else {
+                    // Reset solved_at dan is_sla_met jika dikembalikan dari Closed (4) ke status lain
+                    if ($ticket->getOriginal('ticket_statuses_id') == 4) {
+                        $ticket->solved_at = null;
+                        $ticket->is_sla_met = null;
+                    }
+                }
+            }
+            
+            // Hitung SLA Due At jika tiket sudah di-approve dan unit tersebut memiliki aturan UnitSla
+            if ($ticket->approved_at && ($ticket->isDirty('approved_at') || $ticket->isDirty('priority_id') || $ticket->isDirty('unit_id'))) {
+                $sla = \App\Models\UnitSla::where('unit_id', $ticket->unit_id)
+                                          ->where('priority_id', $ticket->priority_id)
+                                          ->first();
+                if ($sla) {
+                    $ticket->sla_due_at = Carbon::parse($ticket->approved_at)->addHours($sla->target_hours);
+                } else {
+                    $ticket->sla_due_at = null;
+                    $ticket->is_sla_met = null;
                 }
             }
         });
