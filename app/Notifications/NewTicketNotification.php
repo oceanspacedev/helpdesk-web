@@ -28,7 +28,7 @@ class NewTicketNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        return ['mail', 'database', \App\Channels\WhatsAppChannel::class];
     }
 
     /**
@@ -37,15 +37,10 @@ class NewTicketNotification extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         // Kirim email notifikasi
-        $mailMessage = (new MailMessage)
+        return (new MailMessage)
             ->subject('Terdapat tiket baru')
             ->line('Terdapat tiket baru yang perlu Anda periksa.')
             ->action('Lihat Tiket', url('/admin/tickets/'.$this->ticket->id));
-
-        // Kirim pesan WhatsApp setelah email dikirim
-        $this->toWhatsapp($notifiable);
-
-        return $mailMessage;
     }
 
     /**
@@ -66,9 +61,6 @@ class NewTicketNotification extends Notification
      */
     public function toWhatsapp($notifiable)
     {
-        // Dapatkan nomor WhatsApp dari user yang akan dihubungi
-        $phoneNumber = $notifiable->phone; // Asumsi bahwa nomor WhatsApp ada di field `phone`
-
         // Format pesan WhatsApp
         $message = "🔔 *Notifikasi Tiket Baru* 🔔\n\n";
         $message .= 'Halo *'.$notifiable->name."*, terdapat tiket baru yang perlu Anda periksa.\n\n";
@@ -79,6 +71,6 @@ class NewTicketNotification extends Notification
         $message .= "Terima kasih, mohon segera ditindaklanjuti.\n\n";
         $message .= '— Bot';
 
-        app(WhatsAppGateway::class)->send($phoneNumber, $message);
+        return $message;
     }
 }

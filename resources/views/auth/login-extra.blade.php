@@ -29,6 +29,7 @@
         </x-filament::button>
 
         <!-- WhatsApp Login Button -->
+        @if(!empty(config('services.whatsapp_gateway.url')) && !empty(config('services.whatsapp_gateway.token')))
         <x-filament::button
             tag="a"
             href="{{ route('phone-login') }}"
@@ -43,5 +44,7 @@
                 <span class="font-semibold text-gray-900 dark:text-white">WhatsApp</span>
             </span>
         </x-filament::button>
+        @endif
+
     </div>
 </div>

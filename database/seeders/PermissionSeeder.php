@@ -12,7 +12,11 @@ class PermissionSeeder extends Seeder
      */
     public function run(): void
     {
-        // running Althinect/filament-spatie-roles-permissions for  generate permissions
-        Artisan::call('permissions:sync');
+        // generating permissions for the admin panel via Filament Shield
+        Artisan::call('shield:generate', [
+            '--all' => true,
+            '--option' => 'policies_and_permissions',
+            '--panel' => 'admin',
+        ]);
     }
 }

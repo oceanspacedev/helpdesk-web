@@ -30,7 +30,7 @@ class CommentNotification extends Notification implements ShouldQueue
      */
     public function via($notifiable): array
     {
-        return ['mail'];
+        return ['mail', \App\Channels\WhatsAppChannel::class];
     }
 
     /**
@@ -39,17 +39,12 @@ class CommentNotification extends Notification implements ShouldQueue
     public function toMail($notifiable): MailMessage
     {
         // Kirim email notifikasi
-        $mailMessage = (new MailMessage)
+        return (new MailMessage)
             ->subject('Komentar Baru pada Tiket #'.$this->ticket->id)
             ->greeting('Halo '.$notifiable->name.'!')
             ->line('Ada komentar baru pada tiket "'.$this->ticket->title.'".')
             ->line('Komentar: '.html_entity_decode(strip_tags($this->comment->comment)).'')
             ->action('Lihat Tiket', url('admin/tickets/'.$this->ticket->id));
-
-        // Kirim pesan WhatsApp setelah email dikirim
-        $this->toWhatsapp($notifiable);
-
-        return $mailMessage;
     }
 
     /**
@@ -69,15 +64,6 @@ class CommentNotification extends Notification implements ShouldQueue
      */
     public function toWhatsapp($notifiable)
     {
-        // Dapatkan nomor WhatsApp user
-        $phoneNumber = $notifiable->phone; // Asumsi field `phone` ada di tabel user
-
-        if (! $phoneNumber) {
-            \Log::error('No phone number found for user: '.$notifiable->id);
-
-            return;
-        }
-
         // Format pesan WhatsApp
         $message = "🔔 *Notifikasi Komentar Baru* 🔔\n\n";
         $message .= 'Halo *'.$notifiable->name."*, ada komentar baru pada tiket Anda.\n\n";
@@ -87,6 +73,6 @@ class CommentNotification extends Notification implements ShouldQueue
         $message .= '🔗 Lihat Tiket: '.url('admin/tickets/'.$this->ticket->id)."\n\n";
         $message .= '— Bot';
 
-        app(WhatsAppGateway::class)->send($phoneNumber, $message);
+        return $message;
     }
 }

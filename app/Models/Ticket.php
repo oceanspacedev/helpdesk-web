@@ -181,7 +181,7 @@ class Ticket extends Model
         // Event listener untuk event 'saving'
         static::saving(function ($ticket) {
             // Update responsible_id when problem_category_id changes
-            if ($ticket->isDirty('problem_category_id')) {
+            if (! self::$isSeeding && $ticket->isDirty('problem_category_id')) {
                 if (in_array($ticket->problem_category_id, [1, 2, 8, 9, 10, 11, 12, 24, 25])) {
                     $ticket->responsible_id = 10; // responsible_id = 10 (Teh Sekar/Lead OD)
                 } elseif (in_array($ticket->problem_category_id, [9, 10])) {

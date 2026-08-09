@@ -3,15 +3,14 @@
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Migrations\Migration;
-use DutchCodingCompany\FilamentSocialite\Facades\FilamentSocialite;
 
 return new class extends Migration {
-    public function up()
+    public function up(): void
     {
         Schema::create('socialite_users', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignIdFor(FilamentSocialite::getUserModelClass(), 'user_id');
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete()->cascadeOnUpdate();
             $table->string('provider');
             $table->string('provider_id');
 
@@ -24,7 +23,7 @@ return new class extends Migration {
         });
     }
 
-    public function down()
+    public function down(): void
     {
         Schema::dropIfExists('socialite_users');
     }
