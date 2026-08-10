@@ -148,7 +148,7 @@ return [
          * The cache key used to store all permissions.
          */
 
-        'key' => 'spatie.permission.cache',
+        'key' => env('PERMISSION_CACHE_KEY', 'spatie.permission.cache.v2'),
 
         /*
          * You may optionally indicate a specific cache driver to use for permission and
@@ -156,6 +156,6 @@ return [
          * file. Using 'default' here means to use the `default` set in cache.php.
          */
 
-        'store' => 'default',
+        'store' => env('PERMISSION_CACHE_STORE', 'default'),
     ],
 ];

@@ -6,7 +6,7 @@ use App\Filament\Resources\TicketResource;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Actions;
-use Filament\Notifications\Actions\Action as NotificationAction;
+use Filament\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
@@ -24,6 +24,13 @@ class CommentsRelationManager extends RelationManager
     protected static string $relationship = 'comments';
 
     protected static ?string $recordTitleAttribute = 'comment';
+
+    protected static ?string $title = 'Komentar';
+
+    public function isReadOnly(): bool
+    {
+        return false;
+    }
 
     protected function isTablePaginationEnabled(): bool
     {
@@ -77,26 +84,32 @@ class CommentsRelationManager extends RelationManager
                     ->after(function (Livewire $livewire) {
                         $ticket = $livewire->ownerRecord;
 
-                        if (auth()->user()->hasAnyRole(['Super Admin', 'Admin Unit', 'Staf Unit'])) {
-                            $receiver = $ticket->owner;
+                        $authId = (int) auth()->id();
+                        $isOwner = $authId === (int) $ticket->owner_id;
+
+                        if ($isOwner) {
+                            if ($ticket->responsible_id) {
+                                $receiver = User::find($ticket->responsible_id);
+                            } else {
+                                $receiver = User::where('id', '!=', $authId)
+                                    ->whereHas(
+                                        'roles',
+                                        fn ($q) => $q->whereIn('name', ['Super Admin', 'Master Admin', 'Admin Unit', 'Staff Unit', 'Staf Unit'])
+                                    )->get();
+                            }
                         } else {
-                            $receiver = User::whereHas(
-                                'roles',
-                                function ($q) {
-                                    $q->where('name', 'Super Admin')
-                                        ->orWhere('name', 'Admin Unit')
-                                        ->orWhere('name', 'Staf Unit');
-                                },
-                            )->get();
+                            $receiver = $ticket->owner;
                         }
 
-                        Notification::make()
-                            ->title('Terdapat komentar baru pada tiket Anda')
-                            ->actions([
-                                NotificationAction::make('Lihat')
-                                    ->url(TicketResource::getUrl('view', ['record' => $ticket->id])),
-                            ])
-                            ->sendToDatabase($receiver);
+                        if ($receiver) {
+                            Notification::make()
+                                ->title('Terdapat komentar baru pada tiket Anda')
+                                ->actions([
+                                    NotificationAction::make('Lihat')
+                                        ->url(TicketResource::getUrl('view', ['record' => $ticket->id])),
+                                ])
+                                ->sendToDatabase($receiver);
+                        }
                     }),
             ])
             ->actions([
@@ -104,6 +117,7 @@ class CommentsRelationManager extends RelationManager
                     return Storage::download($record->attachments);
                 })->hidden(fn ($record) => $record->attachments == ''),
                 Actions\EditAction::make(),
+                Actions\DeleteAction::make(),
             ])
             ->bulkActions([]);
     }

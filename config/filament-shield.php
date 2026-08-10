@@ -16,7 +16,7 @@ return [
             'pages' => false,
             'widgets' => false,
             'resources' => true,
-            'custom_permissions' => false,
+            'custom_permissions' => true,
         ],
     ],
 
@@ -106,7 +106,15 @@ return [
         ],
     ],
 
-    'custom_permissions' => [],
+    'custom_permissions' => [
+        'ViewAny:Comment' => 'View Any Comment',
+        'View:Comment' => 'View Comment',
+        'Create:Comment' => 'Create Comment',
+        'Update:Comment' => 'Update Comment',
+        'Delete:Comment' => 'Delete Comment',
+        'Restore:Comment' => 'Restore Comment',
+        'ForceDelete:Comment' => 'Force Delete Comment',
+    ],
 
     'discovery' => [
         'discover_all_resources' => false,

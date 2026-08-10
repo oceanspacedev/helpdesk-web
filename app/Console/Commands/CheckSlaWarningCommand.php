@@ -7,7 +7,7 @@ use App\Models\User;
 use App\Services\WhatsAppGateway;
 use Carbon\Carbon;
 use Filament\Notifications\Notification;
-use Filament\Notifications\Actions\Action as NotificationAction;
+use Filament\Actions\Action as NotificationAction;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
