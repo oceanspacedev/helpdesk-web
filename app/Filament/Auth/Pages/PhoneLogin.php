@@ -81,11 +81,28 @@ class PhoneLogin extends SimplePage
 
         $generatedPassword = null;
 
+        if (! $user) {
+            // Cegah bentrok dengan constraint unik kolom phone: jika nomor sudah
+            // terdaftar tapi akunnya nonaktif, jangan buat user baru (akan 500).
+            $inactiveUser = $this->findUserByPhone($phone, false);
+            if ($inactiveUser) {
+                throw ValidationException::withMessages([
+                    'data.phone' => 'Nomor HP terdaftar namun akun Anda dinonaktifkan. Hubungi administrator.',
+                ]);
+            }
+        }
+
         if (! $user && ! $this->requiresRegistration) {
             $employeeData = $employeeService->findByPhone($phone);
             if ($employeeData) {
                 $generatedPassword = \Illuminate\Support\Str::random(8);
-                $user = $employeeService->createUser($employeeData, $generatedPassword);
+                try {
+                    $user = $employeeService->createUser($employeeData, $generatedPassword);
+                } catch (\DomainException $e) {
+                    throw ValidationException::withMessages([
+                        'data.phone' => $e->getMessage(),
+                    ]);
+                }
             } else {
                 $this->requiresRegistration = true;
                 $this->form->fill([
@@ -156,9 +173,10 @@ class PhoneLogin extends SimplePage
         Cache::put($this->otpCacheKey($user->phone), [
             'user_id' => $user->id,
             'otp_hash' => Hash::make($otp),
-            'generated_password' => $generatedPassword,
+            // Disimpan terenkripsi: password default jangan pernah ada dalam
+            // bentuk plaintext di cache.
+            'generated_password' => $generatedPassword ? \Illuminate\Support\Facades\Crypt::encryptString($generatedPassword) : null,
             'is_new' => (bool) $generatedPassword || $this->requiresRegistration,
-            'attempts' => 0,
         ], now()->addMinutes($ttlMinutes));
 
         $this->awaitingOtp = true;
@@ -207,7 +225,8 @@ class PhoneLogin extends SimplePage
         if (!empty($cached['is_new'])) {
             $msg = 'Akun Anda telah berhasil didaftarkan. Ke depannya Anda bebas login menggunakan opsi OTP WhatsApp atau Password Email.';
             if (!empty($cached['generated_password'])) {
-                $msg .= " Password default email Anda: **{$cached['generated_password']}** (Harap ganti di menu profil).";
+                $plainPassword = \Illuminate\Support\Facades\Crypt::decryptString($cached['generated_password']);
+                $msg .= " Password default email Anda: **{$plainPassword}** (Harap ganti di menu profil).";
             }
             \Filament\Notifications\Notification::make()
                 ->title('Pendaftaran Sukses!')

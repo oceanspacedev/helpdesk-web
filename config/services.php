@@ -52,4 +52,10 @@ return [
     'phone_otp_login' => [
         'ttl_minutes' => env('PHONE_OTP_LOGIN_TTL_MINUTES', 5),
     ],
+
+    'talenta' => [
+        // Path file JSON berisi data karyawan (struktur: { "data": { "data": [...] } })
+        // Digunakan untuk auto-registrasi akun saat login OTP WhatsApp.
+        'employee_file' => env('TALENTA_EMPLOYEE_FILE', base_path('talenta-list-employee.json')),
+    ],
 ];

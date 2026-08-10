@@ -12,6 +12,10 @@ class WhatsAppChannel
      */
     public function send(object $notifiable, Notification $notification): void
     {
+        if (! $this->isConfigured()) {
+            return;
+        }
+
         if (method_exists($notification, 'toWhatsapp')) {
             $message = $notification->toWhatsapp($notifiable);
             
@@ -26,5 +30,15 @@ class WhatsAppChannel
                 }
             }
         }
+    }
+
+    /**
+     * Gateway belum dikonfigurasi -> jangan coba kirim agar tidak
+     * membanjiri log dengan error pada setiap event notifikasi.
+     */
+    protected function isConfigured(): bool
+    {
+        return !empty(config('services.whatsapp_gateway.url'))
+            && !empty(config('services.whatsapp_gateway.token'));
     }
 }

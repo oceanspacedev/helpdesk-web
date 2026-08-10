@@ -8,6 +8,16 @@ trait InteractsWithPhoneNumbers
 {
     protected function findActiveUserByPhone(string $phone): ?User
     {
+        return $this->findUserByPhone($phone, true);
+    }
+
+    /**
+     * Mencari user berdasarkan nomor HP dengan berbagai format kandidat.
+     * Digunakan juga untuk mendeteksi akun nonaktif agar tidak bentrok
+     * dengan constraint unik kolom phone saat auto-registrasi.
+     */
+    protected function findUserByPhone(string $phone, bool $activeOnly = true): ?User
+    {
         $candidates = [$phone, '+'.$phone];
 
         if (str_starts_with($phone, '62')) {
@@ -15,10 +25,14 @@ trait InteractsWithPhoneNumbers
             $candidates[] = substr($phone, 2);
         }
 
-        return User::query()
-            ->where('is_active', true)
-            ->whereIn('phone', array_values(array_unique(array_filter($candidates))))
-            ->first();
+        $query = User::query()
+            ->whereIn('phone', array_values(array_unique(array_filter($candidates))));
+
+        if ($activeOnly) {
+            $query->where('is_active', true);
+        }
+
+        return $query->first();
     }
 
     protected function normalizePhone(mixed $value): ?string

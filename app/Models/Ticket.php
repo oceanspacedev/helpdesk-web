@@ -221,14 +221,16 @@ class Ticket extends Model
             
             // Hitung SLA Due At jika tiket sudah di-approve dan unit tersebut memiliki aturan UnitSla
             if ($ticket->approved_at && ($ticket->isDirty('approved_at') || $ticket->isDirty('priority_id') || $ticket->isDirty('unit_id'))) {
-                $sla = \App\Models\UnitSla::where('unit_id', $ticket->unit_id)
-                                          ->where('priority_id', $ticket->priority_id)
-                                          ->first();
-                if ($sla) {
-                    $ticket->sla_due_at = Carbon::parse($ticket->approved_at)->addHours($sla->target_hours);
-                } else {
-                    $ticket->sla_due_at = null;
-                    $ticket->is_sla_met = null;
+                if (\Illuminate\Support\Facades\Schema::hasTable('unit_slas')) {
+                    $sla = \App\Models\UnitSla::where('unit_id', $ticket->unit_id)
+                                              ->where('priority_id', $ticket->priority_id)
+                                              ->first();
+                    if ($sla) {
+                        $ticket->sla_due_at = Carbon::parse($ticket->approved_at)->addHours($sla->target_hours);
+                    } else {
+                        $ticket->sla_due_at = null;
+                        $ticket->is_sla_met = null;
+                    }
                 }
             }
         });

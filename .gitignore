@@ -18,5 +18,7 @@ yarn-error.log
 /.idea
 /.vscode
 .DS_Store
+.omo/
 
 .worktrees
+
