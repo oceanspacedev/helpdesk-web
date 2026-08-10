@@ -49,7 +49,7 @@ class CommentNotification extends Notification implements ShouldQueue
             ->line(html_entity_decode(strip_tags($this->comment->comment)))
             ->action('Lihat & Tanggapi Tiket', $ticketUrl)
             ->line('📱 **Login Cepat via WhatsApp:** Anda dapat masuk langsung ke sistem menggunakan nomor WhatsApp di: '.$phoneLoginUrl)
-            ->salutation('Salam, '.config('app.name', 'Helpdesk Team'));
+            ->salutation('Supported by IT Support');
     }
 
     /**
@@ -69,7 +69,6 @@ class CommentNotification extends Notification implements ShouldQueue
      */
     public function toWhatsapp($notifiable)
     {
-        $appName = config('app.name', 'Helpdesk');
         $ticketUrl = url('/admin/tickets/'.$this->ticket->id);
         $phoneLoginUrl = route('phone-login');
 
@@ -80,7 +79,7 @@ class CommentNotification extends Notification implements ShouldQueue
         $message .= "📅 *Waktu:* ".now()->format('d M Y H:i')."\n\n";
         $message .= "🔗 *Buka & Balas Tiket:* ".$ticketUrl."\n";
         $message .= "📱 *Login via WA:* ".$phoneLoginUrl."\n\n";
-        $message .= "— ".$appName;
+        $message .= "— Supported by IT Support";
 
         return $message;
     }

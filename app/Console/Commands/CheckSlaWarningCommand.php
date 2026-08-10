@@ -75,7 +75,6 @@ class CheckSlaWarningCommand extends Command
 
             $ticketUrl = url('/admin/tickets/'.$ticket->id);
             $phoneLoginUrl = route('phone-login');
-            $appName = config('app.name', 'Helpdesk');
 
             $waMessage = "⚠️ *PERINGATAN TENGGAT SLA TIKET* ⚠️\n\n"
                 . "Tiket *#{$ticket->id}* - {$ticket->title} mendekati batas waktu SLA!\n\n"
@@ -86,7 +85,7 @@ class CheckSlaWarningCommand extends Command
                 . "🔗 *Buka Tiket*: {$ticketUrl}\n"
                 . "📱 *Login via WA*: {$phoneLoginUrl}\n\n"
                 . "Mohon segera menindaklanjuti tiket ini.\n\n"
-                . "— {$appName}";
+                . "— Supported by IT Support";
 
             foreach ($recipients as $recipient) {
                 // Send WhatsApp notification

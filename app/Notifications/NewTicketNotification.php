@@ -49,7 +49,7 @@ class NewTicketNotification extends Notification
             ->line('• **Tanggal Dibuat:** '.$this->ticket->created_at->format('d M Y H:i'))
             ->action('Buka & Lihat Tiket', $ticketUrl)
             ->line('📱 **Login Cepat via WhatsApp:** Anda juga dapat masuk langsung ke sistem menggunakan nomor WhatsApp di: '.$phoneLoginUrl)
-            ->salutation('Salam, '.config('app.name', 'Helpdesk Team'));
+            ->salutation('Supported by IT Support');
     }
 
     /**
@@ -70,7 +70,6 @@ class NewTicketNotification extends Notification
      */
     public function toWhatsapp($notifiable)
     {
-        $appName = config('app.name', 'Helpdesk');
         $ticketUrl = url('/admin/tickets/'.$this->ticket->id);
         $phoneLoginUrl = route('phone-login');
 
@@ -82,7 +81,7 @@ class NewTicketNotification extends Notification
         $message .= "🔗 *Buka Tiket:* ".$ticketUrl."\n";
         $message .= "📱 *Login via WA:* ".$phoneLoginUrl."\n\n";
         $message .= "Terima kasih, mohon segera ditindaklanjuti.\n\n";
-        $message .= "— ".$appName;
+        $message .= "— Supported by IT Support";
 
         return $message;
     }

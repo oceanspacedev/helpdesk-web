@@ -45,7 +45,7 @@ class ClosedTicketNotification extends Notification
             ->line('Kami ingin memberitahukan bahwa tiket yang Anda ajukan **#'.$this->ticket->id.' ('.$this->ticket->title.')** telah selesai ditangani.')
             ->action('Lihat Detail Tiket', $ticketUrl)
             ->line('📱 **Login Cepat via WhatsApp:** Anda dapat masuk langsung ke sistem menggunakan nomor WhatsApp di: '.$phoneLoginUrl)
-            ->salutation('Salam, '.config('app.name', 'Helpdesk Team'));
+            ->salutation('Supported by IT Support');
     }
 
     /**
@@ -63,7 +63,6 @@ class ClosedTicketNotification extends Notification
 
     public function toWhatsapp($notifiable)
     {
-        $appName = config('app.name', 'Helpdesk');
         $ticketUrl = url('/admin/tickets/'.$this->ticket->id);
         $phoneLoginUrl = route('phone-login');
 
@@ -75,7 +74,7 @@ class ClosedTicketNotification extends Notification
         $message .= "🔗 *Lihat Detail Tiket:* ".$ticketUrl."\n";
         $message .= "📱 *Login via WA:* ".$phoneLoginUrl."\n\n";
         $message .= "Terima kasih telah menggunakan layanan Helpdesk kami.\n\n";
-        $message .= "— ".$appName;
+        $message .= "— Supported by IT Support";
 
         return $message;
     }
