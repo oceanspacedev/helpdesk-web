@@ -272,6 +272,7 @@ class PhoneLogin extends SimplePage
                 TextInput::make('password')
                     ->label('Password')
                     ->password()
+                    ->helperText('Password untuk opsi login email. Ke depannya Anda bebas login menggunakan Email & Password atau OTP WhatsApp.')
                     ->required()
                     ->minLength(8)
                     ->visible(fn (): bool => $this->requiresRegistration && ! $this->awaitingOtp),
@@ -371,6 +372,10 @@ class PhoneLogin extends SimplePage
                 ->link()
                 ->label('Ganti nomor atau kirim ulang OTP')
                 ->action('changePhone');
+        }
+
+        if ($this->requiresRegistration) {
+            return 'Nomor HP belum terdaftar. Lengkapi formulir pendaftaran akun berikut:';
         }
 
         if (! filament()->hasLogin()) {
