@@ -26,6 +26,8 @@ class SlaLevelChart extends ApexChartWidget
      */
     protected static ?string $heading = 'Distribusi Status SLA per Prioritas';
 
+    protected static bool $deferLoading = true;
+
     protected static ?int $sort = 5;
 
     protected int | string | array $columnSpan = 'full';

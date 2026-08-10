@@ -93,6 +93,7 @@ class ProblemCategoryResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
+            ->with(['unit'])
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ])->where(function ($query) {

@@ -27,6 +27,8 @@ class SlaPerformanceChart extends ApexChartWidget
      */
     protected static ?string $heading = 'Grafik Pencapaian SLA';
 
+    protected static bool $deferLoading = true;
+
     protected static ?int $sort = 4;
 
     protected int | string | array $columnSpan = [

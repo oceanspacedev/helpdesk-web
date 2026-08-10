@@ -425,6 +425,7 @@ class TicketResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
+            ->with(['owner', 'businessEntity', 'responsible', 'problemCategory', 'ticketStatus', 'priority'])
             ->where(function ($query) {
                 $user = auth()->user();
 
@@ -451,13 +452,18 @@ class TicketResource extends Resource
 
     public static function getNavigationBadge(): ?string
     {
-        if (auth()->user()->hasRole(['Super Admin', 'Admin Unit'])) {
-            return Ticket::where('ticket_statuses_id', 1)
-            ->where('unit_id', auth()->user()->unit_id)
-            ->count();;
+        $user = auth()->user();
+        if (! $user || ! $user->hasRole(['Super Admin', 'Admin Unit'])) {
+            return null;
         }
 
-        return false;
+        $count = cache()->remember("nav_badge_tickets_{$user->id}_{$user->unit_id}", 30, function () use ($user) {
+            return Ticket::where('ticket_statuses_id', 1)
+                ->when(! $user->hasRole('Super Admin') && $user->unit_id, fn ($q) => $q->where('unit_id', $user->unit_id))
+                ->count();
+        });
+
+        return (string) $count;
     }
 
     public static function getPluralModelLabel(): string

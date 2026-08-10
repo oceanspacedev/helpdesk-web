@@ -91,6 +91,12 @@ class UnitSlaResource extends Resource
             ]);
     }
 
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return parent::getEloquentQuery()
+            ->with(['unit', 'priority']);
+    }
+
     public static function getPages(): array
     {
         return [
