@@ -36,11 +36,20 @@ class NewTicketNotification extends Notification
      */
     public function toMail(object $notifiable): MailMessage
     {
-        // Kirim email notifikasi
+        $ticketUrl = url('/admin/tickets/'.$this->ticket->id);
+        $phoneLoginUrl = route('phone-login');
+
         return (new MailMessage)
-            ->subject('Terdapat tiket baru')
-            ->line('Terdapat tiket baru yang perlu Anda periksa.')
-            ->action('Lihat Tiket', url('/admin/tickets/'.$this->ticket->id));
+            ->subject('🔔 Tiket Baru: #'.$this->ticket->id.' - '.$this->ticket->title)
+            ->greeting('Halo '.$notifiable->name.'!')
+            ->line('Terdapat tiket baru yang perlu Anda periksa dan tindak lanjuti.')
+            ->line('**Detail Tiket:**')
+            ->line('• **ID Tiket:** #'.$this->ticket->id)
+            ->line('• **Subjek:** '.$this->ticket->title)
+            ->line('• **Tanggal Dibuat:** '.$this->ticket->created_at->format('d M Y H:i'))
+            ->action('Buka & Lihat Tiket', $ticketUrl)
+            ->line('📱 **Login Cepat via WhatsApp:** Anda juga dapat masuk langsung ke sistem menggunakan nomor WhatsApp di: '.$phoneLoginUrl)
+            ->salutation('Salam, '.config('app.name', 'Helpdesk Team'));
     }
 
     /**
@@ -61,15 +70,19 @@ class NewTicketNotification extends Notification
      */
     public function toWhatsapp($notifiable)
     {
-        // Format pesan WhatsApp
+        $appName = config('app.name', 'Helpdesk');
+        $ticketUrl = url('/admin/tickets/'.$this->ticket->id);
+        $phoneLoginUrl = route('phone-login');
+
         $message = "🔔 *Notifikasi Tiket Baru* 🔔\n\n";
-        $message .= 'Halo *'.$notifiable->name."*, terdapat tiket baru yang perlu Anda periksa.\n\n";
-        $message .= '📝 ID Tiket: *#'.$this->ticket->id."*\n";
-        $message .= '📌 Subjek: *'.$this->ticket->title."*\n"; // Menampilkan subjek tiket
-        $message .= '📅 Tanggal Dibuat: *'.$this->ticket->created_at->format('d M Y H:i')."*\n";
-        $message .= '🔗 Lihat Tiket: '.url('/admin/tickets/'.$this->ticket->id)."\n\n";
+        $message .= "Halo *".$notifiable->name."*, terdapat tiket baru yang perlu Anda periksa:\n\n";
+        $message .= "📝 *ID Tiket:* #".$this->ticket->id."\n";
+        $message .= "📌 *Subjek:* ".$this->ticket->title."\n";
+        $message .= "📅 *Tanggal Dibuat:* ".$this->ticket->created_at->format('d M Y H:i')."\n\n";
+        $message .= "🔗 *Buka Tiket:* ".$ticketUrl."\n";
+        $message .= "📱 *Login via WA:* ".$phoneLoginUrl."\n\n";
         $message .= "Terima kasih, mohon segera ditindaklanjuti.\n\n";
-        $message .= '— Bot';
+        $message .= "— ".$appName;
 
         return $message;
     }

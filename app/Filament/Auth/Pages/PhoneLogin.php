@@ -160,7 +160,8 @@ class PhoneLogin extends SimplePage
 
         $otp = (string) random_int(100000, 999999);
         $ttlMinutes = max(1, (int) config('services.phone_otp_login.ttl_minutes', 5));
-        $message = "Kode OTP Helpdesk Anda: *{$otp}*\nBerlaku {$ttlMinutes} menit. Jangan bagikan kode ini kepada siapapun.";
+        $appUrl = url('/');
+        $message = "Kode OTP Helpdesk Anda: *{$otp}*\nBerlaku {$ttlMinutes} menit. Jangan bagikan kode ini kepada siapapun.\n\nAkses: {$appUrl}";
 
         if (! $whatsAppGateway->send($user->phone, $message)) {
             throw ValidationException::withMessages([

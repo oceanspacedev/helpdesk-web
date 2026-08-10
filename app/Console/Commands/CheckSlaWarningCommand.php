@@ -73,13 +73,20 @@ class CheckSlaWarningCommand extends Command
             $diffForHumans = $ticket->sla_due_at->diffForHumans();
             $dueFormatted = $ticket->sla_due_at->format('d M Y H:i');
 
+            $ticketUrl = url('/admin/tickets/'.$ticket->id);
+            $phoneLoginUrl = route('phone-login');
+            $appName = config('app.name', 'Helpdesk');
+
             $waMessage = "⚠️ *PERINGATAN TENGGAT SLA TIKET* ⚠️\n\n"
                 . "Tiket *#{$ticket->id}* - {$ticket->title} mendekati batas waktu SLA!\n\n"
                 . "• *Prioritas*: " . ($ticket->priority?->name ?? '-') . "\n"
                 . "• *Unit*: " . ($ticket->unit?->name ?? '-') . "\n"
                 . "• *Tenggat SLA*: {$dueFormatted}\n"
                 . "• *Sisa Waktu*: {$diffForHumans}\n\n"
-                . "Mohon segera menindaklanjuti tiket ini.";
+                . "🔗 *Buka Tiket*: {$ticketUrl}\n"
+                . "📱 *Login via WA*: {$phoneLoginUrl}\n\n"
+                . "Mohon segera menindaklanjuti tiket ini.\n\n"
+                . "— {$appName}";
 
             foreach ($recipients as $recipient) {
                 // Send WhatsApp notification
