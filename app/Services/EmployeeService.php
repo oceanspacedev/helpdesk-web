@@ -16,17 +16,22 @@ class EmployeeService
 
     public function __construct()
     {
-        $this->employees = Cache::remember('talenta_employees_data', 3600, function () {
-            $path = config('services.talenta.employee_file', base_path('talenta-list-employee.json'));
+        $path = config('services.talenta.employee_file', base_path('talenta-list-employee.json'));
 
-            if (! File::exists($path)) {
-                Log::warning('File data karyawan Talenta tidak ditemukan. Auto-registrasi lewat direktori karyawan nonaktif.', [
-                    'path' => $path,
-                ]);
+        if (! File::exists($path)) {
+            Log::warning('File data karyawan Talenta tidak ditemukan. Auto-registrasi lewat direktori karyawan nonaktif.', [
+                'path' => $path,
+            ]);
 
-                return [];
-            }
+            $this->employees = [];
 
+            return;
+        }
+
+        $mtime = File::lastModified($path);
+        $cacheKey = 'talenta_employees_data_'.$mtime;
+
+        $this->employees = Cache::remember($cacheKey, 3600, function () use ($path) {
             $decoded = json_decode(File::get($path), true);
 
             if (! is_array($decoded) || ! is_array($decoded['data']['data'] ?? null)) {
@@ -49,7 +54,10 @@ class EmployeeService
 
         $normalized = $this->normalizePhone($phone);
         foreach ($this->employees as $emp) {
-            if ($this->normalizePhone((string) ($emp['mobile_phone'] ?? '')) === $normalized) {
+            $mobile = $this->normalizePhone((string) ($emp['mobile_phone'] ?? ''));
+            $altPhone = $this->normalizePhone((string) ($emp['phone'] ?? ''));
+
+            if (($mobile !== '' && $mobile === $normalized) || ($altPhone !== '' && $altPhone === $normalized)) {
                 return $emp;
             }
         }
@@ -78,7 +86,7 @@ class EmployeeService
      */
     public function createUser(array $data, string $password): User
     {
-        $phone = $this->normalizePhone((string) ($data['mobile_phone'] ?? ''));
+        $phone = $this->normalizePhone((string) ($data['mobile_phone'] ?? ($data['phone'] ?? '')));
 
         if ($phone === '') {
             throw new DomainException('Data karyawan tidak memiliki nomor HP yang valid.');
@@ -101,6 +109,7 @@ class EmployeeService
             'email' => $email !== '' ? $email : null,
             'phone' => $canonicalPhone,
             'password' => Hash::make($password),
+            'is_active' => true,
         ]);
     }
 }
