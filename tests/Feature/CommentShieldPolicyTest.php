@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\TicketResource\RelationManagers\CommentsRelationManager;
 use App\Models\Comment;
 use App\Models\Priority;
 use App\Models\ProblemCategory;
@@ -55,7 +56,7 @@ class CommentShieldPolicyTest extends TestCase
 
     public function test_comments_relation_manager_is_not_read_only_on_view_pages(): void
     {
-        $relationManager = new \App\Filament\Resources\TicketResource\RelationManagers\CommentsRelationManager();
+        $relationManager = new CommentsRelationManager;
         $this->assertFalse($relationManager->isReadOnly());
     }
 
@@ -208,10 +209,12 @@ class CommentShieldPolicyTest extends TestCase
             $table->string('name');
             $table->string('email')->nullable()->unique();
             $table->timestamp('email_verified_at')->nullable();
+            $table->string('email_verified_via')->nullable();
             $table->string('password')->nullable();
             $table->string('remember_token')->nullable();
             $table->string('identity')->nullable();
             $table->string('phone', 20)->nullable()->unique();
+            $table->string('phone_normalized', 20)->nullable()->index();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();

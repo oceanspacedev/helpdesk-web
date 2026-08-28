@@ -5,15 +5,25 @@ use App\Http\Middleware\EncryptCookies;
 use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Http\Middleware\ValidateSignature;
 use App\Http\Middleware\VerifyCsrfToken;
+use App\Http\Middleware\VerifyHelpdeskMcpToken;
 use BezhanSalleh\FilamentExceptions\FilamentExceptions;
+use Illuminate\Auth\Middleware\AuthenticateWithBasicAuth;
+use Illuminate\Auth\Middleware\Authorize;
+use Illuminate\Auth\Middleware\EnsureEmailIsVerified;
+use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
+use Illuminate\Foundation\Http\Middleware\PreventRequestsDuringMaintenance;
+use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Http\Middleware\ValidatePostSize;
 use Illuminate\Http\Middleware\HandleCors;
+use Illuminate\Http\Middleware\SetCacheHeaders;
+use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -34,60 +44,57 @@ return Application::configure(basePath: dirname(__DIR__))
         );
 
         $middleware->use([
-            \Illuminate\Http\Middleware\TrustProxies::class,
-            \Illuminate\Http\Middleware\HandleCors::class,
-            \Illuminate\Foundation\Http\Middleware\PreventRequestsDuringMaintenance::class,
-            \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
-            \Illuminate\Foundation\Http\Middleware\TrimStrings::class,
-            \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
+            TrustProxies::class,
+            HandleCors::class,
+            PreventRequestsDuringMaintenance::class,
+            ValidatePostSize::class,
+            TrimStrings::class,
+            ConvertEmptyStringsToNull::class,
         ]);
 
         $middleware->web(replace: [
-            \Illuminate\Cookie\Middleware\EncryptCookies::class => EncryptCookies::class,
+            Illuminate\Cookie\Middleware\EncryptCookies::class => EncryptCookies::class,
             ValidateCsrfToken::class => VerifyCsrfToken::class,
         ]);
 
         $middleware->alias([
             'auth' => Authenticate::class,
-            'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
-            'cache.headers' => \Illuminate\Http\Middleware\SetCacheHeaders::class,
-            'can' => \Illuminate\Auth\Middleware\Authorize::class,
+            'auth.basic' => AuthenticateWithBasicAuth::class,
+            'cache.headers' => SetCacheHeaders::class,
+            'can' => Authorize::class,
             'guest' => RedirectIfAuthenticated::class,
-            'password.confirm' => \Illuminate\Auth\Middleware\RequirePassword::class,
+            'password.confirm' => RequirePassword::class,
             'signed' => ValidateSignature::class,
-            'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
-            'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+            'throttle' => ThrottleRequests::class,
+            'verified' => EnsureEmailIsVerified::class,
+            'helpdesk.mcp' => VerifyHelpdeskMcpToken::class,
         ]);
 
         $middleware->throttleApi('api');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->reportable(function (\Throwable $e) use ($exceptions): void {
+        $exceptions->reportable(function (Throwable $e) use ($exceptions): void {
             if ($exceptions->handler->shouldReport($e)) {
                 FilamentExceptions::report($e);
             }
         });
 
-        $exceptions->render(function (MethodNotAllowedHttpException $e, Request $request) {
-            if (! $request->is('api/integrations/whatsapp/*')) {
+        $exceptions->render(function (MethodNotAllowedHttpException $exception, Request $request) {
+            if (! $request->is('mcp/*')) {
                 return null;
             }
 
-            $message = 'Metode HTTP tidak didukung untuk endpoint integrasi WhatsApp.';
-
             return response()->json([
-                'ok' => false,
-                'status' => 'validation_error',
-                'result_status' => 'validation_error',
-                'message' => $message,
-                'data' => null,
-                'count' => 0,
+                'jsonrpc' => '2.0',
+                'id' => $request->input('id'),
                 'error' => [
-                    'code' => 'method_not_allowed',
-                    'message' => $message,
-                    'allowed_methods' => $e->getHeaders()['Allow'] ?? null,
+                    'code' => -32600,
+                    'message' => 'Metode HTTP tidak didukung untuk endpoint MCP ini.',
+                    'data' => [
+                        'allowed_methods' => 'POST',
+                    ],
                 ],
-            ], 405);
+            ], 405, ['Allow' => 'POST']);
         });
     })
     ->create();

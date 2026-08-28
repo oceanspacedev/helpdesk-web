@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\SocialiteUser;
 use App\Models\User;
-use Carbon\Carbon;
 use Laravel\Socialite\Facades\Socialite;
 
 class SocialiteController extends Controller
@@ -19,66 +18,62 @@ class SocialiteController extends Controller
     {
         try {
             $user = Socialite::driver($provider)->user();
-        } catch (\Exception $e) {
+        } catch (\Exception $exception) {
+            report($exception);
+
             return redirect()->back();
         }
-        // find or create user and send params user get from socialite and provider
         $authUser = $this->findOrCreateUser($user, $provider);
 
         if (! $authUser) {
             return redirect()
                 ->route('filament.admin.auth.login')
                 ->withErrors([
-                    'email' => 'Akun Helpdesk belum tersedia. Buat akun melalui ITA atau hubungi admin.',
+                    'email' => 'Akun Helpdesk belum tersedia. Hubungi admin untuk membuat akun.',
                 ]);
         }
 
-        // login user
         Auth()->login($authUser, true);
 
-        // setelah login redirect ke dashboard
         return redirect()->route('filament.admin.pages.dashboard');
     }
 
     public function findOrCreateUser($socialUser, $provider): ?User
     {
-        // Get Social Account
         $socialAccount = SocialiteUser::where('provider_id', $socialUser->id)
             ->where('provider', $provider)
             ->first();
 
-        // If it already exists.
         if ($socialAccount) {
-            // return user
-            return $socialAccount->user;
-            // If there isn't yet.
+            $linkedUser = $socialAccount->user;
+
+            return $linkedUser
+                && ! $linkedUser->trashed()
+                && $linkedUser->is_active
+                && $linkedUser->canUseVerifiedEmail()
+                    ? $linkedUser
+                    : null;
         }
 
-        $user = User::where('email', $socialUser->getEmail())->first();
+        $email = strtolower(trim((string) $socialUser->getEmail()));
+        if ($email === '') {
+            return null;
+        }
 
-        // If there are no users.
+        $user = User::query()->withTrashed()->where('email', $email)->first();
+        if ($user && ($user->trashed() || ! $user->is_active || ! $user->canUseVerifiedEmail())) {
+            return null;
+        }
+
         if (! $user) {
-            if (! config('filament-socialite.registration')) {
-                return null;
-            }
-
-            // Create a new user
-            $user = User::create([
-                'name' => $socialUser->getName(),
-                'email' => $socialUser->getEmail(),
-                'email_verified_at' => Carbon::now()->timestamp,
-                'is_active' => true,
-            ]);
-            $user->assignRole('User');
+            return null;
         }
 
-        // Buat a new socialite user
         $user->socialiteUsers()->create([
             'provider_id' => $socialUser->getId(),
             'provider' => $provider,
         ]);
 
-        // return user
         return $user;
     }
 }

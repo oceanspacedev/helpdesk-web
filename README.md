@@ -15,6 +15,32 @@ This Laravel Helpdesk repository will provide a solid foundation for building a 
 
 Feel free to explore this repository and start building a robust and responsive helpdesk application using Laravel Helpdesk!
 
+## MCP account prerequisite and ticket intake
+
+The application exposes one vendor-neutral `helpdesk_intake` MCP tool with exactly two business paths: use an existing eligible reporter account and create its ticket, or create the required reporter account first and then create its ticket in the same intake. Account creation exists only as a ticket prerequisite. MCP does not expose ticket lookup, comments, updates, workflow actions, or administration.
+
+Codex, Atlas relaying WhatsApp, and other AI hosts or channel bridges are generic MCP clients or gateways; they all use the same contract and do not change Helpdesk behavior. Ticket ownership remains tied to a verified WhatsApp number and is resolved against the Helpdesk user directory or Talenta. Generic and unsigned channels link through WhatsApp OTP when they provide a stable `external_user_id`; a trusted WhatsApp webhook gateway may use a signed one-event assertion. If a verified number is absent from both directories, MCP asks for explicit registration consent and a freshly typed full name, atomically creates a phone-only account with null email and password, then continues the original ticket intake. Declining account creation cancels the intake without creating an account or ticket. A direct MCP client that omits `external_user_id` must verify by OTP on every new intake and does not receive a durable reporter binding.
+
+Setup, tool contract, gateway requirements, retry behavior, and security notes are in [docs/mcp/README.md](docs/mcp/README.md).
+
+### MCP production quick start
+
+The production MCP endpoint runs inside the same Laravel web application; it does not need a separate MCP daemon. Deploy the application behind HTTPS, configure a bearer token and the WhatsApp OTP gateway, and expose:
+
+```text
+https://helpdesk.example.com/mcp/helpdesk
+```
+
+Ready-to-copy setup instructions are available for [Codex](docs/mcp/README.md#connect-codex), [Cursor](docs/mcp/README.md#connect-cursor), [Google Antigravity](docs/mcp/README.md#connect-google-antigravity), [Atlas/WhatsApp gateways](docs/mcp/README.md#connect-atlas-or-a-whatsapp-gateway), and [other Streamable HTTP clients](docs/mcp/README.md#connect-another-mcp-client). The complete production checklist is in the [MCP production quickstart](docs/mcp/README.md#production-quickstart); upgrades of an existing database must also follow the [safe cutover runbook](docs/mcp/README.md#install).
+
+After the client shows the single `helpdesk_intake` tool, try this portable prompt:
+
+```text
+Buat laporan helpdesk: printer kasir tidak bisa mencetak sejak pagi.
+```
+
+`/helpdesk printer kasir tidak bisa mencetak` also starts the intake when the host forwards it as normal message text. Connecting an MCP server does not automatically install a slash command in every AI client, so use the natural-language prompt when `/helpdesk` is intercepted by the host UI.
+
 <hr/>
 
 ## Database Design
@@ -38,6 +64,8 @@ Feel free to explore this repository and start building a robust and responsive 
 
 ## Installation
 
+The commands below are for local development. Production upgrades must not use a rolling mixed-version deploy or run the dummy seeder. Follow the maintenance-window, migration-audit, reviewed-admin bootstrap, session purge, and smoke-test runbook in [docs/mcp/README.md](docs/mcp/README.md#install).
+
 * Install [Composer](https://getcomposer.org/download)
 * Clone the repository: `git clone https://github.com/apriansyahrs/cs_helpdesk.git`
 * Install PHP dependencies: `composer install`
@@ -51,7 +79,10 @@ Feel free to explore this repository and start building a robust and responsive 
 
 <hr/>
 
-## Dummy Account
+## Development Dummy Accounts
+
+These credentials are created by development seed data only. Never create or retain these fixed passwords in production.
+
 ### Super Admin
 > - Email: superadmin@cs.com
 > - Password: password

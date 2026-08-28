@@ -9,7 +9,6 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
-        "kungfufafa/mekaya-theme": "@dev",
         "awcodes/overlook": "^3.0",
         "bezhansalleh/filament-exceptions": "^4.2",
         "bezhansalleh/filament-language-switch": "^5.0",
@@ -19,7 +18,9 @@
         "filament/infolists": "^4.11",
         "guzzlehttp/guzzle": "^7.2",
         "jeffgreco13/filament-breezy": "^3.2",
+        "kungfufafa/mekaya-theme": "@dev",
         "laravel/framework": "^12.61",
+        "laravel/mcp": "^0.9.4",
         "laravel/sanctum": "^4.0",
         "laravel/socialite": "^5.28",
         "laravel/tinker": "^2.8",

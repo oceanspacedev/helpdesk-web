@@ -6,17 +6,21 @@
 
 namespace App\Models;
 
-use Carbon\Carbon;
-use Filament\Panel;
+use App\Support\PhoneNumber;
 use BezhanSalleh\FilamentShield\Traits\HasPanelShield;
-use Spatie\Permission\Traits\HasRoles;
-use Illuminate\Notifications\Notifiable;
+use Carbon\Carbon;
 use Filament\Models\Contracts\FilamentUser;
-use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use Filament\Panel;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Spatie\Permission\Traits\HasRoles;
 
 /**
  * Class User.
@@ -24,8 +28,9 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
  * @property int $id
  * @property null|int $unit_id
  * @property string $name
- * @property string $email
+ * @property null|string $email
  * @property null|Carbon $email_verified_at
+ * @property null|string $email_verified_via
  * @property null|string $password
  * @property null|string $two_factor_secret
  * @property null|string $two_factor_recovery_codes
@@ -35,6 +40,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
  * @property null|Carbon $updated_at
  * @property null|string $identity
  * @property null|string $phone
+ * @property null|string $phone_normalized
  * @property null|int $user_level_id
  * @property bool $is_active
  * @property null|string $deleted_at
@@ -44,7 +50,8 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
  */
 class User extends Authenticatable implements FilamentUser, MustVerifyEmail
 {
-    use SoftDeletes, HasRoles, HasPanelShield, HasFactory, Notifiable;
+    use HasFactory, HasPanelShield, HasRoles, Notifiable, SoftDeletes;
+
     protected $table = 'users';
 
     protected $casts = [
@@ -66,6 +73,7 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
         'name',
         'email',
         'email_verified_at',
+        'email_verified_via',
         'password',
         'two_factor_secret',
         'two_factor_recovery_codes',
@@ -77,10 +85,44 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
         'is_active',
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function (User $user): void {
+            $user->phone_normalized = PhoneNumber::canonical($user->phone);
+
+            // Mengganti alamat email membatalkan bukti kepemilikan alamat lama.
+            if ($user->exists && $user->isDirty('email')) {
+                $user->email_verified_at = null;
+                $user->email_verified_via = null;
+            } elseif ($user->email_verified_at === null) {
+                $user->email_verified_via = null;
+            }
+        });
+    }
+
+    /**
+     * Email yang belum diverifikasi bukan credential login yang tepercaya.
+     */
+    public function getAuthPassword()
+    {
+        return $this->canUseVerifiedEmail() ? parent::getAuthPassword() : '';
+    }
+
+    public function canUseVerifiedEmail(): bool
+    {
+        return filled($this->email)
+            && $this->hasVerifiedEmail()
+            && in_array((string) $this->email_verified_via, [
+                'admin',
+                'email_link',
+                'socialite',
+            ], true);
+    }
+
     /**
      * Mendapatkan semua entitas yang terkait dengan pengguna.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
+     * @return MorphMany
      */
     public function entities()
     {
@@ -90,28 +132,17 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
     /**
      * Mendapatkan semua unit yang terkait dengan pengguna.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasManyThrough
+     * @return HasManyThrough
      */
     public function units()
     {
         return $this->morphedByMany(Unit::class, 'entity', 'user_entities');
     }
 
-
-    /**
-     * Get the unit that owns the User.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    // public function unit()
-    // {
-    //     return $this->belongsTo(Unit::class);
-    // }
-
     /**
      * Get all of the comments for the User.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     * @return HasMany
      */
     public function comments()
     {
@@ -121,7 +152,7 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
     /**
      * Get all of the tickets for the User.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     * @return HasMany
      */
     public function tickets()
     {
@@ -131,7 +162,7 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
     /**
      * Get all of the ticekt responsibility for the User.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     * @return HasMany
      */
     public function ticektResponsibility()
     {
@@ -145,7 +176,15 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        return (bool) $this->is_active;
+        if (! $this->is_active) {
+            return false;
+        }
+
+        if ($this->canUseVerifiedEmail()) {
+            return true;
+        }
+
+        return (int) session()->get('helpdesk_phone_verified_user_id') === (int) $this->id;
     }
 
     public function isSuperAdmin(): bool
@@ -170,7 +209,7 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
     /**
      * Get all of the socialiteUsers for the User
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     * @return HasMany
      */
     public function socialiteUsers()
     {

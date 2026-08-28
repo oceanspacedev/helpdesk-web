@@ -2,15 +2,17 @@
 
 namespace App\Notifications;
 
-use App\Services\WhatsAppGateway;
+use App\Channels\WhatsAppChannel;
+use App\Notifications\Concerns\ResolvesHelpdeskNotificationChannels;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class CommentNotification extends Notification implements ShouldQueue
+class CommentNotification extends Notification implements ShouldQueueAfterCommit
 {
     use Queueable;
+    use ResolvesHelpdeskNotificationChannels;
 
     protected $comment;
 
@@ -30,7 +32,7 @@ class CommentNotification extends Notification implements ShouldQueue
      */
     public function via($notifiable): array
     {
-        return ['mail', \App\Channels\WhatsAppChannel::class];
+        return $this->withVerifiedMailChannel($notifiable, [WhatsAppChannel::class]);
     }
 
     /**
@@ -73,13 +75,13 @@ class CommentNotification extends Notification implements ShouldQueue
         $phoneLoginUrl = route('phone-login');
 
         $message = "🔔 *Notifikasi Komentar Baru* 🔔\n\n";
-        $message .= "Halo *".$notifiable->name."*, ada komentar baru pada tiket Anda:\n\n";
-        $message .= "📝 *Tiket:* #".$this->ticket->id." - ".$this->ticket->title."\n";
-        $message .= "💬 *Komentar:* ".html_entity_decode(strip_tags($this->comment->comment))."\n";
-        $message .= "📅 *Waktu:* ".now()->format('d M Y H:i')."\n\n";
-        $message .= "🔗 *Buka & Balas Tiket:* ".$ticketUrl."\n";
-        $message .= "📱 *Login via WA:* ".$phoneLoginUrl."\n\n";
-        $message .= "— Supported by IT Support";
+        $message .= 'Halo *'.$notifiable->name."*, ada komentar baru pada tiket Anda:\n\n";
+        $message .= '📝 *Tiket:* #'.$this->ticket->id.' - '.$this->ticket->title."\n";
+        $message .= '💬 *Komentar:* '.html_entity_decode(strip_tags($this->comment->comment))."\n";
+        $message .= '📅 *Waktu:* '.now()->format('d M Y H:i')."\n\n";
+        $message .= '🔗 *Buka & Balas Tiket:* '.$ticketUrl."\n";
+        $message .= '📱 *Login via WA:* '.$phoneLoginUrl."\n\n";
+        $message .= '— Supported by IT Support';
 
         return $message;
     }

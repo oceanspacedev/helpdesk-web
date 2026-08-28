@@ -7,7 +7,7 @@ use App\Models\Priority;
 use App\Models\ProblemCategory;
 use App\Models\Unit;
 
-class WhatsappHelpdeskFormOptionsService
+class HelpdeskFormOptionsService
 {
     public function formOptions(?int $unitId = null): array
     {

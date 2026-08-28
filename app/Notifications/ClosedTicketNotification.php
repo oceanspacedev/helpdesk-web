@@ -2,7 +2,8 @@
 
 namespace App\Notifications;
 
-use App\Services\WhatsAppGateway;
+use App\Channels\WhatsAppChannel;
+use App\Notifications\Concerns\ResolvesHelpdeskNotificationChannels;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
@@ -10,6 +11,7 @@ use Illuminate\Notifications\Notification;
 class ClosedTicketNotification extends Notification
 {
     use Queueable;
+    use ResolvesHelpdeskNotificationChannels;
 
     protected $ticket;
 
@@ -28,7 +30,7 @@ class ClosedTicketNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['mail', \App\Channels\WhatsAppChannel::class];
+        return $this->withVerifiedMailChannel($notifiable, [WhatsAppChannel::class]);
     }
 
     /**
@@ -67,14 +69,14 @@ class ClosedTicketNotification extends Notification
         $phoneLoginUrl = route('phone-login');
 
         $message = "✅ *Notifikasi Tiket Selesai* ✅\n\n";
-        $message .= "Halo *".$notifiable->name."*, tiket Anda telah selesai ditangani:\n\n";
-        $message .= "📝 *ID Tiket:* #".$this->ticket->id."\n";
-        $message .= "📌 *Subjek:* ".$this->ticket->title."\n";
-        $message .= "📅 *Tanggal Ditutup:* ".now()->format('d M Y H:i')."\n\n";
-        $message .= "🔗 *Lihat Detail Tiket:* ".$ticketUrl."\n";
-        $message .= "📱 *Login via WA:* ".$phoneLoginUrl."\n\n";
+        $message .= 'Halo *'.$notifiable->name."*, tiket Anda telah selesai ditangani:\n\n";
+        $message .= '📝 *ID Tiket:* #'.$this->ticket->id."\n";
+        $message .= '📌 *Subjek:* '.$this->ticket->title."\n";
+        $message .= '📅 *Tanggal Ditutup:* '.now()->format('d M Y H:i')."\n\n";
+        $message .= '🔗 *Lihat Detail Tiket:* '.$ticketUrl."\n";
+        $message .= '📱 *Login via WA:* '.$phoneLoginUrl."\n\n";
         $message .= "Terima kasih telah menggunakan layanan Helpdesk kami.\n\n";
-        $message .= "— Supported by IT Support";
+        $message .= '— Supported by IT Support';
 
         return $message;
     }
