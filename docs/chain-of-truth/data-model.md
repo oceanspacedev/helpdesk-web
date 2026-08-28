@@ -7,7 +7,7 @@ Source type: Reconstructed from migrations, models, and seeders.
 
 | ID | Entity | Table | Key fields | Relationships |
 |---|---|---|---|---|
-| ENT-001 | User | `users` | `id`, `unit_id`, `name`, nullable unique `email`, nullable `password`, `identity`, `phone`, `is_active` | Has roles, tickets as owner, comments, socialite users, morph units through `user_entities` |
+| ENT-001 | User | `users` | `id`, `unit_id`, `name`, nullable unique `email`, `email_verified_at`, `email_verified_via`, nullable `password`, `identity`, `phone`, unique `phone_normalized`, `is_active` | Has roles, tickets as owner, comments, socialite users, morph units through `user_entities` |
 | ENT-002 | Ticket | `tickets` | `priority_id`, `unit_id`, `owner_id`, `problem_category_id`, `title`, `description`, `supporting_attachments`, `ticket_statuses_id`, `responsible_id`, `business_entities_id`, dates | Belongs to priority, unit, owner, responsible, category, status, business entity; has comments and histories |
 | ENT-003 | Unit | `units` | `name` | Has categories, tickets; morph-to-many users |
 | ENT-004 | ProblemCategory | `problem_categories` | `unit_id`, `name` | Belongs to unit; has tickets |
@@ -23,7 +23,7 @@ Source type: Reconstructed from migrations, models, and seeders.
 
 - ENT-002 Ticket is soft-deletable.
 - ENT-003 Unit, ENT-004 ProblemCategory, ENT-006 TicketStatus, ENT-007 BusinessEntity are soft-deletable in models or migrations.
-- ENT-001 User is soft-deletable and must be active to access Filament.
+- ENT-001 User is soft-deletable and must be active plus authenticated through trusted verified email or the current session's matching phone-OTP proof to access Filament.
 - ENT-008 Comment is soft-deletable.
 - ENT-002 status changes create ENT-009 TicketHistory.
 
@@ -32,7 +32,8 @@ Source type: Reconstructed from migrations, models, and seeders.
 - Ticket title max length is 255 in form.
 - Ticket description is required and max length 65535 in form.
 - Ticket supporting attachments are JSON and nullable.
-- User phone is normalized in forms and OTP flows; test schemas make phone unique but production migration uniqueness depends on observed migrations not fully enumerated in this document.
+- User phone is canonicalized on every model save and protected by a database unique constraint on `phone_normalized`; the constraint migration stops until legacy duplicates are repaired.
+- Email is usable for password authentication and mail notifications only when `email_verified_at` and trusted `email_verified_via` provenance are both present. Legacy timestamps are marked `legacy_review_required`.
 - Comment table uses `tiket_id`, preserving current schema spelling.
 
 ## Data Model Gaps
@@ -41,4 +42,3 @@ Source type: Reconstructed from migrations, models, and seeders.
 - `TicketHistory::ticket()` uses `tiket_id` relationship key while table field is `ticket_id`.
 - `Comment::$fillable` includes `attachments`, but base migration excerpt does not create an `attachments` column; attachment migration for comments should be confirmed.
 - Some models set `$timestamps = false` while migrations include timestamps.
-

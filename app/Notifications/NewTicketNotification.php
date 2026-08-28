@@ -2,14 +2,17 @@
 
 namespace App\Notifications;
 
-use App\Services\WhatsAppGateway;
+use App\Channels\WhatsAppChannel;
+use App\Notifications\Concerns\ResolvesHelpdeskNotificationChannels;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class NewTicketNotification extends Notification
+class NewTicketNotification extends Notification implements ShouldQueueAfterCommit
 {
     use Queueable;
+    use ResolvesHelpdeskNotificationChannels;
 
     protected $ticket;
 
@@ -28,7 +31,7 @@ class NewTicketNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database', \App\Channels\WhatsAppChannel::class];
+        return $this->withVerifiedMailChannel($notifiable, ['database', WhatsAppChannel::class]);
     }
 
     /**
@@ -74,14 +77,14 @@ class NewTicketNotification extends Notification
         $phoneLoginUrl = route('phone-login');
 
         $message = "🔔 *Notifikasi Tiket Baru* 🔔\n\n";
-        $message .= "Halo *".$notifiable->name."*, terdapat tiket baru yang perlu Anda periksa:\n\n";
-        $message .= "📝 *ID Tiket:* #".$this->ticket->id."\n";
-        $message .= "📌 *Subjek:* ".$this->ticket->title."\n";
-        $message .= "📅 *Tanggal Dibuat:* ".$this->ticket->created_at->format('d M Y H:i')."\n\n";
-        $message .= "🔗 *Buka Tiket:* ".$ticketUrl."\n";
-        $message .= "📱 *Login via WA:* ".$phoneLoginUrl."\n\n";
+        $message .= 'Halo *'.$notifiable->name."*, terdapat tiket baru yang perlu Anda periksa:\n\n";
+        $message .= '📝 *ID Tiket:* #'.$this->ticket->id."\n";
+        $message .= '📌 *Subjek:* '.$this->ticket->title."\n";
+        $message .= '📅 *Tanggal Dibuat:* '.$this->ticket->created_at->format('d M Y H:i')."\n\n";
+        $message .= '🔗 *Buka Tiket:* '.$ticketUrl."\n";
+        $message .= '📱 *Login via WA:* '.$phoneLoginUrl."\n\n";
         $message .= "Terima kasih, mohon segera ditindaklanjuti.\n\n";
-        $message .= "— Supported by IT Support";
+        $message .= '— Supported by IT Support';
 
         return $message;
     }

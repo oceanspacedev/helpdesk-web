@@ -19,11 +19,10 @@ Source type: Reconstructed from routes and Filament resources.
 | PAGE-010 | `/admin/ticket-statuses` | Filament resource | `TicketStatusResource.php` | UC-008 |
 | PAGE-011 | `/admin/business-entities` | Filament resource | `BusinessEntityResource.php` | UC-008 |
 | PAGE-012 | `/phone-login` | Phone login page | `PhoneLogin.php` | UC-006 |
-| PAGE-013 | `/phone-login/verify` | OTP verification page | `PhoneOtpLoginController.php` | UC-006 |
-| API-001 | `GET /api/integrations/whatsapp/helpdesk/master-data` | JSON API | `routes/api.php` | UC-004 |
-| API-002 | `POST /api/integrations/whatsapp/helpdesk/validate-classification` | JSON API | `routes/api.php` | UC-004 |
-| API-003 | `POST /api/integrations/whatsapp/helpdesk/actions` | JSON API | `routes/api.php` | UC-004, UC-005 |
-| API-004 | `/auth/{provider}` and callback | Web auth | `routes/web.php` | UC-007 |
+| PAGE-013 | `/admin/my-profile` | Restricted self-service profile; name-only personal data and conditional trusted-password update | `MyProfile.php`, `PersonalInfo.php`, `UpdatePassword.php` | UC-008 |
+| MCP-001 | `/mcp/helpdesk` | Generic HTTP transport for the single `helpdesk_intake` tool | `routes/ai.php`, `HelpdeskServer.php` | UC-004 |
+| MCP-002 | local server `helpdesk` | Generic local transport for the same `helpdesk_intake` contract | `routes/ai.php`, `HelpdeskServer.php` | UC-004 |
+| AUTH-001 | `/auth/{provider}` and callback | Web auth | `routes/web.php` | UC-007 |
 
 ## Navigation Structure
 
@@ -32,6 +31,7 @@ Source type: Reconstructed from routes and Filament resources.
 - Observed: User, Unit, and Business Entity resources belong to navigation group `Master Data`.
 - Observed: Problem Category and Ticket Status resources are not explicitly grouped in the observed code, although they behave as master/reference data.
 - Observed: Dashboard and widgets are configured through `AdminPanelProvider`.
+- Observed: Mekaya's implicit `/admin/profile` and password-reset routes are disabled. Breezy's `/admin/my-profile` remains, but its personal-information form can update only the display name. Its password component is hidden and server-rejected unless the account has both trusted email provenance and an existing password.
 
 ## Feature Relationships
 
@@ -39,11 +39,10 @@ Source type: Reconstructed from routes and Filament resources.
 - Problem categories depend on units.
 - Users can be related to units through `user_entities` morph relations and also have legacy `unit_id`.
 - Comments and ticket histories are child information under tickets.
-- ITA/WhatsApp APIs reuse the same entities used by the web ticket form.
+- MCP intake reuses the same ticket and master-data entities used by the web ticket form, but reporters do not need to open or sign in to that form. Its only business paths are existing account to ticket, or prerequisite account creation followed by ticket creation in the same intake; it exposes no ticket-management or standalone account-management interface.
 
 ## IA Gaps
 
 - PAGE-009 and PAGE-010 are functionally master data but are not grouped the same way as other master data resources.
 - No existing IA document or sitemap was present before this reconstruction.
 - Routes for Filament resource paths are convention-based; exact generated route names were not enumerated by running the app.
-

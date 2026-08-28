@@ -9,9 +9,9 @@ Tests are derived from reconstructed User Flows and UCIC. Existing tests provide
 ## Test Types
 
 - Unit tests: phone normalization, gateway provider behavior, pure classification resolution where practical.
-- Feature/API tests: ITA create/get/comment, validation errors, idempotency, Socialite linking, OTP verification.
+- Feature/MCP tests: discovery of only `helpdesk_intake`, the existing-account-to-ticket path, the prerequisite-account-to-ticket path, cancellation without writes when account creation is declined, classification validation, idempotency/replay, Socialite linking, OTP verification, and stable versus omitted external-user binding behavior.
 - Filament feature or browser tests: ticket creation, workflow actions, comments, master data, role-scoped visibility.
-- Security tests: integration authentication boundary once decided.
+- Security tests: MCP transport authentication, cross-user intake isolation, trusted-assertion replay, canonical-phone collisions, and refusal to trust `reporter_name` as inline registration data.
 
 ## Environments
 
@@ -21,5 +21,4 @@ Tests are derived from reconstructed User Flows and UCIC. Existing tests provide
 
 ## Residual Risk
 
-Web UI behavior is mostly untested by automated E2E or browser tests. API route authentication expectations cannot be verified until stakeholder confirms intended trust boundary.
-
+Web UI behavior is mostly untested by automated E2E or browser tests. Production MCP gateway, cache, reverse-proxy, and credential-rotation behavior remains unverified outside the isolated test environment.

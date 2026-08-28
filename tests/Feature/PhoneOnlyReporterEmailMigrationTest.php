@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
-class AllowItaReportersWithoutEmailMigrationTest extends TestCase
+class PhoneOnlyReporterEmailMigrationTest extends TestCase
 {
     public function test_it_preserves_the_existing_unique_email_index_when_making_email_nullable(): void
     {
@@ -16,7 +16,10 @@ class AllowItaReportersWithoutEmailMigrationTest extends TestCase
             $table->string('email')->unique();
         });
 
-        $migration = require database_path('migrations/2026_06_28_000002_allow_ita_reporters_without_email.php');
+        $migrationPaths = glob(database_path('migrations/*_reporters_without_email.php')) ?: [];
+        $this->assertCount(1, $migrationPaths);
+
+        $migration = require $migrationPaths[0];
         $migration->up();
 
         $uniqueIndexes = collect(DB::select("PRAGMA index_list('users')"))

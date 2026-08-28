@@ -4,12 +4,11 @@ Status: Reviewed
 
 ## Contract
 
-- Interfaces: `/phone-login`, `/phone-login/verify`, WhatsApp gateway providers.
+- Interfaces: `/phone-login` with server-side Livewire send/verify actions, plus WhatsApp gateway providers.
 - Authentication: None at OTP request start; ends with Laravel session login.
-- Request fields: phone on send; phone and six-digit OTP on verify.
-- Validation: Phone must normalize to at least 10 digits and match an active user.
-- Cache key: `phone-otp-login:` plus SHA1 of stored user phone.
-- Success: OTP send redirects to verify route; verify logs in user and redirects to `/admin`.
-- Error cases: Unknown/inactive phone, failed WhatsApp send, invalid/expired OTP.
-- Side effects: WhatsApp message sent, cache write/delete, optional `email_verified_at` update, session regeneration.
-
+- Request fields: phone on send; phone and six-digit OTP on verify; name only after a verified unknown number reaches manual registration.
+- Validation: Phone is canonicalized before OTP, but Helpdesk/Talenta resolution occurs only after OTP succeeds. Manual completion additionally requires a short-lived server-side proof bound to the same session and phone.
+- Cache state: The unresolved OTP challenge and later manual-registration proof are scoped to the server session and expire automatically.
+- Success: OTP verification logs in an existing user, safely creates an exact Talenta user, or opens verified manual-name completion; successful manual completion creates the phone-only user and redirects to `/admin` without a second OTP.
+- Error cases: Inactive/deleted/ambiguous identity, changed Talenta data, failed delivery, invalid/expired OTP, or stale pending state.
+- Side effects: WhatsApp message and cache writes occur when sending; a new user is created only after successful OTP; the session is regenerated with a phone-verification marker and no remember-me token. Manual registration stores neither email nor password, and phone OTP never marks email as verified.

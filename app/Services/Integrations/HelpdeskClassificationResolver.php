@@ -7,12 +7,16 @@ use App\Models\Priority;
 use App\Models\ProblemCategory;
 use App\Models\Unit;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Throwable;
 
-class WhatsappHelpdeskClassificationResolver
+class HelpdeskClassificationResolver
 {
+    public const LIST_DISPLAY_LIMIT = 20;
+
     public function __construct(
-        private WhatsappHelpdeskFormOptionsService $formOptionsService,
+        private HelpdeskFormOptionsService $formOptionsService,
     ) {}
 
     /**
@@ -70,22 +74,115 @@ class WhatsappHelpdeskClassificationResolver
     }
 
     /**
+     * Cocokkan teks laporan ke master data. Hanya mengisi field jika
+     * tepat satu nama master data ketemu. Nol atau lebih dari satu = jangan tebak.
+     *
+     * @param  array<string, mixed>  $ticketContext
      * @return array{
-     *     ok: bool,
-     *     field: string,
-     *     reason: string,
-     *     provided_value: ?string,
-     *     resolved: ?array{id: int, name: string, ticket_data_patch: array<string, string>},
-     *     message: string,
+     *     filled: array<string, mixed>,
+     *     missing_fields: list<string>,
+     *     matched: list<array{field: string, id: int, name: string}>,
+     *     ambiguous: list<array{field: string, candidates: list<string>}>,
      *     form_options: array<string, mixed>,
-     *     next_field: ?string
+     *     next_field: ?string,
+     *     next_question: string,
+     *     suggested_title: string,
+     *     suggested_description: string
      * }
      */
-    public function validateField(string $field, mixed $value, array $ticketContext = [], ?User $owner = null): array
+    public function prefillFromMessage(string $message, array $ticketContext = [], ?User $owner = null): array
     {
+        $message = $this->text($message);
+        $filled = $ticketContext;
+        $matched = [];
+        $ambiguous = [];
+
+        $suggestedTitle = $this->text($filled['title'] ?? '') ?: $this->titleFromMessage($message);
+        $suggestedDescription = $this->text($filled['description'] ?? '') ?: $message;
+        if ($suggestedTitle !== '') {
+            $filled['title'] = $suggestedTitle;
+        }
+        if ($suggestedDescription !== '') {
+            $filled['description'] = $suggestedDescription;
+        }
+
+        foreach ([
+            'business_entities_id' => $this->matchUniqueMasterRecord($message, BusinessEntity::query()->orderBy('name')->get(['id', 'name'])),
+            'unit_id' => $this->matchUniqueMasterRecord($message, Unit::query()->orderBy('name')->get(['id', 'name'])),
+            'priority_id' => $this->matchUniquePriority($message),
+        ] as $field => $result) {
+            if (($result['status'] ?? '') === 'matched' && isset($result['record'])) {
+                $record = $result['record'];
+                $filled = array_merge($filled, $this->resolvedPatch($field, $record));
+                $matched[] = [
+                    'field' => $field,
+                    'id' => (int) $record->id,
+                    'name' => (string) $record->name,
+                ];
+            } elseif (($result['status'] ?? '') === 'ambiguous') {
+                $ambiguous[] = [
+                    'field' => $field,
+                    'candidates' => $result['candidates'],
+                ];
+            }
+        }
+
+        $unit = $this->resolveUnit($filled, $owner);
+        if ($unit) {
+            $categoryResult = $this->matchUniqueMasterRecord(
+                $message,
+                ProblemCategory::query()->where('unit_id', $unit->id)->orderBy('name')->get(['id', 'name', 'unit_id']),
+            );
+            if (($categoryResult['status'] ?? '') === 'matched' && isset($categoryResult['record'])) {
+                $record = $categoryResult['record'];
+                $filled = array_merge($filled, $this->resolvedPatch('problem_category_id', $record));
+                $matched[] = [
+                    'field' => 'problem_category_id',
+                    'id' => (int) $record->id,
+                    'name' => (string) $record->name,
+                ];
+            } elseif (($categoryResult['status'] ?? '') === 'ambiguous') {
+                $ambiguous[] = [
+                    'field' => 'problem_category_id',
+                    'candidates' => $categoryResult['candidates'],
+                ];
+            }
+        }
+
+        $formOptions = $this->formOptionsService->formOptions($unit?->id);
+        $nextField = $this->nextMissingCreateField($filled, $owner);
+
+        return [
+            'filled' => $filled,
+            'missing_fields' => $this->missingCreateFields($filled, $owner),
+            'matched' => $matched,
+            'ambiguous' => $ambiguous,
+            'form_options' => $formOptions,
+            'next_field' => $nextField,
+            'next_question' => $this->nextQuestionForField((string) ($nextField ?? 'consent_to_create')),
+            'suggested_title' => $suggestedTitle,
+            'suggested_description' => $suggestedDescription,
+        ];
+    }
+
+    public function validateField(
+        string $field,
+        mixed $value,
+        array $ticketContext = [],
+        ?User $owner = null,
+    ): array {
         $field = $this->normalizeField($field);
         $providedValue = $this->text($value);
-        $ticketData = array_merge($ticketContext, $this->patchForField($field, $providedValue));
+        $unitHint = $this->resolveUnit($ticketContext, $owner);
+        $formOptions = $this->formOptionsService->formOptions($unitHint?->id);
+        $listChoice = $this->resolveNumberedListChoice($field, $providedValue, $formOptions);
+        if ($listChoice !== null) {
+            $ticketData = array_merge($ticketContext, $this->resolvedPatch($field, $listChoice));
+        } elseif (ctype_digit($providedValue)) {
+            $ticketData = $ticketContext;
+        } else {
+            $ticketData = array_merge($ticketContext, $this->patchForField($field, $providedValue));
+        }
         $unit = $this->resolveUnit($ticketData, $owner);
         $formOptions = $this->formOptionsService->formOptions($unit?->id);
 
@@ -151,10 +248,10 @@ class WhatsappHelpdeskClassificationResolver
 
         if (($issue['reason'] ?? '') === 'not_found' && $provided !== '') {
             $intro = ctype_digit($provided)
-                ? "{$label} dengan ID {$provided} tidak ditemukan di Helpdesk."
-                : "{$label} \"{$provided}\" tidak ditemukan di Helpdesk.";
+                ? "{$label} dengan ID {$provided} tidak ditemukan di Helpdesk. Pilih dari daftar ini:"
+                : "{$label} \"{$provided}\" tidak ditemukan di Helpdesk. Pilih dari daftar ini:";
         } else {
-            $intro = "{$label} belum dipilih.";
+            $intro = $this->fieldQuestion($issue['field']);
         }
 
         if ($optionsBlock === '') {
@@ -167,10 +264,15 @@ class WhatsappHelpdeskClassificationResolver
     public function nextQuestionForField(string $field): string
     {
         return match ($this->normalizeField($field)) {
+            'phone' => 'Nomor WhatsApp pelapor? Format 08... atau 62...',
             'business_entities_id' => 'Entitas bisnis/cabang apa? Contoh: Complete Selular.',
             'unit_id' => 'Unit kerja yang menangani? Contoh: IT.',
             'problem_category_id' => 'Kategori masalah sesuai form Helpdesk? Contoh: Akses Akun.',
+            'title' => 'Judul tiket? Ringkas, seperti di form web Helpdesk.',
+            'description' => 'Jelaskan kendalanya. Apa yang terjadi, sejak kapan, dan apa yang sudah dicoba.',
             'priority_id' => 'Prioritas tiket? Pilih Low, Medium, High, Critical, atau Enhancement.',
+            'supporting_attachments' => 'Ada lampiran? Kirim file atau ketik lewati.',
+            'consent_to_create' => 'Buat tiket sekarang? Ketik ya untuk konfirmasi.',
             default => 'Lengkapi data tiket sesuai form Helpdesk web.',
         };
     }
@@ -210,7 +312,8 @@ class WhatsappHelpdeskClassificationResolver
                 if ($ownerUnits->count() === 1) {
                     return $ownerUnits->first();
                 }
-            } catch (\Throwable) {
+            } catch (Throwable $exception) {
+                report($exception);
             }
         }
 
@@ -268,12 +371,170 @@ class WhatsappHelpdeskClassificationResolver
         ];
 
         if (isset($aliases[$normalized])) {
-            return Priority::find($aliases[$normalized]);
+            $aliased = Priority::find($aliases[$normalized]);
+            if ($aliased) {
+                return $aliased;
+            }
         }
 
         return Priority::query()
             ->whereRaw('LOWER(name) = ?', [$normalized])
             ->first();
+    }
+
+    /**
+     * Jawaban "1" berarti opsi ke-1 di daftar, bukan otomatis ID database 1.
+     */
+    public function resolveNumberedListChoice(string $field, string $value, array $formOptions): BusinessEntity|Unit|ProblemCategory|Priority|null
+    {
+        if ($value === '' || ! ctype_digit($value)) {
+            return null;
+        }
+
+        $index = (int) $value;
+        $items = array_slice($this->optionsForField($field, $formOptions), 0, self::LIST_DISPLAY_LIMIT);
+        if ($index < 1 || $index > count($items)) {
+            return null;
+        }
+
+        $item = $items[$index - 1];
+        $id = (int) ($item['id'] ?? 0);
+        if ($id <= 0) {
+            return null;
+        }
+
+        return match ($this->normalizeField($field)) {
+            'business_entities_id' => BusinessEntity::find($id),
+            'unit_id' => Unit::find($id),
+            'problem_category_id' => ProblemCategory::find($id),
+            'priority_id' => Priority::find($id),
+            default => null,
+        };
+    }
+
+    /**
+     * @param  Collection<int, BusinessEntity|Unit|ProblemCategory|Priority>  $records
+     * @return array{status: string, record?: BusinessEntity|Unit|ProblemCategory|Priority, candidates?: list<string>}
+     */
+    private function matchUniqueMasterRecord(string $message, $records): array
+    {
+        $hits = [];
+        foreach ($records as $record) {
+            $name = $this->text($record->name ?? '');
+            if ($name !== '' && $this->messageMentionsName($message, $name)) {
+                $hits[] = $record;
+            }
+        }
+
+        if (count($hits) === 1) {
+            return ['status' => 'matched', 'record' => $hits[0]];
+        }
+
+        if (count($hits) > 1) {
+            return [
+                'status' => 'ambiguous',
+                'candidates' => array_values(array_unique(array_map(
+                    fn ($record): string => (string) $record->name,
+                    $hits,
+                ))),
+            ];
+        }
+
+        return ['status' => 'none'];
+    }
+
+    /**
+     * @return array{status: string, record?: Priority, candidates?: list<string>}
+     */
+    private function matchUniquePriority(string $message): array
+    {
+        $hits = [];
+
+        foreach (Priority::query()->orderBy('id')->get(['id', 'name']) as $priority) {
+            if ($this->messageMentionsName($message, (string) $priority->name)) {
+                $hits[$priority->id] = $priority;
+            }
+        }
+
+        $hits = array_values($hits);
+        if (count($hits) === 1) {
+            return ['status' => 'matched', 'record' => $hits[0]];
+        }
+        if (count($hits) > 1) {
+            return [
+                'status' => 'ambiguous',
+                'candidates' => array_map(fn (Priority $priority): string => (string) $priority->name, $hits),
+            ];
+        }
+
+        return ['status' => 'none'];
+    }
+
+    private function messageMentionsName(string $message, string $name): bool
+    {
+        $haystack = Str::lower($message);
+        $needle = Str::lower($this->text($name));
+        if ($needle === '' || $haystack === '') {
+            return false;
+        }
+
+        if (Str::length($needle) <= 3) {
+            return (bool) preg_match('/(?<![a-z0-9])'.preg_quote($needle, '/').'(?![a-z0-9])/u', $haystack);
+        }
+
+        return str_contains($haystack, $needle);
+    }
+
+    private function titleFromMessage(string $message): string
+    {
+        $line = $this->text(strtok(str_replace(["\r\n", "\r"], "\n", $message), "\n") ?: $message);
+        $line = preg_replace('/^(bos|min|admin|halo|hai|tolong|mohon)[,:\s]+/iu', '', $line) ?: $line;
+
+        return Str::limit($this->text($line), 80, '');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function missingCreateFields(array $ticketData, ?User $owner): array
+    {
+        $missing = [];
+        foreach (['title', 'description'] as $field) {
+            if ($this->text($ticketData[$field] ?? '') === '') {
+                $missing[] = $field;
+            }
+        }
+
+        $evaluation = $this->evaluate($ticketData, $owner);
+        foreach ($evaluation['issues'] as $issue) {
+            $missing[] = $issue['field'];
+        }
+
+        return array_values(array_unique($missing));
+    }
+
+    private function nextMissingCreateField(array $ticketData, ?User $owner): ?string
+    {
+        return $this->missingCreateFields($ticketData, $owner)[0] ?? null;
+    }
+
+    /**
+     * @return list<array{id: int, name: string}>
+     */
+    private function optionsForField(string $field, array $formOptions): array
+    {
+        $items = match ($this->normalizeField($field)) {
+            'business_entities_id' => $formOptions['business_entities'] ?? [],
+            'unit_id' => $formOptions['units'] ?? [],
+            'problem_category_id' => $formOptions['problem_categories'] ?? [],
+            'priority_id' => $formOptions['priorities'] ?? [],
+            default => [],
+        };
+
+        return array_values(array_filter(
+            is_array($items) ? $items : [],
+            fn ($item): bool => is_array($item) && $this->text($item['name'] ?? '') !== '',
+        ));
     }
 
     private function buildValidatedMessage(
@@ -421,35 +682,40 @@ class WhatsappHelpdeskClassificationResolver
     private function fieldLabel(string $field): string
     {
         return match ($this->normalizeField($field)) {
-            'business_entities_id' => 'Entitas bisnis',
+            'business_entities_id' => 'Perusahaan/cabang',
             'unit_id' => 'Unit kerja',
-            'problem_category_id' => 'Kategori masalah',
+            'problem_category_id' => 'Jenis masalah',
             'priority_id' => 'Prioritas',
             default => 'Data tiket',
         };
     }
 
-    private function formatFormOptionsList(string $field, array $formOptions, int $limit = 8): string
+    private function fieldQuestion(string $field): string
     {
-        $items = match ($this->normalizeField($field)) {
-            'business_entities_id' => $formOptions['business_entities'] ?? [],
-            'unit_id' => $formOptions['units'] ?? [],
-            'problem_category_id' => $formOptions['problem_categories'] ?? [],
-            'priority_id' => $formOptions['priorities'] ?? [],
-            default => [],
+        return match ($this->normalizeField($field)) {
+            'business_entities_id' => 'Perusahaan/cabang tempat kejadian?',
+            'unit_id' => 'Tim mana yang harus menangani?',
+            'problem_category_id' => 'Jenis masalahnya apa?',
+            'priority_id' => 'Seberapa mendesak?',
+            default => 'Lengkapi data tiket.',
         };
+    }
 
+    private function formatFormOptionsList(string $field, array $formOptions, int $limit = self::LIST_DISPLAY_LIMIT): string
+    {
+        $items = $this->optionsForField($field, $formOptions);
+        $visible = array_slice($items, 0, $limit);
         $lines = [];
-        foreach (array_slice($items, 0, $limit) as $index => $item) {
-            $name = $this->text(is_array($item) ? ($item['name'] ?? '') : '');
-            if ($name === '') {
-                continue;
-            }
-
-            $lines[] = ($index + 1).'. '.$name;
+        foreach ($visible as $index => $item) {
+            $lines[] = ($index + 1).'. '.$this->text($item['name'] ?? '');
         }
 
-        return implode("\n", $lines);
+        $block = implode("\n", $lines);
+        if (count($items) > $limit) {
+            $block .= "\n\nDitampilkan {$limit} pertama. Ketik nama yang tertulis jika tidak ada di daftar.";
+        }
+
+        return $block;
     }
 
     private function text(mixed $value): string

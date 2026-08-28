@@ -2,6 +2,8 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Livewire\PersonalInfo;
+use App\Filament\Livewire\UpdatePassword;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\MyProfile;
 use Apriansyahrs\MekayaTheme\MekayaPlugin;
@@ -16,6 +18,7 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Width;
+use Filament\View\PanelsRenderHook;
 use Filament\Widgets;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -25,8 +28,6 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Jeffgreco13\FilamentBreezy\BreezyCore;
 use Leandrocfe\FilamentApexCharts\FilamentApexChartsPlugin;
-
-use Filament\View\PanelsRenderHook;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -86,6 +87,10 @@ class AdminPanelProvider extends PanelProvider
                         shouldRegisterNavigation: false,
                     )
                     ->customMyProfilePage(MyProfile::class)
+                    ->myProfileComponents([
+                        'personal_info' => PersonalInfo::class,
+                        'update_password' => UpdatePassword::class,
+                    ])
                     ->enableTwoFactorAuthentication((bool) config('filament-breezy.enable_2fa', false))
                     ->enableSanctumTokens(
                         (bool) config('filament-breezy.enable_sanctum', false),
@@ -124,6 +129,10 @@ class AdminPanelProvider extends PanelProvider
                         '2xl' => null,
                     ]),
             ])
+            // Mekaya mengaktifkan dua route ini secara implisit. Helpdesk memakai
+            // OTP WhatsApp sampai tersedia verifikasi email yang terpisah.
+            ->passwordReset(null, null)
+            ->profile(null)
             ->viteTheme('resources/css/admin/theme.css')
             ->maxContentWidth(Width::Full);
     }

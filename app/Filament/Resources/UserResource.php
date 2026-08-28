@@ -7,25 +7,25 @@ use App\Filament\Resources\UserResource\RelationManagers\RolesRelationManager;
 use App\Filament\Resources\UserResource\RelationManagers\TicketsRelationManager;
 use App\Models\Unit;
 use App\Models\User;
-use Filament\Forms;
+use App\Support\PhoneNumber;
 use Filament\Actions;
-use Filament\Schemas\Schema;
+use Filament\Forms;
 use Filament\Resources\Resource;
-use Filament\Tables\Table;
+use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use STS\FilamentImpersonate\Actions\Impersonate;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rule;
+use STS\FilamentImpersonate\Actions\Impersonate;
 
 class UserResource extends Resource
 {
     protected static ?string $model = User::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-users';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-users';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Master Data';
+    protected static string|\UnitEnum|null $navigationGroup = 'Master Data';
 
     public static function form(Schema $form): Schema
     {
@@ -41,9 +41,18 @@ class UserResource extends Resource
                     ->maxLength(255),
                 Forms\Components\TextInput::make('email')
                     ->email()
-                    ->required()
                     ->maxLength(255),
-                Forms\Components\DateTimePicker::make('email_verified_at'),
+                Forms\Components\DateTimePicker::make('email_verified_at')
+                    ->helperText('Email belum dapat dipakai sampai waktu verifikasi dan sumber tepercaya diisi.'),
+                Forms\Components\Select::make('email_verified_via')
+                    ->label('Sumber verifikasi email')
+                    ->options([
+                        'admin' => 'Diverifikasi administrator',
+                        'email_link' => 'Tautan verifikasi email',
+                        'socialite' => 'Penyedia Socialite',
+                        'legacy_review_required' => 'Data lama — perlu ditinjau',
+                    ])
+                    ->helperText('Pilih "Diverifikasi administrator" hanya setelah kepemilikan email diperiksa.'),
                 Forms\Components\TextInput::make('password')
                     ->password()
                     ->dehydrateStateUsing(fn ($state) => Hash::make($state))
@@ -52,20 +61,12 @@ class UserResource extends Resource
                     ->maxLength(255),
                 Forms\Components\TextInput::make('phone')
                     ->tel()
-                    // ->unique()
                     ->maxLength(15)
                     ->minLength(10)
-                    ->dehydrateStateUsing(function ($state) {
-                        // Jika nomor dimulai dengan '0', ganti dengan '62'
-                        if (substr($state, 0, 1) === '0') {
-                            return '62' . substr($state, 1); // Transformasi nomor di sini
-                        }
-                        return $state; // Kembalikan nomor telepon yang sudah diubah
-                    }),
+                    ->dehydrateStateUsing(fn ($state) => PhoneNumber::canonical($state)),
                 Forms\Components\Toggle::make('is_active')
                     ->required(),
-            ])
-        ;
+            ]);
     }
 
     public static function table(Table $table): Table
@@ -89,7 +90,7 @@ class UserResource extends Resource
                 Impersonate::make()
                     ->redirectTo(route('filament.admin.pages.dashboard'))
                     ->hidden(
-                        fn () => !auth()
+                        fn () => ! auth()
                             ->user()
                             ->hasAnyRole(['Super Admin']),
                     ),
@@ -100,8 +101,7 @@ class UserResource extends Resource
                 Actions\DeleteBulkAction::make(),
                 Actions\ForceDeleteBulkAction::make(),
                 Actions\RestoreBulkAction::make(),
-            ])
-        ;
+            ]);
     }
 
     public static function getRelations(): array

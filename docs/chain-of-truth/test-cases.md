@@ -9,23 +9,23 @@ Status: Reviewed
 | TC-003 | FR-005, UC-002 | Ticket list supports expected actions and export. | Missing |
 | TC-004 | FR-006, UC-002 | Role-scoped ticket list returns only allowed tickets for Super Admin, Admin Unit, Staff Unit, and owner. | Missing |
 | TC-005 | FR-007, UC-002 | Workflow buttons transition Open and In Progress tickets correctly. | Missing |
-| TC-006 | FR-008, UC-001, UC-002 | Ticket create/update creates history. | Partially existing through ITA tests |
+| TC-006 | FR-008, UC-001, UC-002 | Ticket create/update creates history. | Partially existing through MCP ticket-creation tests |
 | TC-007 | FR-009, UC-002 | Status changes set `approved_at` and `solved_at`. | Missing |
 | TC-008 | FR-010, UC-001, UC-003 | Ticket and comment notifications go to intended recipients. | Missing |
 | TC-009 | FR-011, UC-003 | Comment relation manager stores comment and attachment path. | Missing |
-| TC-010 | FR-012, UC-004 | Master-data endpoint returns units, categories, priorities, and business entities. | Existing feature test |
-| TC-011 | FR-013, UC-004 | Classification validation resolves valid values and rejects unknown or missing values. | Existing feature tests |
-| TC-012 | FR-014, UC-004 | Verified ITA actor creates a ticket. | Existing feature test |
-| TC-013 | FR-015, UC-004 | Phone-only ITA reporter auto-registers without email/password. | Existing feature test |
-| TC-014 | FR-016, UC-004 | Unverified, unknown, or LID-only actor is rejected. | Existing feature tests |
-| TC-015 | FR-017, UC-005 | ITA actor retrieves and comments on ticket. | Existing feature test |
-| TC-016 | FR-018, UC-005 | Unsupported close-ticket action is rejected. | Existing feature tests |
-| TC-017 | FR-019, UC-004, UC-005 | Idempotency key prevents duplicate successful action. | Existing feature test |
-| TC-018 | FR-002, FR-020, UC-006 | Phone OTP login succeeds and rejects unknown or wrong code. | Existing feature tests |
-| TC-019 | FR-021, UC-007 | Socialite registration disabled and existing user linking. | Existing feature tests |
+| TC-010 | FR-012, UC-004 | MCP intake returns relevant units, categories, priorities, and business entities when requesting or correcting classification. | Existing feature tests |
+| TC-011 | FR-013, UC-004 | MCP classification resolves valid values and rejects unknown, ambiguous, or missing values without advancing incorrectly. | Existing feature tests |
+| TC-012 | FR-014, UC-004 | A verified MCP reporter with one canonical resolved identity creates a ticket; if the resolved owner changes before commit, creation is rejected and phone verification restarts. | Existing feature tests |
+| TC-013 | FR-015, UC-004 | When no eligible Helpdesk account exists, exactly one Talenta phone match may supply the prerequisite account data server-side; multiple matches create neither an account nor a ticket, while a zero match enters consent-gated inline account creation before the same intake can create a ticket. | Existing feature tests |
+| TC-014 | FR-016, UC-004 | Unverified, conflicting-phone, ambiguous-phone, and LID-only identities are rejected; a verified phone unknown to both directories enters consent-gated inline registration. | Existing feature tests |
+| TC-017 | FR-019, UC-004 | Exact message and creation retries replay safely, while reused identifiers with changed content conflict and no duplicate ticket is created. | Existing feature tests |
+| TC-018 | FR-002, FR-020, UC-006 | Phone login sends OTP before any Helpdesk/Talenta lookup and gives known/unknown numbers the same pre-verification state. Existing login succeeds after proof; manual and Talenta registration remain pending until valid OTP. Wrong OTP, missing server-side proof, delivery failure, cache loss, phone tampering, inactive/deleted accounts, and canonical duplicates create no account. | Existing feature tests |
+| TC-019 | FR-021, UC-007 | Socialite never auto-registers an unknown identity; new and existing links accept trusted active users and reject unverified, legacy-review, inactive, or soft-deleted users. | Existing feature tests |
 | TC-020 | FR-022, UC-008 | Master data and users can be managed under policy. | Missing |
 | TC-021 | NFR-001, NFR-002 | Dependency versions meet PHP, Laravel, Filament expectations. | Static evidence only |
 | TC-022 | NFR-003, NFR-007 | WhatsApp gateway normalizes numbers, sends WAHA, and falls back to Fonnte. | Existing unit tests |
-| TC-023 | NFR-004 | Integration method error omits debug details. | Existing feature test |
+| TC-023 | NFR-004 | MCP method and tool errors omit framework debug details. | Existing feature test |
 | TC-024 | NFR-006 | Ticket attachment limits reject invalid file types, count, and total size. | Missing |
-
+| TC-025 | FR-016, FR-020, UC-004 | An MCP reporter unknown to Helpdesk/Talenta reaches `registration_consent` only after OTP or a trusted assertion. Name input before explicit yes creates nothing; after yes, only a valid full name typed at `registration_name` may atomically create one phone-only account and continue the same intake with its original issue. Declining returns terminal `cancelled` with no account, ticket, web URL, or redirect. | Existing feature tests |
+| TC-026 | FR-002, NFR-008, BR-010 | Canonical phone duplicates block the unique-index migration; legacy email timestamps require review, all old remember tokens are revoked, and unverified email cannot authenticate, receive mail, mutate identity through self-service profile, reset passwords, link Socialite, or access the panel without a matching phone-OTP session. | Existing feature tests |
+| TC-027 | NFR-009, UC-004 | Stable distinct external users A/B/C/D retain isolated reporter bindings; local MCP calls without `external_user_id` never inherit another reporter and must verify by OTP on each new intake. | Existing feature tests |

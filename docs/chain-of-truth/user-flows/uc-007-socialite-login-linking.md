@@ -9,15 +9,15 @@ Observed in `SocialiteController.php`, `SocialiteRegistrationDisabledTest.php`, 
 ## Flow
 
 - Trigger: User opens `/auth/{provider}` and returns via callback.
-- Preconditions: Provider returns user id, name, and email.
+- Preconditions: Provider returns an identity and the linked or email-matched Helpdesk user is active, non-deleted, and has trusted email-verification provenance.
 - Main path:
   1. System redirects to provider.
   2. Callback obtains provider user.
-  3. System finds existing `socialite_users` row or existing helpdesk user by email.
-  4. System creates provider link for existing helpdesk user.
+  3. System finds an existing `socialite_users` row or one existing Helpdesk user by email.
+  4. System validates the Helpdesk account state and trusted email provenance, then creates a provider link when one does not already exist.
   5. System logs user in and redirects to dashboard.
-- Alternative: If registration is enabled and no user exists, system creates a user and assigns `User` role.
-- Exception: When registration is disabled and no matching helpdesk user exists, system returns login error.
+- Exception: Unknown users are never auto-registered, even when package configuration enables registration.
+- Exception: Unverified or legacy-review email, inactive account, or soft-deleted account returns a login error and creates no provider link.
 - Postconditions: Existing user can authenticate via provider.
 
 ## Data Used
@@ -26,6 +26,6 @@ ENT-001 User, ENT-010 SocialiteUser.
 
 ## Acceptance Criteria
 
-- AC-UC-007-01: Unknown provider user is not auto-registered when registration disabled.
-- AC-UC-007-02: Existing helpdesk user can link provider identity.
-
+- AC-UC-007-01: Unknown provider user is never auto-registered.
+- AC-UC-007-02: An active existing Helpdesk user with trusted email provenance can link and reuse a provider identity.
+- AC-UC-007-03: Existing links and new email matches are rejected for legacy-review, unverified, inactive, or soft-deleted accounts.
