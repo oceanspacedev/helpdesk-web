@@ -204,6 +204,17 @@ The UI accepts intake TTL values from 10 to 1,440 minutes, authenticated request
 
 ## Connect clients
 
+### Choose one connection mode
+
+Choose the transport before copying a client configuration. HTTP and local stdio use different identities:
+
+| Mode | Use when | Authentication/identity | Do not configure |
+|---|---|---|---|
+| Streamable HTTP | The Helpdesk web application is reachable by the client | One dedicated bearer token per client, created in **Pengaturan MCP** | `HELPDESK_MCP_LOCAL_CLIENT_ID` |
+| Local stdio | The AI client runs on the same trusted machine as the Helpdesk source, PHP, and database | One stable, different `HELPDESK_MCP_LOCAL_CLIENT_ID` in each client's process configuration | Bearer token |
+
+`HELPDESK_MCP_TOKEN` and `HELPDESK_MCP_TOKENS` are legacy **Helpdesk server-side** HTTP fallbacks; they are not generic values to paste into every local client. When the database settings row exists, the active tokens managed in **Pengaturan MCP** take precedence. Conversely, `HELPDESK_MCP_LOCAL_CLIENT_ID` belongs in the local client's `env` block rather than being shared by Codex, Antigravity, Atlas, and browser UAT through one Helpdesk `.env` value.
+
 Every remote client uses the same values:
 
 ```text
@@ -270,9 +281,94 @@ In Antigravity IDE, open **MCP Servers → Manage MCP Servers → View raw confi
 
 ### Connect Atlas or a WhatsApp gateway
 
-Atlas remains a generic MCP client or channel gateway; the Helpdesk server has no Atlas-specific endpoint. If Atlas can connect directly to a remote MCP server with custom headers, give it the common Streamable HTTP URL and its own bearer token. If Atlas relays WhatsApp events, keep the bearer token in the trusted gateway—not in the prompt—and implement the [gateway contract](#gateway-contract-whatsapp-telegram-discord-web-and-others).
+These instructions are for the self-hosted Atlas project at `/Users/apriansyahrs/Documents/Code/atlas`. Atlas already provides an MCP management UI and stores each workspace's server definition in its database, so no Atlas configuration file needs to be edited manually.
 
-For an inbound WhatsApp message such as `/helpdesk printer kasir mati`, the gateway passes the message unchanged to `helpdesk_intake` with `channel=whatsapp`, a stable sender `external_user_id`, a stable conversation ID, and a unique message ID. It then returns the tool's `user_reply` to WhatsApp and reuses the returned `intake_id` plus the same sender identity for every reply until terminal status. A trusted webhook gateway may add the documented signed `identity_assertion`; otherwise the safe flow sends WhatsApp OTP.
+Choose one Atlas connection mode; do not copy both Helpdesk environment variables into Atlas:
+
+| Atlas deployment | Recommended transport | Authentication/identity configured in Atlas | Helpdesk URL |
+|---|---|---|---|
+| Atlas started natively with Bun | HTTP | A dedicated bearer token | `http://127.0.0.1:8000/mcp/helpdesk` |
+| Atlas running in Docker | HTTP | A dedicated bearer token | `http://host.docker.internal:8000/mcp/helpdesk` |
+| Native local development without HTTP | Command/stdio | A stable `HELPDESK_MCP_LOCAL_CLIENT_ID` | Not applicable |
+
+HTTP is the default recommendation. Atlas shares an HTTP connection across assigned profiles, while Command/stdio starts a local MCP process for each profile.
+
+#### Atlas HTTP setup (recommended)
+
+First create a token dedicated to Atlas:
+
+1. In Helpdesk, open **Admin → Pengaturan → Pengaturan MCP**.
+2. Under **Klien HTTP MCP**, select **Tambah token**.
+3. Name it `Atlas Local`, keep it active, copy the generated token, and save.
+
+Do not reuse a temporary UAT token outside disposable testing, and never document its literal value. Once database-backed MCP settings exist, their active tokens replace the legacy `HELPDESK_MCP_TOKEN`/`HELPDESK_MCP_TOKENS` fallback values from `.env`.
+
+Then register Helpdesk in Atlas:
+
+1. Open **Agent → System → MCP → Add server** as a Workspace Admin or Superadmin.
+2. Select **HTTP**.
+3. Set **Name** to `helpdesk`.
+4. Set **URL** to the native or Docker URL from the table above.
+5. Under **Headers**, add `Authorization` with value `Bearer <ATLAS_TOKEN>`.
+6. Select **Test connection**, then save the server.
+7. Open **Agent → Profiles**, select a profile, then use **MCP servers → Assign existing → helpdesk**.
+
+Atlas should discover `helpdesk_intake` and expose it to the assigned profile as `helpdesk__helpdesk_intake`. `HELPDESK_MCP_LOCAL_CLIENT_ID` is ignored in this HTTP mode because the bearer token is the Atlas client identity.
+
+Atlas also accepts this through **Import JSON**. Keep the real token only in the private Atlas UI/database; never commit it. Atlas masks the header when returning it through the UI/API, but its SQLite database stores the usable value, so restrict access to the Atlas data directory and its backups:
+
+```json
+{
+  "mcpServers": {
+    "helpdesk": {
+      "url": "http://127.0.0.1:8000/mcp/helpdesk",
+      "headers": {
+        "Authorization": "Bearer REPLACE_WITH_ATLAS_TOKEN"
+      }
+    }
+  }
+}
+```
+
+When Atlas runs through Docker Desktop on macOS or Windows, replace `127.0.0.1` with `host.docker.internal`. On Linux Docker Engine, also map `host.docker.internal` to `host-gateway` or use the address appropriate for that deployment. The Helpdesk development server must accept connections from Docker; for local development only, it can be started with:
+
+```bash
+php artisan serve --host=0.0.0.0 --port=8000
+```
+
+Use the public HTTPS Helpdesk endpoint instead of either local URL in production.
+
+#### Atlas Command/stdio setup (native only)
+
+Use this alternative only when Atlas and Helpdesk run directly on the same trusted machine. It does not use `HELPDESK_MCP_TOKEN`; Atlas passes a stable local identity to the process instead.
+
+In **Agent → System → MCP → Add server**, select **Command**, or use **Import JSON**. The example below is intentionally specific to Apriansyah's current Mac workspace; on another machine, replace the PHP command and Artisan argument with `/absolute/path/to/php` and `/absolute/path/to/web-helpdesk/artisan`:
+
+```json
+{
+  "mcpServers": {
+    "helpdesk-local": {
+      "command": "/Users/apriansyahrs/Library/Application Support/Herd/bin/php",
+      "args": [
+        "/Users/apriansyahrs/Documents/Code/web-helpdesk/artisan",
+        "mcp:start",
+        "helpdesk"
+      ],
+      "env": {
+        "HELPDESK_MCP_LOCAL_CLIENT_ID": "atlas-apriansyah-local"
+      }
+    }
+  }
+}
+```
+
+Select **Test connection**, save, and assign `helpdesk-local` to the required profile. Keep the local client ID stable across restarts and different from the IDs used by Codex, Antigravity, browser UAT, or another local client. If Atlas runs in Docker, this Command configuration cannot access the host's `/Users/...` paths or Herd PHP; use the HTTP setup instead.
+
+#### Atlas WhatsApp gateway behavior
+
+Atlas remains a generic MCP client or channel gateway; the Helpdesk server has no Atlas-specific endpoint. Connecting the server only makes `helpdesk__helpdesk_intake` available to an assigned profile. Atlas's current generic MCP bridge does **not** automatically inject Helpdesk-specific WhatsApp identity fields, so connection alone does not yet implement the [gateway contract](#gateway-contract-whatsapp-telegram-discord-web-and-others).
+
+For an inbound WhatsApp message such as `/helpdesk printer kasir mati`, the Atlas channel integration must deterministically pass the message to `helpdesk_intake` with `channel=whatsapp`, the stable sender as `external_user_id`, a stable conversation ID, and a unique message ID. It must return the tool's `user_reply` to WhatsApp and reuse the returned `intake_id` plus the same sender identity for every reply until terminal status. Do not rely on the model to invent these identity values. A dedicated Atlas channel adapter is required before claiming reusable WhatsApp identity across intakes. That trusted adapter may add the documented signed `identity_assertion`; otherwise the safe flow sends WhatsApp OTP.
 
 ### Connect another MCP client
 
