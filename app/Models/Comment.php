@@ -27,6 +27,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Comment extends Model
 {
     use SoftDeletes;
+
     protected $table = 'comments';
 
     protected $casts = [
@@ -63,20 +64,14 @@ class Comment extends Model
 
             // Jika yang berkomentar adalah pelapor (owner)
             if ((int) $comment->user_id === (int) $ticket->owner_id) {
-                if ($ticket->responsible_id) {
-                    $responsibleUser = User::find($ticket->responsible_id);
-                    if ($responsibleUser && $responsibleUser->is_active) {
-                        $receivers->push($responsibleUser);
-                    }
+                $responsible = $ticket->eligibleResponsible();
+
+                if ($responsible) {
+                    $receivers->push($responsible);
                 } else {
-                    $unitUsers = User::where('is_active', 1)
+                    $unitUsers = User::query()
+                        ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
                         ->where('id', '!=', $comment->user_id)
-                        ->whereHas('roles', function ($query) use ($ticket) {
-                            $query->whereIn('name', ['Super Admin', 'Master Admin', 'Admin Unit', 'Staff Unit', 'Staf Unit'])
-                                ->when($ticket->unit_id, function ($q) use ($ticket) {
-                                    $q->where('unit_id', $ticket->unit_id);
-                                });
-                        })
                         ->get();
                     $receivers = $receivers->merge($unitUsers);
                 }

@@ -5,33 +5,32 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\TicketResource\Pages;
 use App\Filament\Resources\TicketResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\TicketResource\RelationManagers\TicketHistoriesRelationManager;
+use App\Models\BusinessEntity;
 use App\Models\Priority;
 use App\Models\ProblemCategory;
 use App\Models\Ticket;
 use App\Models\TicketStatus;
-use App\Models\BusinessEntity;
 use App\Models\Unit;
 use App\Models\User;
 use Carbon\Carbon;
-use Filament\Forms;
 use Filament\Actions;
-use Filament\Schemas\Schema;
+use Filament\Forms;
+use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
-use Filament\Resources\Resource;
-use Filament\Tables\Table;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Filament\Tables\Filters\FilterGroup;
 
 class TicketResource extends Resource
 {
     protected static ?string $model = Ticket::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-ticket';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-ticket';
 
     protected static ?int $navigationSort = 3;
 
@@ -43,11 +42,13 @@ class TicketResource extends Resource
             ->schema([
                 Section::make()->schema([
                     Forms\Components\Select::make('unit_id')
-                        ->label(__('Work Unit'))
+                        ->label('Unit / Divisi Tujuan')
                         ->options(Unit::all()
                             ->pluck('name', 'id'))
                         ->searchable()
                         ->required()
+                        ->helperText('Unit ini akan menerima dan memproses tiket.')
+                        ->disabledOn('edit')
                         ->afterStateUpdated(function (?int $state, Get $get, Set $set): void {
                             $unit = Unit::find($state);
                             if ($unit) {
@@ -72,7 +73,8 @@ class TicketResource extends Resource
                             return ProblemCategory::all()->pluck('name', 'id')->all();
                         })
                         ->searchable()
-                        ->required(),
+                        ->required()
+                        ->disabledOn('edit'),
 
                     Forms\Components\TextInput::make('title')
                         ->label(__('Title'))
@@ -84,7 +86,7 @@ class TicketResource extends Resource
 
                     Forms\Components\RichEditor::make('description')
                         ->fileAttachmentsDisk('public')
-                        ->fileAttachmentsDirectory('ticket-attachments/' . date('m-y'))
+                        ->fileAttachmentsDirectory('ticket-attachments/'.date('m-y'))
                         ->fileAttachmentsVisibility('public')
                         ->label(__('Description'))
                         ->required()
@@ -97,7 +99,7 @@ class TicketResource extends Resource
                         ->label(__('Supporting Attachments'))
                         ->multiple()
                         ->disk('public')
-                        ->directory('ticket-supporting/' . date('m-y'))
+                        ->directory('ticket-supporting/'.date('m-y'))
                         ->visibility('public')
                         ->acceptedFileTypes([
                             'application/pdf',
@@ -121,7 +123,7 @@ class TicketResource extends Resource
                         ->enableDownload()
                         ->rules([
                             fn () => function ($attribute, $value, $fail): void {
-                                if (!is_array($value)) {
+                                if (! is_array($value)) {
                                     return;
                                 }
 
@@ -182,24 +184,29 @@ class TicketResource extends Resource
                         ->searchable()
                         ->required()
                         ->hiddenOn('create')
-                        ->hidden(
-                            fn () => !auth()
-                                ->user()
-                                ->hasAnyRole(['Super Admin', 'Admin Unit', 'Staff Unit']),
-                        ),
+                        ->disabled(),
 
                     Forms\Components\Select::make('responsible_id')
                         ->label(__('Responsible'))
-                        ->options(
-                            User::pluck('name', 'id')->toArray() // Mengambil nama pengguna dan id
-                        )
+                        ->options(function (Get $get): array {
+                            $unitId = (int) $get('unit_id');
+
+                            if (! $unitId) {
+                                return [];
+                            }
+
+                            return User::query()
+                                ->ticketProcessorsForUnit($unitId, includeGlobal: true)
+                                ->orderBy('name')
+                                ->pluck('name', 'id')
+                                ->all();
+                        })
                         ->searchable()
-                        ->required()
                         ->hiddenOn('create')
                         ->hidden(
-                            fn () => !auth()
+                            fn () => ! auth()
                                 ->user()
-                                ->hasAnyRole(['Super Admin', 'Admin Unit']),
+                                ->hasAnyRole(['Super Admin', 'Master Admin']),
                         ),
 
                     Forms\Components\Placeholder::make('owner')
@@ -208,9 +215,9 @@ class TicketResource extends Resource
                             ?Ticket $record,
                         ): string => $record ? $record->owner->name : '-')
                         ->hidden(
-                            fn () => !auth()
+                            fn () => ! auth()
                                 ->user()
-                                ->hasAnyRole(['Super Admin', 'Admin Unit']),
+                                ->hasAnyRole(['Super Admin', 'Master Admin', 'Admin Unit', 'Staff Unit']),
                         ),
 
                     Forms\Components\Placeholder::make('created_at')
@@ -224,7 +231,7 @@ class TicketResource extends Resource
                         ->content(fn (
                             ?Ticket $record,
                         ): string => $record ? $record->updated_at->diffForHumans() : '-'),
-                        
+
                     Forms\Components\Placeholder::make('sla_due_at')
                         ->translateLabel()
                         ->content(fn (
@@ -256,10 +263,18 @@ class TicketResource extends Resource
                     ->searchable()
                     ->toggleable()
                     ->description(
-                        fn (Ticket $record): string =>
-                        ($record->owner?->name ?: 'N/A') . ' - ' . ($record->businessEntity?->name ?: 'N/A'),
+                        fn (Ticket $record): string => ($record->businessEntity?->name ?: 'N/A'),
                         position: 'below'
                     ),
+                Tables\Columns\TextColumn::make('owner.name')
+                    ->label('Pengirim')
+                    ->searchable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('unit.name')
+                    ->label('Unit Tujuan')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('responsible.name')
                     ->translateLabel()
                     ->searchable()
@@ -294,9 +309,8 @@ class TicketResource extends Resource
                     ->dateTime('F j, Y H:i')
                     ->sortable()
                     ->toggleable(true)
-                    ->color(fn (Ticket $record): string => 
-                        $record->sla_due_at && \Carbon\Carbon::now()->gt($record->sla_due_at) && $record->ticket_statuses_id !== 4 
-                            ? 'danger' 
+                    ->color(fn (Ticket $record): string => $record->sla_due_at && Carbon::now()->gt($record->sla_due_at) && $record->ticket_statuses_id !== 4
+                            ? 'danger'
                             : 'success'
                     ),
                 Tables\Columns\TextColumn::make('is_sla_met')
@@ -305,11 +319,13 @@ class TicketResource extends Resource
                     ->badge()
                     ->getStateUsing(function ($record) {
                         if ($record->is_sla_met === null) {
-                            if ($record->sla_due_at && \Carbon\Carbon::now()->gt($record->sla_due_at)) {
+                            if ($record->sla_due_at && Carbon::now()->gt($record->sla_due_at)) {
                                 return 'Missed';
                             }
+
                             return $record->sla_due_at ? 'Pending' : 'N/A';
                         }
+
                         return $record->is_sla_met ? 'Achieved' : 'Missed';
                     })
                     ->color(fn (string $state): string => match ($state) {
@@ -344,10 +360,10 @@ class TicketResource extends Resource
                         }
 
                         // Ambil awal hari dari tanggal awal
-                        $start = !empty($data['start']) ? Carbon::parse($data['start'])->startOfDay() : null;
+                        $start = ! empty($data['start']) ? Carbon::parse($data['start'])->startOfDay() : null;
 
                         // Ambil akhir hari dari tanggal akhir
-                        $end = !empty($data['end']) ? Carbon::parse($data['end'])->endOfDay() : null;
+                        $end = ! empty($data['end']) ? Carbon::parse($data['end'])->endOfDay() : null;
 
                         // Tentukan logika filter berdasarkan apakah tanggal awal dan/atau akhir diisi
                         if ($start && $end) {
@@ -362,12 +378,12 @@ class TicketResource extends Resource
                         }
                     }),
                 Tables\Filters\SelectFilter::make('unit_id')
-                    ->label(__('Work Unit'))
+                    ->label('Unit Tujuan')
                     ->options(Unit::all()->pluck('name', 'id'))
                     ->hidden(
-                        fn () => !auth()
+                        fn () => ! auth()
                             ->user()
-                            ->hasAnyRole(['Super Admin']),
+                            ->hasAnyRole(['Super Admin', 'Master Admin']),
                     ),
                 Tables\Filters\SelectFilter::make('ticket_statuses_id')
                     ->label(__('Status'))
@@ -375,9 +391,6 @@ class TicketResource extends Resource
                 Tables\Filters\SelectFilter::make('business_entities_id')
                     ->label(__('Business Entity'))
                     ->options(BusinessEntity::pluck('name', 'id')),
-                Tables\Filters\SelectFilter::make('priority_id')
-                    ->label(__('Priority'))
-                    ->options(Priority::pluck('name', 'id')),
                 Tables\Filters\SelectFilter::make('priority_id')
                     ->label(__('Priority'))
                     ->options(Priority::pluck('name', 'id')),
@@ -414,52 +427,31 @@ class TicketResource extends Resource
         ];
     }
 
-    /**
-     * Display tickets based on each role.
-     *
-     * If it is a Super Admin, then display all tickets.
-     * If it is a Admin Unit, then display tickets based on the tickets they have created and their unit id.
-     * If it is a Staff Unit, then display tickets based on the tickets they have created and the tickets assigned to them.
-     * If it is a Regular User, then display tickets based on the tickets they have created.
-     */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
-            ->with(['owner', 'businessEntity', 'responsible', 'problemCategory', 'ticketStatus', 'priority'])
-            ->where(function ($query) {
-                $user = auth()->user();
-
-                // Display all tickets to Super Admin
-                if ($user->hasRole('Super Admin')) {
-                    return;
-                }
-
-                if ($user->hasRole('Admin Unit')) {
-                    // Admin Unit: view tickets they own or within their units
-                    $query->where('tickets.owner_id', $user->id)
-                        ->orWhereIn('tickets.unit_id', $user->units->pluck('id'));
-                } elseif ($user->hasRole('Staff Unit')) {
-                    // Staff Unit: view tickets assigned to them or that they own
-                    $query->whereIn('tickets.owner_id', [$user->id, 'tickets.responsible_id']);
-                } else {
-                    // Default: only view tickets owned by the user
-                    $query->where('tickets.owner_id', $user->id);
-                }
-            })
+        $query = parent::getEloquentQuery()
+            ->with(['owner', 'unit', 'businessEntity', 'responsible', 'problemCategory', 'ticketStatus', 'priority'])
             ->withoutGlobalScopes([SoftDeletingScope::class]);
-    }
 
+        $user = auth()->user();
+
+        return $user
+            ? $query->visibleTo($user)
+            : $query->whereRaw('1 = 0');
+    }
 
     public static function getNavigationBadge(): ?string
     {
         $user = auth()->user();
-        if (! $user || ! $user->hasRole(['Super Admin', 'Admin Unit'])) {
+        if (! $user || ! $user->canProcessTickets()) {
             return null;
         }
 
-        $count = cache()->remember("nav_badge_tickets_{$user->id}_{$user->unit_id}", 30, function () use ($user) {
-            return Ticket::where('ticket_statuses_id', 1)
-                ->when(! $user->hasRole('Super Admin') && $user->unit_id, fn ($q) => $q->where('unit_id', $user->unit_id))
+        $unitKey = sha1(implode(',', $user->assignedUnitIds()));
+        $count = cache()->remember("nav_badge_tickets_{$user->id}_{$unitKey}", 30, function () use ($user) {
+            return Ticket::query()
+                ->incomingFor($user)
+                ->where('ticket_statuses_id', TicketStatus::OPEN)
                 ->count();
         });
 

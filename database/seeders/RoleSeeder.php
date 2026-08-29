@@ -50,7 +50,7 @@ class RoleSeeder extends Seeder
         $staffUnitPermissions = [
             'ViewAny:BusinessEntity', 'View:BusinessEntity',
             'ViewAny:ProblemCategory', 'View:ProblemCategory',
-            'ViewAny:Ticket', 'View:Ticket', 'Update:Ticket',
+            'ViewAny:Ticket', 'View:Ticket', 'Create:Ticket', 'Update:Ticket',
             'ViewAny:TicketStatus', 'View:TicketStatus',
             'ViewAny:Unit', 'View:Unit',
             'ViewAny:Comment', 'View:Comment', 'Create:Comment', 'Update:Comment', 'Delete:Comment',
@@ -95,4 +95,3 @@ class RoleSeeder extends Seeder
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 }
-

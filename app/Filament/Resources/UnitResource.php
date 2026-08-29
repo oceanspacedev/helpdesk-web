@@ -4,14 +4,15 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UnitResource\Pages;
 use App\Filament\Resources\UnitResource\RelationManagers\ProblemCategoriesRelationManager;
+use App\Filament\Resources\UnitResource\RelationManagers\TicketsRelationManager;
 use App\Filament\Resources\UnitResource\RelationManagers\UsersRelationManager;
 use App\Models\Unit;
-use Filament\Forms;
 use Filament\Actions;
-use Filament\Schemas\Schema;
+use Filament\Forms;
 use Filament\Resources\Resource;
-use Filament\Tables\Table;
+use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
@@ -19,9 +20,9 @@ class UnitResource extends Resource
 {
     protected static ?string $model = Unit::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-briefcase';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-briefcase';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Master Data';
+    protected static string|\UnitEnum|null $navigationGroup = 'Master Data';
 
     public static function form(Schema $form): Schema
     {
@@ -31,8 +32,7 @@ class UnitResource extends Resource
                     ->required()
                     ->maxLength(255)
                     ->columnSpan('full'),
-            ])
-        ;
+            ]);
     }
 
     public static function table(Table $table): Table
@@ -52,8 +52,7 @@ class UnitResource extends Resource
                 Actions\DeleteBulkAction::make(),
                 Actions\ForceDeleteBulkAction::make(),
                 Actions\RestoreBulkAction::make(),
-            ])
-        ;
+            ]);
     }
 
     public static function getRelations(): array
@@ -61,6 +60,7 @@ class UnitResource extends Resource
         return [
             ProblemCategoriesRelationManager::class,
             UsersRelationManager::class,
+            TicketsRelationManager::class,
         ];
     }
 
@@ -79,7 +79,6 @@ class UnitResource extends Resource
         return parent::getEloquentQuery()
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
-            ])
-        ;
+            ]);
     }
 }

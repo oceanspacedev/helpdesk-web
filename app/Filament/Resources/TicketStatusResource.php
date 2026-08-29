@@ -6,10 +6,10 @@ use App\Filament\Resources\TicketStatusResource\Pages;
 use App\Filament\Resources\TicketStatusResource\RelationManagers\TicketsRelationManager;
 use App\Models\TicketStatus;
 use Filament\Forms;
-use Filament\Schemas\Schema;
 use Filament\Resources\Resource;
-use Filament\Tables\Table;
+use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
@@ -17,7 +17,7 @@ class TicketStatusResource extends Resource
 {
     protected static ?string $model = TicketStatus::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-stack';
 
     protected static ?int $navigationSort = 4;
 
@@ -44,7 +44,6 @@ class TicketStatusResource extends Resource
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('tickets_count')
-                    ->counts('tickets')
                     ->label(__('Tickets Count'))
                     ->sortable(),
             ])
@@ -72,7 +71,14 @@ class TicketStatusResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
+        $user = auth()->user();
+
         return parent::getEloquentQuery()
+            ->withCount([
+                'tickets' => fn (Builder $query): Builder => $user
+                    ? $query->visibleTo($user)
+                    : $query->whereRaw('1 = 0'),
+            ])
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ]);

@@ -6,12 +6,12 @@ use App\Filament\Resources\ProblemCategoryResource\Pages;
 use App\Filament\Resources\ProblemCategoryResource\RelationManagers\TicketsRelationManager;
 use App\Models\ProblemCategory;
 use App\Models\Unit;
-use Filament\Forms;
 use Filament\Actions;
-use Filament\Schemas\Schema;
+use Filament\Forms;
 use Filament\Resources\Resource;
-use Filament\Tables\Table;
+use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
@@ -19,7 +19,7 @@ class ProblemCategoryResource extends Resource
 {
     protected static ?string $model = ProblemCategory::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-link';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-link';
 
     protected static ?int $navigationSort = 5;
 
@@ -29,8 +29,7 @@ class ProblemCategoryResource extends Resource
             ->schema([
                 Forms\Components\Select::make('unit_id')
                     ->label(__('Work Unit'))
-                    ->options(Unit::all()
-                        ->pluck('name', 'id'))
+                    ->options(fn (): array => static::manageableUnitOptions())
                     ->searchable()
                     ->required(),
                 Forms\Components\TextInput::make('name')
@@ -52,15 +51,11 @@ class ProblemCategoryResource extends Resource
                     ->label(__('Work Unit')),
             ])
             ->filters([
-                 Tables\Filters\SelectFilter::make('unit_id')
-                 ->label(__('Work Unit'))
-                 ->options(Unit::all()->pluck('name', 'id'))
-                 ->hidden(
-                     fn () => !auth()
-                         ->user()
-                         ->hasAnyRole(['Super Admin']),
-                 ),
-                 Tables\Filters\TrashedFilter::make(),
+                Tables\Filters\SelectFilter::make('unit_id')
+                    ->label(__('Work Unit'))
+                    ->options(fn (): array => static::manageableUnitOptions())
+                    ->hidden(fn (): bool => ! auth()->user()?->hasGlobalTicketAccess()),
+                Tables\Filters\TrashedFilter::make(),
             ])
             ->actions([
                 Actions\ViewAction::make(),
@@ -92,15 +87,38 @@ class ProblemCategoryResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->with(['unit'])
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
-            ])->where(function ($query) {
-                if (auth()->user()->hasRole('Admin Unit')) {
-                    $query->where('problem_categories.unit_id', auth()->user()->unit_id);
-                }
-            });
+            ]);
+
+        $user = auth()->user();
+
+        if ($user && ! $user->hasGlobalTicketAccess()) {
+            $query->whereIn('problem_categories.unit_id', $user->assignedUnitIds());
+        }
+
+        return $query;
+    }
+
+    /** @return array<int, string> */
+    public static function manageableUnitOptions(): array
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return [];
+        }
+
+        return Unit::query()
+            ->when(
+                ! $user->hasGlobalTicketAccess(),
+                fn (Builder $query): Builder => $query->whereIn('units.id', $user->assignedUnitIds()),
+            )
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->all();
     }
 
     public static function getPluralModelLabel(): string

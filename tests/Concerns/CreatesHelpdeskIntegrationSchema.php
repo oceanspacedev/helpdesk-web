@@ -17,6 +17,7 @@ trait CreatesHelpdeskIntegrationSchema
             'comments',
             'ticket_histories',
             'tickets',
+            'helpdesk_mcp_settings',
             'helpdesk_identity_assertion_uses',
             'helpdesk_reporter_bindings',
             'mcp_ticket_creation_requests',
@@ -82,6 +83,17 @@ trait CreatesHelpdeskIntegrationSchema
             $table->char('assertion_hash', 64)->unique();
             $table->char('intake_hash', 64);
             $table->timestamp('expires_at')->index();
+            $table->timestamps();
+        });
+
+        Schema::create('helpdesk_mcp_settings', function (Blueprint $table): void {
+            $table->unsignedTinyInteger('id')->primary();
+            $table->longText('tokens')->nullable();
+            $table->unsignedSmallInteger('intake_ttl_minutes')->default(30);
+            $table->unsignedInteger('rate_limit_per_minute')->default(300);
+            $table->longText('identity_pepper')->nullable();
+            $table->longText('identity_assertion_secret')->nullable();
+            $table->unsignedSmallInteger('identity_assertion_leeway_seconds')->default(300);
             $table->timestamps();
         });
 

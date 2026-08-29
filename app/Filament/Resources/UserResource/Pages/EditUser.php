@@ -10,6 +10,13 @@ class EditUser extends EditRecord
 {
     protected static string $resource = UserResource::class;
 
+    protected function afterSave(): void
+    {
+        $this->record->forceFill([
+            'unit_id' => $this->record->units()->orderBy('units.id')->value('units.id'),
+        ])->saveQuietly();
+    }
+
     protected function getHeaderActions(): array
     {
         return [

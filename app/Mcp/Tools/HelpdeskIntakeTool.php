@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Services\Integrations\HelpdeskIntakeSession;
+use App\Services\Integrations\HelpdeskMcpConfiguration;
 use App\Support\HelpdeskIntakeContract;
 use App\Support\HelpdeskIntegrationClient;
 use App\Support\HelpdeskReporterName;
@@ -41,10 +42,17 @@ class HelpdeskIntakeTool extends Tool
 
     public function __construct(
         private HelpdeskIntakeSession $session,
+        private HelpdeskMcpConfiguration $configuration,
     ) {}
 
     public function handle(Request $request): Response|ResponseFactory
     {
+        // The local stdio server is a long-lived console process. Refresh its
+        // scoped snapshot once per tool call so UI changes apply immediately.
+        if (app()->runningInConsole()) {
+            $this->configuration->forgetResolvedSettings();
+        }
+
         if ($invalid = $this->validateInput($request)) {
             return $invalid;
         }

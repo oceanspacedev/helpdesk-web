@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Integrations\HelpdeskMcpConfiguration;
 use App\Support\HelpdeskIntegrationClient;
 use Closure;
 use Illuminate\Http\Request;
@@ -9,10 +10,14 @@ use Symfony\Component\HttpFoundation\Response;
 
 class VerifyHelpdeskMcpToken
 {
+    public function __construct(
+        private HelpdeskMcpConfiguration $configuration,
+    ) {}
+
     public function handle(Request $request, Closure $next): Response
     {
         $provided = (string) $request->bearerToken();
-        $valid = $provided !== '' && collect(config('services.helpdesk_mcp.tokens', []))
+        $valid = $provided !== '' && collect($this->configuration->tokens())
             ->contains(static fn (string $expected): bool => hash_equals($expected, $provided));
 
         if (! $valid) {

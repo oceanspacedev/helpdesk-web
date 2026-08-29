@@ -26,6 +26,7 @@ class UserSeeder extends Seeder
             'unit_id' => 1,
         ]);
         $adminUnit->syncRoles('Admin Unit');
+        $adminUnit->units()->syncWithoutDetaching([1]);
 
         // 3. create a staff unit
         $staffUnit = User::factory()->create([
@@ -34,6 +35,7 @@ class UserSeeder extends Seeder
             'unit_id' => 1,
         ]);
         $staffUnit->syncRoles('Staff Unit');
+        $staffUnit->units()->syncWithoutDetaching([1]);
 
         // 4. create a user
         $staffUnit = User::factory()->create([

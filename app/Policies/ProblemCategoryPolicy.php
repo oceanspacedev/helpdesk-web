@@ -4,72 +4,80 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Illuminate\Foundation\Auth\User as AuthUser;
 use App\Models\ProblemCategory;
+use App\Models\User;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
 class ProblemCategoryPolicy
 {
     use HandlesAuthorization;
-    
-    public function viewAny(AuthUser $authUser): bool
+
+    public function viewAny(User $authUser): bool
     {
         return $authUser->can('ViewAny:ProblemCategory');
     }
 
-    public function view(AuthUser $authUser, ProblemCategory $problemCategory): bool
+    public function view(User $authUser, ProblemCategory $problemCategory): bool
     {
-        return $authUser->can('View:ProblemCategory');
+        return $authUser->can('View:ProblemCategory')
+            && ($authUser->hasGlobalTicketAccess()
+                || $authUser->isAssignedToUnit((int) $problemCategory->unit_id));
     }
 
-    public function create(AuthUser $authUser): bool
+    public function create(User $authUser): bool
     {
-        return $authUser->can('Create:ProblemCategory');
+        return $authUser->can('Create:ProblemCategory')
+            && ($authUser->hasGlobalTicketAccess()
+                || ($authUser->hasRole('Admin Unit') && $authUser->assignedUnitIds() !== []));
     }
 
-    public function update(AuthUser $authUser, ProblemCategory $problemCategory): bool
+    public function update(User $authUser, ProblemCategory $problemCategory): bool
     {
-        return $authUser->can('Update:ProblemCategory');
+        return $authUser->can('Update:ProblemCategory')
+            && $authUser->canAdministerUnit((int) $problemCategory->unit_id);
     }
 
-    public function delete(AuthUser $authUser, ProblemCategory $problemCategory): bool
+    public function delete(User $authUser, ProblemCategory $problemCategory): bool
     {
-        return $authUser->can('Delete:ProblemCategory');
+        return $authUser->can('Delete:ProblemCategory')
+            && $authUser->canAdministerUnit((int) $problemCategory->unit_id);
     }
 
-    public function deleteAny(AuthUser $authUser): bool
+    public function deleteAny(User $authUser): bool
     {
         return $authUser->can('DeleteAny:ProblemCategory');
     }
 
-    public function restore(AuthUser $authUser, ProblemCategory $problemCategory): bool
+    public function restore(User $authUser, ProblemCategory $problemCategory): bool
     {
-        return $authUser->can('Restore:ProblemCategory');
+        return $authUser->can('Restore:ProblemCategory')
+            && $authUser->canAdministerUnit((int) $problemCategory->unit_id);
     }
 
-    public function forceDelete(AuthUser $authUser, ProblemCategory $problemCategory): bool
+    public function forceDelete(User $authUser, ProblemCategory $problemCategory): bool
     {
-        return $authUser->can('ForceDelete:ProblemCategory');
+        return $authUser->can('ForceDelete:ProblemCategory')
+            && $authUser->canAdministerUnit((int) $problemCategory->unit_id);
     }
 
-    public function forceDeleteAny(AuthUser $authUser): bool
+    public function forceDeleteAny(User $authUser): bool
     {
         return $authUser->can('ForceDeleteAny:ProblemCategory');
     }
 
-    public function restoreAny(AuthUser $authUser): bool
+    public function restoreAny(User $authUser): bool
     {
         return $authUser->can('RestoreAny:ProblemCategory');
     }
 
-    public function replicate(AuthUser $authUser, ProblemCategory $problemCategory): bool
+    public function replicate(User $authUser, ProblemCategory $problemCategory): bool
     {
-        return $authUser->can('Replicate:ProblemCategory');
+        return $authUser->can('Replicate:ProblemCategory')
+            && $authUser->canAdministerUnit((int) $problemCategory->unit_id);
     }
 
-    public function reorder(AuthUser $authUser): bool
+    public function reorder(User $authUser): bool
     {
         return $authUser->can('Reorder:ProblemCategory');
     }
-
 }

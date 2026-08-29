@@ -2,18 +2,30 @@
 
 namespace App\Filament\Resources\UnitResource\RelationManagers;
 
-use Filament\Forms;
+use App\Models\User;
 use Filament\Actions;
-use Filament\Schemas\Schema;
+use Filament\Forms;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Tables\Table;
+use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 class UsersRelationManager extends RelationManager
 {
     protected static string $relationship = 'users';
 
     protected static ?string $recordTitleAttribute = 'name';
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        $user = auth()->user();
+
+        return $user !== null
+            && $user->can('viewAny', User::class)
+            && ($user->hasGlobalTicketAccess()
+                || $user->isAssignedToUnit((int) $ownerRecord->getKey()));
+    }
 
     public function form(Schema $form): Schema
     {
@@ -22,8 +34,7 @@ class UsersRelationManager extends RelationManager
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->maxLength(255),
-            ])
-        ;
+            ]);
     }
 
     public function table(Table $table): Table
@@ -44,7 +55,6 @@ class UsersRelationManager extends RelationManager
             ])
             ->bulkActions([
                 Actions\DetachBulkAction::make(),
-            ])
-        ;
+            ]);
     }
 }

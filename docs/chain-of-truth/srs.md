@@ -15,7 +15,7 @@ Inferred: The organization needs central ticket tracking across units, business 
 |---|---|---|---|
 | ACT-001 | Super Admin | Observed | Full administrative role seeded and referenced in policies/resources. |
 | ACT-002 | Admin Unit | Observed | Unit-scoped administrator with ticket visibility and workflow actions. |
-| ACT-003 | Staff Unit | Conflict | Seeded as `Staff Unit`; some code checks `Staf Unit`. Intended support staff role is inferred. |
+| ACT-003 | Staff Unit | Observed | Canonical support-staff role; may create outgoing tickets and process tickets received by an assigned unit. |
 | ACT-004 | General User | Observed | Ticket reporter account in README and owner-based ticket access in policy. |
 | ACT-005 | MCP Reporter | Observed | Reporter using Codex, Atlas relaying WhatsApp, another AI host, or another channel bridge as a generic client of the same MCP contract. |
 | ACT-006 | Trusted Existing Socialite User | Observed | Active, non-deleted Helpdesk user who can link provider identity only through an email with trusted verification provenance. |
@@ -29,11 +29,11 @@ Inferred: The organization needs central ticket tracking across units, business 
 | FR-003 | The system shall support ticket creation with unit, problem category, title, description, supporting attachments, priority, and business entity. | Observed | `TicketResource::form()`, `CreateTicket.php`, migrations |
 | FR-004 | The system shall set ticket owner to the authenticated user and initial status to Open on web ticket creation. | Observed | `CreateTicket::mutateFormDataBeforeCreate()` |
 | FR-005 | The system shall list, filter, view, edit, export, delete, restore, and force-delete tickets according to resource actions and policies. | Observed | `TicketResource.php`, `ListTickets.php`, `TicketPolicy.php` |
-| FR-006 | The system shall restrict ticket visibility by role and ownership. | Observed with conflict | `TicketResource::getEloquentQuery()`, `TicketPolicy.php` |
-| FR-007 | The system shall allow Admin Unit or Super Admin to process, cancel, or complete eligible tickets from ticket view. | Observed | `ViewTicket.php` |
+| FR-006 | The system shall show a ticket in the sender's personal Ticket Keluar and in the destination unit's Ticket Masuk, while denying unrelated units. | Observed | ticket mailbox scopes, `TicketResource::getEloquentQuery()`, `TicketPolicy.php` |
+| FR-007 | The system shall allow Admin Unit and Staff Unit members of the destination unit (or global administrators) to claim and process eligible tickets, allow takeover when the previous responsible user is no longer eligible, and prevent the sending unit from processing a cross-unit outgoing ticket. | Observed | `ViewTicket.php`, `TicketPolicy.php` |
 | FR-008 | The system shall create ticket history records when tickets are created or updated. | Observed | `Ticket::boot()` |
 | FR-009 | The system shall set `approved_at` when ticket status leaves Open and `solved_at` when status becomes Closed. | Observed | `Ticket::saving()` |
-| FR-010 | The system shall notify responsible users or unit users when tickets and comments are created, and notify owner when tickets close. | Observed | `Ticket.php`, `Comment.php`, notification classes |
+| FR-010 | The system shall notify an eligible responsible user or active destination processors when tickets and comments are created, fall back when a responsible user is no longer eligible, and notify the owner after a ticket is successfully closed. | Observed | `Ticket.php`, `Comment.php`, notification classes |
 | FR-011 | The system shall support comments with rich text and optional attachments on tickets. | Observed | `CommentsRelationManager.php`, `comments` migration |
 | FR-012 | The MCP intake shall provide current business-entity, unit, problem-category, and priority options when a classification answer is missing or invalid. | Observed | `HelpdeskFormOptionsService.php`, MCP intake tests |
 | FR-013 | The MCP intake shall validate classification answers against active business entities, units, problem categories, and priorities before ticket creation. | Observed | `HelpdeskClassificationResolver.php`, MCP intake tests |
@@ -67,17 +67,17 @@ Inferred: The organization needs central ticket tracking across units, business 
 | BR-002 | Ticket status IDs are Open `1`, In Progress `2`, Cancel `3`, Closed `4`. | Observed |
 | BR-003 | Closed tickets receive `solved_at`; non-Open tickets receive `approved_at` if missing. | Observed |
 | BR-004 | A ticket owner cannot update a ticket after it leaves Open. | Observed |
-| BR-005 | Cancelled or closed tickets cannot be updated through policy. | Observed |
+| BR-005 | Cancelled, closed, or soft-deleted tickets cannot run workflow updates; soft-deleted tickets and their comments remain read-only until restoration. | Observed |
 | BR-006 | MCP exposes only `helpdesk_intake` for the two ticket-reporting paths. Ticket creation requires issue details, explicit creation confirmation, business entity, unit, category, and priority; ticket lookup, comments, updates, workflow actions, administration, and standalone account management are outside the MCP contract. | Observed |
 | BR-007 | A reporter provisioned from exactly one Talenta phone match or created through consent-gated MCP inline registration may have null email and password. Inline registration must use the name typed at `registration_name`, never `reporter_name`. | Observed |
 | BR-008 | Socialite never auto-registers an unknown Helpdesk account; it may link only one active user whose email already has trusted verification provenance. | Observed |
 | BR-009 | MCP identity resolution shall use one canonical verified phone. Conflicting phone claims are rejected. An unknown verified phone may create its required account only through consent-gated, atomic inline account creation; declining cancels the intake without writes, a web URL, or a redirect. | Observed |
 | BR-010 | A WhatsApp OTP proves control of a phone only. It does not verify an email address. Unknown manual reporters are registered as phone-only users; password login and mail notifications require both an email timestamp and trusted `email_verified_via` provenance. Legacy timestamps are quarantined for review. | Observed |
+| BR-011 | `tickets.owner_id` is the sender, `tickets.unit_id` is the destination, and `tickets.responsible_id` is the processing agent. A unit processor may process only incoming tickets; an In Progress ticket belongs to its eligible responsible agent and becomes available for takeover if that agent loses eligibility. | Observed |
 
 ## Constraints And Open Questions
 
 - Unknown: Production topology and credential-rotation requirements for the HTTP and local MCP transports.
-- Unknown: Whether role name should be `Staff Unit` or `Staf Unit`.
 - Unknown: Whether direct assignment rules for specific problem category IDs are intentional and current.
-- Unknown: Whether `unit_id` on users is still authoritative now that `user_entities` provides many-to-many unit membership.
+- Known compatibility rule: `user_entities` is authoritative for unit membership after legacy `users.unit_id` values are backfilled for users without an existing unit pivot.
 - Unknown: Production operational requirements for queues, notifications, storage, logging, retention, and backups.

@@ -85,6 +85,17 @@ class HelpdeskMcpTest extends TestCase
 
     public function test_only_mcp_helpdesk_transport_is_registered(): void
     {
+        $postRoute = collect(Route::getRoutes()->getRoutes())
+            ->first(fn ($route): bool => $route->uri() === 'mcp/helpdesk'
+                && in_array('POST', $route->methods(), true));
+        $this->assertNotNull($postRoute);
+        $middleware = $postRoute->middleware();
+        $preAuthThrottle = array_search('throttle:mcp-pre-auth', $middleware, true);
+        $tokenAuthentication = array_search('helpdesk.mcp', $middleware, true);
+        $this->assertIsInt($preAuthThrottle);
+        $this->assertIsInt($tokenAuthentication);
+        $this->assertLessThan($tokenAuthentication, $preAuthThrottle);
+
         $legacyRoutes = collect(Route::getRoutes()->getRoutes())
             ->filter(fn ($route): bool => str_starts_with(
                 $route->uri(),

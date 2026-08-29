@@ -6,16 +6,17 @@
 
 namespace App\Models;
 
-use App\Filament\Resources\TicketResource;
+use App\Notifications\ClosedTicketNotification;
+use App\Notifications\NewTicketNotification;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Auth;
-use Filament\Notifications\Notification;
-use Filament\Actions\Action;
-use App\Notifications\NewTicketNotification;
-use App\Notifications\ClosedTicketNotification;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Class Ticket.
@@ -44,6 +45,7 @@ use App\Notifications\ClosedTicketNotification;
 class Ticket extends Model
 {
     use SoftDeletes;
+
     protected $table = 'tickets';
 
     protected $casts = [
@@ -86,7 +88,7 @@ class Ticket extends Model
     /**
      * Get the priority that owns the Ticket.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function priority()
     {
@@ -96,7 +98,7 @@ class Ticket extends Model
     /**
      * Get the unit that owns the Ticket.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function unit()
     {
@@ -106,7 +108,7 @@ class Ticket extends Model
     /**
      * Get the owner that owns the Ticket.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function owner()
     {
@@ -116,17 +118,32 @@ class Ticket extends Model
     /**
      * Get the responsible that owns the Ticket.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function responsible()
     {
         return $this->belongsTo(User::class, 'responsible_id');
     }
 
+    public function eligibleResponsible(): ?User
+    {
+        if (! $this->responsible_id) {
+            return null;
+        }
+
+        $responsible = $this->relationLoaded('responsible')
+            ? $this->responsible
+            : $this->responsible()->first();
+
+        return $responsible?->isActiveTicketProcessorForUnit((int) $this->unit_id)
+            ? $responsible
+            : null;
+    }
+
     /**
      * Get the problemCategory that owns the Ticket.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function problemCategory()
     {
@@ -136,7 +153,7 @@ class Ticket extends Model
     /**
      * Get the ticketStatus that owns the Ticket.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function ticketStatus()
     {
@@ -146,7 +163,7 @@ class Ticket extends Model
     /**
      * Get all of the comments for the Ticket.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     * @return HasMany
      */
     public function comments()
     {
@@ -156,7 +173,7 @@ class Ticket extends Model
     /**
      * Get the ticketHistories that owns the Ticket.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function ticketHistories()
     {
@@ -166,13 +183,57 @@ class Ticket extends Model
     /**
      * Get the businessEntity that owns the Ticket.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function businessEntity()
     {
         return $this->belongsTo(BusinessEntity::class, 'business_entities_id');
     }
 
+    /**
+     * Tiket yang boleh dilihat user: tiket yang ia kirim atau tiket masuk ke
+     * unit yang ia layani. Admin global tetap dapat melihat seluruh tiket.
+     */
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->hasGlobalTicketAccess()) {
+            return $query;
+        }
+
+        $unitIds = $user->canProcessTickets() ? $user->assignedUnitIds() : [];
+
+        return $query->where(function (Builder $query) use ($user, $unitIds): void {
+            $query->where('tickets.owner_id', $user->getKey());
+
+            if ($unitIds !== []) {
+                $query->orWhereIn('tickets.unit_id', $unitIds);
+            }
+        });
+    }
+
+    /**
+     * Kotak masuk adalah tiket yang ditujukan kepada unit yang dilayani user.
+     */
+    public function scopeIncomingFor(Builder $query, User $user): Builder
+    {
+        if ($user->hasGlobalTicketAccess()) {
+            return $query;
+        }
+
+        $unitIds = $user->canProcessTickets() ? $user->assignedUnitIds() : [];
+
+        return $unitIds === []
+            ? $query->whereRaw('1 = 0')
+            : $query->whereIn('tickets.unit_id', $unitIds);
+    }
+
+    /**
+     * Kotak keluar selalu bersifat personal berdasarkan pembuat tiket.
+     */
+    public function scopeOutgoingFor(Builder $query, User $user): Builder
+    {
+        return $query->where('tickets.owner_id', $user->getKey());
+    }
 
     protected static function boot()
     {
@@ -180,35 +241,49 @@ class Ticket extends Model
 
         // Event listener untuk event 'saving'
         static::saving(function ($ticket) {
-            // Update responsible_id when problem_category_id changes
+            // Pertahankan auto-assignment lama hanya bila petugas memang
+            // melayani unit tujuan. Jika tidak, tiket tetap menjadi antrean
+            // bersama agar dapat diambil oleh unit penerima.
             if (! self::$isSeeding && $ticket->isDirty('problem_category_id')) {
-                if (in_array($ticket->problem_category_id, [1, 2, 8, 9, 10, 11, 12, 24, 25])) {
-                    $ticket->responsible_id = 10; // responsible_id = 10 (Teh Sekar/Lead OD)
+                $responsibleId = null;
+
+                if (in_array($ticket->problem_category_id, [1, 2, 8, 11, 12, 24, 25])) {
+                    $responsibleId = 10; // Teh Sekar/Lead OD
                 } elseif (in_array($ticket->problem_category_id, [9, 10])) {
-                    $ticket->responsible_id = 41; // responsible_id = 41 (Staff OD)
+                    $responsibleId = 41; // Staff OD
+                }
+
+                $candidate = $responsibleId ? User::find($responsibleId) : null;
+                $ticket->responsible_id = $candidate?->isActiveTicketProcessorForUnit((int) $ticket->unit_id)
+                    ? $candidate->getKey()
+                    : null;
+            }
+
+            if (! self::$isSeeding
+                && $ticket->responsible_id
+                && ($ticket->isDirty('responsible_id') || $ticket->isDirty('unit_id'))) {
+                $responsible = User::find($ticket->responsible_id);
+
+                if (! $responsible?->isActiveTicketProcessorForUnit((int) $ticket->unit_id)) {
+                    $ticket->responsible_id = null;
                 }
             }
 
-            if ($ticket->isDirty('ticket_statuses_id')) {
-                $receiver = User::find($ticket->owner_id);
-
+            if ($ticket->exists && $ticket->isDirty('ticket_statuses_id')) {
                 // Set approved_at jika status bukan 1 dan belum di-approve
                 if ($ticket->ticket_statuses_id != 1 && is_null($ticket->approved_at)) {
                     $ticket->approved_at = Carbon::now();
                 }
 
-                // Set solved_at dan kirim notifikasi jika status adalah 4
+                // Set solved_at jika status adalah 4. Notifikasi dikirim pada
+                // event updated agar perubahan database sudah berhasil.
                 if ($ticket->ticket_statuses_id == 4) {
                     if (is_null($ticket->solved_at)) {
                         $ticket->solved_at = Carbon::now();
                     }
-                    
+
                     if ($ticket->sla_due_at) {
                         $ticket->is_sla_met = Carbon::parse($ticket->solved_at)->lte($ticket->sla_due_at);
-                    }
-
-                    if ($receiver) {
-                        $receiver->notify(new ClosedTicketNotification($ticket));
                     }
                 } else {
                     // Reset solved_at dan is_sla_met jika dikembalikan dari Closed (4) ke status lain
@@ -218,13 +293,13 @@ class Ticket extends Model
                     }
                 }
             }
-            
+
             // Hitung SLA Due At jika tiket sudah di-approve dan unit tersebut memiliki aturan UnitSla
             if ($ticket->approved_at && ($ticket->isDirty('approved_at') || $ticket->isDirty('priority_id') || $ticket->isDirty('unit_id'))) {
-                if (\Illuminate\Support\Facades\Schema::hasTable('unit_slas')) {
-                    $sla = \App\Models\UnitSla::where('unit_id', $ticket->unit_id)
-                                              ->where('priority_id', $ticket->priority_id)
-                                              ->first();
+                if (Schema::hasTable('unit_slas')) {
+                    $sla = UnitSla::where('unit_id', $ticket->unit_id)
+                        ->where('priority_id', $ticket->priority_id)
+                        ->first();
                     if ($sla) {
                         $ticket->sla_due_at = Carbon::parse($ticket->approved_at)->addHours($sla->target_hours);
                     } else {
@@ -237,7 +312,9 @@ class Ticket extends Model
 
         // Event listener untuk event 'created'
         static::created(function ($ticket) {
-            if (self::$isSeeding) return;
+            if (self::$isSeeding) {
+                return;
+            }
 
             // Membuat riwayat tiket baru
             TicketHistory::create([
@@ -248,23 +325,13 @@ class Ticket extends Model
             ]);
 
             // Kirim notifikasi ke user yang bertanggung jawab atau semua user dalam unit terkait
-            if ($ticket->responsible_id) {
+            $responsible = $ticket->eligibleResponsible();
 
-                $receiver = User::find($ticket->responsible_id);
-
-                if ($receiver) {
-                    $receiver->notify(new NewTicketNotification($ticket));
-                }
+            if ($responsible) {
+                $responsible->notify(new NewTicketNotification($ticket));
             } else {
-
-                $receivers = User::whereHas('roles', function ($q) use ($ticket) {
-                    $q->where('name', 'Super Admin')
-                        ->orWhere(function ($subQuery) use ($ticket) {
-                            $subQuery->whereIn('name', ['Admin Unit', 'Staf Unit']);
-                        });
-                })
-                    ->whereHas('units', fn($q) => $q->where('units.id', $ticket->unit_id)) // perbaiki disini
-                    ->where('is_active', 1)
+                $receivers = User::query()
+                    ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
                     ->get();
 
                 foreach ($receivers as $receiver) {
@@ -275,6 +342,16 @@ class Ticket extends Model
 
         // Event listener untuk event 'updated'
         static::updated(function ($ticket) {
+            if (! self::$isSeeding
+                && $ticket->wasChanged('ticket_statuses_id')
+                && (int) $ticket->ticket_statuses_id === TicketStatus::CLOSED) {
+                $receiver = User::find($ticket->owner_id);
+
+                if ($receiver) {
+                    $receiver->notify(new ClosedTicketNotification($ticket));
+                }
+            }
+
             TicketHistory::create([
                 'ticket_id' => $ticket->id,
                 'ticket_statuses_id' => $ticket->ticket_statuses_id,

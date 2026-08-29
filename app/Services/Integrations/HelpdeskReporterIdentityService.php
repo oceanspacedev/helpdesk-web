@@ -13,6 +13,10 @@ use Throwable;
 
 class HelpdeskReporterIdentityService
 {
+    public function __construct(
+        private HelpdeskMcpConfiguration $configuration,
+    ) {}
+
     public function linkedUser(string $clientId, string $channel, string $externalUserId): ?User
     {
         $clientKey = $this->clientKey($clientId);
@@ -119,7 +123,7 @@ class HelpdeskReporterIdentityService
         string $externalMessageId,
         string $intakeId,
     ): bool {
-        $secret = trim((string) config('services.helpdesk_mcp.identity_assertion_secret', ''));
+        $secret = $this->configuration->identityAssertionSecret();
         $phone = (string) (PhoneNumber::canonical($phone) ?? '');
         $channel = $this->channel($channel);
         $externalUserId = trim($externalUserId);
@@ -137,7 +141,7 @@ class HelpdeskReporterIdentityService
         }
 
         $timestamp = (int) $parts[1];
-        $leeway = max(30, (int) config('services.helpdesk_mcp.identity_assertion_leeway_seconds', 300));
+        $leeway = $this->configuration->identityAssertionLeewaySeconds();
         if (abs(now()->timestamp - $timestamp) > $leeway) {
             return false;
         }
@@ -220,9 +224,7 @@ class HelpdeskReporterIdentityService
 
     private function pepper(): string
     {
-        $pepper = (string) config('services.helpdesk_mcp.identity_pepper', '');
-
-        return $pepper !== '' ? $pepper : (string) config('app.key');
+        return $this->configuration->identityPepper();
     }
 
     private function channel(string $channel): string

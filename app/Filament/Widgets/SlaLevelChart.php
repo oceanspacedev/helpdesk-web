@@ -14,15 +14,11 @@ class SlaLevelChart extends ApexChartWidget
 
     /**
      * Chart Id
-     *
-     * @var string
      */
     protected static ?string $chartId = 'slaLevelChart';
 
     /**
      * Widget Title
-     *
-     * @var string|null
      */
     protected static ?string $heading = 'Distribusi Status SLA per Prioritas';
 
@@ -30,32 +26,23 @@ class SlaLevelChart extends ApexChartWidget
 
     protected static ?int $sort = 5;
 
-    protected int | string | array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 'full';
 
     /**
      * Chart options (series, labels, types, size, animations...)
      * https://apexcharts.com/docs/options
-     *
-     * @return array
      */
     protected function getOptions(): array
     {
         $user = auth()->user();
-        $isGlobalAdmin = $user->hasAnyRole(['Super Admin', 'Master Admin']);
-        
+
         $priorities = Priority::all();
         $categories = [];
         $achievedData = [];
         $missedData = [];
         $pendingData = [];
-        
-        $userUnits = $user->units ?? collect();
-        $unitIds = $userUnits->pluck('id')->toArray();
-        if (empty($unitIds) && $user->unit_id) {
-            $unitIds = [$user->unit_id];
-        }
 
-        $baseScope = Ticket::query();
+        $baseScope = Ticket::query()->visibleTo($user);
 
         // Page Filters (Bulan & Tahun)
         $month = $this->filters['month'] ?? null;
@@ -68,17 +55,6 @@ class SlaLevelChart extends ApexChartWidget
             $baseScope->whereMonth('tickets.created_at', $month);
         }
 
-        if (!$isGlobalAdmin) {
-            $baseScope->where(function($q) use ($user, $unitIds) {
-                if (!empty($unitIds)) {
-                    $q->whereIn('unit_id', $unitIds)
-                      ->orWhere('owner_id', $user->id);
-                } else {
-                    $q->where('owner_id', $user->id);
-                }
-            });
-        }
-
         // 1. Achieved: is_sla_met = true
         $achievedCounts = (clone $baseScope)->where('is_sla_met', true)
             ->groupBy('priority_id')
@@ -87,19 +63,19 @@ class SlaLevelChart extends ApexChartWidget
             ->toArray();
 
         // 2. Missed: is_sla_met = false OR (belum selesai, bukan cancelled, dan waktu sudah habis)
-        $missedCounts = (clone $baseScope)->where(function($q) {
+        $missedCounts = (clone $baseScope)->where(function ($q) {
             $q->where('is_sla_met', false)
-              ->orWhere(function($sub) {
-                  $sub->whereNull('is_sla_met')
-                      ->whereNotIn('ticket_statuses_id', [3, 4])
-                      ->whereNotNull('sla_due_at')
-                      ->where('sla_due_at', '<', Carbon::now());
-              });
+                ->orWhere(function ($sub) {
+                    $sub->whereNull('is_sla_met')
+                        ->whereNotIn('ticket_statuses_id', [3, 4])
+                        ->whereNotNull('sla_due_at')
+                        ->where('sla_due_at', '<', Carbon::now());
+                });
         })
-        ->groupBy('priority_id')
-        ->selectRaw('priority_id, count(*) as total')
-        ->pluck('total', 'priority_id')
-        ->toArray();
+            ->groupBy('priority_id')
+            ->selectRaw('priority_id, count(*) as total')
+            ->pluck('total', 'priority_id')
+            ->toArray();
 
         // 3. Pending: belum selesai, bukan cancelled, dan waktu masih ada
         $pendingCounts = (clone $baseScope)->whereNull('is_sla_met')
@@ -124,11 +100,11 @@ class SlaLevelChart extends ApexChartWidget
                 'height' => 300,
                 'stacked' => true,
                 'toolbar' => [
-                    'show' => true
+                    'show' => true,
                 ],
                 'zoom' => [
-                    'enabled' => true
-                ]
+                    'enabled' => true,
+                ],
             ],
             'series' => [
                 [
@@ -178,7 +154,7 @@ class SlaLevelChart extends ApexChartWidget
                 ],
             ],
             'fill' => [
-                'opacity' => 1
+                'opacity' => 1,
             ],
         ];
     }

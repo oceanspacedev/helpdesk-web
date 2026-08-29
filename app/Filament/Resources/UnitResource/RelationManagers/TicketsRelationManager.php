@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Filament\Resources\TicketStatusResource\RelationManagers;
+namespace App\Filament\Resources\UnitResource\RelationManagers;
 
 use App\Models\Ticket;
 use Filament\Actions;
@@ -8,12 +8,18 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class TicketsRelationManager extends RelationManager
 {
     protected static string $relationship = 'tickets';
 
     protected static ?string $recordTitleAttribute = 'title';
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return auth()->user()?->can('viewAny', Ticket::class) ?? false;
+    }
 
     public function table(Table $table): Table
     {
@@ -29,18 +35,23 @@ class TicketsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('title')
                     ->translateLabel()
                     ->searchable(),
+                Tables\Columns\TextColumn::make('owner.name')
+                    ->translateLabel()
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('responsible.name')
+                    ->translateLabel()
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('problemCategory.name')
+                    ->label(__('Problem Category'))
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('ticketStatus.name')
+                    ->label(__('Ticket Status'))
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->translateLabel()
                     ->sortable()
                     ->toggleable(),
-                Tables\Columns\TextColumn::make('problemCategory.name')
-                    ->searchable()
-                    ->label(__('Problem Category'))
-                    ->toggleable(),
-                Tables\Columns\TextColumn::make('ticketStatus.name')
-                    ->label('Status')
-                    ->sortable(),
             ])
             ->filters([])
             ->headerActions([])

@@ -12,6 +12,7 @@ use App\Models\Unit;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -25,6 +26,7 @@ class CommentShieldPolicyTest extends TestCase
         parent::setUp();
 
         $this->createTestSchema();
+        Notification::fake();
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
@@ -144,7 +146,7 @@ class CommentShieldPolicyTest extends TestCase
         $this->assertFalse($userWithoutRole->can('create', Comment::class));
     }
 
-    public function test_admin_unit_can_update_any_comment(): void
+    public function test_only_destination_admin_can_moderate_another_users_comment(): void
     {
         $author = User::create([
             'name' => 'Author User',
@@ -159,6 +161,22 @@ class CommentShieldPolicyTest extends TestCase
         $admin->assignRole('Admin Unit');
 
         $unit = Unit::create(['name' => 'IT Helpdesk']);
+        $admin->forceFill(['unit_id' => $unit->id])->save();
+        $staff = User::create([
+            'unit_id' => $unit->id,
+            'name' => 'IT Staff',
+            'email' => 'it.staff@example.com',
+        ]);
+        $staff->assignRole('Staff Unit');
+
+        $otherUnit = Unit::create(['name' => 'Finance']);
+        $unrelatedAdmin = User::create([
+            'unit_id' => $otherUnit->id,
+            'name' => 'Finance Admin',
+            'email' => 'finance.admin@example.com',
+        ]);
+        $unrelatedAdmin->assignRole('Admin Unit');
+
         $priority = Priority::create(['name' => 'Low']);
         $status = TicketStatus::create(['name' => 'Open']);
         $category = ProblemCategory::create(['name' => 'Hardware', 'unit_id' => $unit->id]);
@@ -181,6 +199,110 @@ class CommentShieldPolicyTest extends TestCase
 
         $this->assertTrue($admin->can('update', $comment));
         $this->assertTrue($admin->can('delete', $comment));
+        $this->assertFalse($staff->can('update', $comment));
+        $this->assertFalse($staff->can('delete', $comment));
+        $this->assertFalse($unrelatedAdmin->can('update', $comment));
+        $this->assertFalse($unrelatedAdmin->can('delete', $comment));
+    }
+
+    public function test_cross_unit_sender_cannot_moderate_destination_comment(): void
+    {
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $sourceAdmin = User::create([
+            'unit_id' => $origin->id,
+            'name' => 'Finance Sender Admin',
+            'email' => 'finance.sender@example.com',
+        ]);
+        $sourceAdmin->assignRole('Admin Unit');
+        $destinationStaff = User::create([
+            'unit_id' => $destination->id,
+            'name' => 'IT Destination Staff',
+            'email' => 'it.destination@example.com',
+        ]);
+        $destinationStaff->assignRole('Staff Unit');
+
+        $priority = Priority::create(['name' => 'Medium']);
+        $status = TicketStatus::create(['name' => 'Open']);
+        $category = ProblemCategory::create([
+            'name' => 'Email',
+            'unit_id' => $destination->id,
+        ]);
+        $ticket = Ticket::create([
+            'unit_id' => $destination->id,
+            'owner_id' => $sourceAdmin->id,
+            'problem_category_id' => $category->id,
+            'priority_id' => $priority->id,
+            'ticket_statuses_id' => $status->id,
+            'title' => 'Email Finance',
+            'description' => 'Tiket dikirim ke unit IT.',
+        ]);
+        $comment = Comment::create([
+            'tiket_id' => $ticket->id,
+            'user_id' => $destinationStaff->id,
+            'comment' => 'Sedang kami proses.',
+        ]);
+
+        $this->assertTrue($sourceAdmin->can('view', $comment));
+        $this->assertFalse($sourceAdmin->can('update', $comment));
+        $this->assertFalse($sourceAdmin->can('delete', $comment));
+        $this->assertTrue($destinationStaff->can('update', $comment));
+    }
+
+    public function test_soft_deleted_comment_cannot_be_viewed_or_mutated_by_owner_or_destination_admin(): void
+    {
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $owner = User::create([
+            'unit_id' => $origin->id,
+            'name' => 'Finance Ticket Owner',
+            'email' => 'finance.owner@example.com',
+        ]);
+        $owner->assignRole('Admin Unit');
+        $destinationAdmin = User::create([
+            'unit_id' => $destination->id,
+            'name' => 'IT Destination Admin',
+            'email' => 'it.admin@example.com',
+        ]);
+        $destinationAdmin->assignRole('Admin Unit');
+
+        $priority = Priority::create(['name' => 'High']);
+        $status = TicketStatus::create(['name' => 'Open']);
+        $category = ProblemCategory::create([
+            'name' => 'Access',
+            'unit_id' => $destination->id,
+        ]);
+        $ticket = Ticket::create([
+            'unit_id' => $destination->id,
+            'owner_id' => $owner->id,
+            'problem_category_id' => $category->id,
+            'priority_id' => $priority->id,
+            'ticket_statuses_id' => $status->id,
+            'title' => 'Akses aplikasi Finance',
+            'description' => 'Tiket lintas unit untuk menguji komentar soft-delete.',
+        ]);
+        $comment = Comment::create([
+            'tiket_id' => $ticket->id,
+            'user_id' => $owner->id,
+            'comment' => 'Komentar dari pemilik tiket.',
+        ]);
+
+        foreach ([$owner, $destinationAdmin] as $user) {
+            $this->assertTrue($user->can('view', $comment));
+            $this->assertTrue($user->can('update', $comment));
+            $this->assertTrue($user->can('delete', $comment));
+        }
+
+        $comment->delete();
+        $deletedComment = Comment::withTrashed()->findOrFail($comment->id);
+
+        $this->assertTrue($deletedComment->trashed());
+
+        foreach ([$owner, $destinationAdmin] as $user) {
+            $this->assertFalse($user->can('view', $deletedComment));
+            $this->assertFalse($user->can('update', $deletedComment));
+            $this->assertFalse($user->can('delete', $deletedComment));
+        }
     }
 
     private function createTestSchema(): void

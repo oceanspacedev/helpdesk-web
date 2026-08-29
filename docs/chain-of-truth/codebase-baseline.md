@@ -48,7 +48,7 @@ The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket m
 
 - Observed: Seeded roles are `Super Admin`, `Admin Unit`, and `Staff Unit`.
 - Observed: README also lists dummy accounts for Super Admin, Admin Unit, Staff Unit, and General User.
-- Observed: Several code paths check `Staf Unit` while seeders create `Staff Unit`, creating a role-name conflict.
+- Observed: `Staff Unit` is the canonical support role across seeders, ticket access, workflow, and notifications; a compatibility migration merges legacy `Staf Unit` memberships and permissions.
 - Observed: `User::canAccessPanel()` requires an active user plus either trusted email provenance or the current phone-verified session.
 - Observed: `TicketPolicy` allows Admin Unit to view owned tickets or tickets in the user's units, Staff Unit to view owned or assigned tickets, and regular users to view owned tickets.
 - Inferred: A regular user is represented by the absence of admin/staff role or a `User` role assigned elsewhere.
@@ -56,7 +56,7 @@ The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket m
 ## Critical Journeys
 
 - UC-001: Authenticated users create tickets through Filament.
-- UC-002: Admin Unit or Super Admin processes, cancels, or completes open/in-progress tickets from the ticket view page.
+- UC-002: Admin Unit, Staff Unit, or a global administrator processes, cancels, completes, or takes over eligible open/in-progress tickets from the ticket view page.
 - UC-003: Participants add comments to tickets in the ticket relation manager and notifications are sent.
 - UC-004: MCP reporters create tickets through exactly two business paths after their canonical phone resolves safely. An existing eligible Helpdesk account proceeds to ticket creation. If that account is missing, the server creates the prerequisite account—using an exact Talenta match when available or explicit consent plus a freshly typed name otherwise—and continues the same intake to ticket creation. Declining account creation cancels the intake without writes. Conflicting phone claims are rejected.
 - UC-006: Users log in or register with a phone number OTP sent through WhatsApp. New manual or Talenta-backed accounts remain encrypted pending data until OTP succeeds, preventing active credentials from being created for an unverified number.
@@ -88,7 +88,7 @@ The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket m
 
 - Observed: Feature tests cover root redirect, disabled admin registration, strict Socialite linking, panel/profile credential gates, deferred phone registration, identity migrations, MCP HTTP/local contracts, isolated external users, retry/idempotency, ticket creation, and chaos evaluation of the intake trigger.
 - Observed: Unit tests cover employee matching/provisioning, phone canonicalization, WhatsApp OTP isolation/rate limits/locks, and WhatsApp gateway behavior.
-- Gap: There is no observed browser/E2E coverage for Filament ticket lifecycle, master-data management, role-filtered listings, or relation-manager comments.
+- Observed: Livewire feature tests cover Filament mailbox tabs, role-filtered ticket records, claim/takeover actions, and problem-category unit scoping. Browser/E2E coverage and relation-manager attachment coverage remain absent.
 
 ## Evidence Ledger
 
@@ -100,4 +100,4 @@ The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket m
 | OTP login exists | Observed | `PhoneLogin.php`, `WhatsAppOtpService.php`, `PhoneOtpLoginTest.php` |
 | Socialite registration disabled behavior is tested | Observed | `SocialiteController.php`, `SocialiteRegistrationDisabledTest.php` |
 | Business rules are stakeholder-approved | Unknown | No SRS, decision log, or validation log existed before this reconstruction |
-| Role spelling is consistent | Conflict | Seeders and README use `Staff Unit`; several notifications and checks use `Staf Unit` |
+| Role spelling is consistent | Pass | Ticket, comment, SLA, notification, and permission paths use `Staff Unit` |
