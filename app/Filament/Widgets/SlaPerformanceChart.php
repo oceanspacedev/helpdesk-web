@@ -15,15 +15,11 @@ class SlaPerformanceChart extends ApexChartWidget
 
     /**
      * Chart Id
-     *
-     * @var string
      */
     protected static ?string $chartId = 'slaPerformanceChart';
 
     /**
      * Widget Title
-     *
-     * @var string|null
      */
     protected static ?string $heading = 'Grafik Pencapaian SLA';
 
@@ -31,7 +27,7 @@ class SlaPerformanceChart extends ApexChartWidget
 
     protected static ?int $sort = 4;
 
-    protected int | string | array $columnSpan = [
+    protected int|string|array $columnSpan = [
         'default' => 'full',
         'md' => 1,
         'lg' => 1,
@@ -40,14 +36,12 @@ class SlaPerformanceChart extends ApexChartWidget
     /**
      * Chart options (series, labels, types, size, animations...)
      * https://apexcharts.com/docs/options
-     *
-     * @return array
      */
     protected function getOptions(): array
     {
         $user = auth()->user();
-        $isSuperAdmin = $user->hasRole('Super Admin');
-        
+        $isGlobalAdmin = $user->hasGlobalTicketAccess();
+
         $categories = [];
         $seriesData = [];
 
@@ -62,10 +56,11 @@ class SlaPerformanceChart extends ApexChartWidget
             if ($month && $month !== 'all') {
                 $query->whereMonth('tickets.created_at', $month);
             }
+
             return $query;
         };
-        
-        if ($isSuperAdmin) {
+
+        if ($isGlobalAdmin) {
             $units = Unit::all();
             $metCounts = $applyFilters(Ticket::whereNotNull('sla_due_at'))->where('ticket_statuses_id', 4)->where('is_sla_met', true)->groupBy('unit_id')->selectRaw('unit_id, count(*) as total')->pluck('total', 'unit_id')->toArray();
             $closedMissedCounts = $applyFilters(Ticket::whereNotNull('sla_due_at'))->where('ticket_statuses_id', 4)->where('is_sla_met', false)->groupBy('unit_id')->selectRaw('unit_id, count(*) as total')->pluck('total', 'unit_id')->toArray();
@@ -86,8 +81,8 @@ class SlaPerformanceChart extends ApexChartWidget
                 }
             }
         } else {
-            $userUnits = $user->units ?? collect();
-            
+            $userUnits = Unit::query()->whereKey($user->assignedUnitIds())->get();
+
             if ($userUnits->count() > 1) {
                 $unitIds = $userUnits->pluck('id')->toArray();
                 $metCounts = $applyFilters(Ticket::whereNotNull('sla_due_at'))->whereIn('unit_id', $unitIds)->where('ticket_statuses_id', 4)->where('is_sla_met', true)->groupBy('unit_id')->selectRaw('unit_id, count(*) as total')->pluck('total', 'unit_id')->toArray();
@@ -110,20 +105,9 @@ class SlaPerformanceChart extends ApexChartWidget
                 }
             } else {
                 $priorities = Priority::all();
-                $unitIds = $userUnits->pluck('id')->toArray();
-                if (empty($unitIds) && $user->unit_id) {
-                    $unitIds = [$user->unit_id];
-                }
-
-                $baseQuery = $applyFilters(Ticket::whereNotNull('sla_due_at'))
-                    ->where(function($q) use ($user, $unitIds) {
-                        if (!empty($unitIds)) {
-                            $q->whereIn('unit_id', $unitIds)
-                              ->orWhere('owner_id', $user->id);
-                        } else {
-                            $q->where('owner_id', $user->id);
-                        }
-                    });
+                $baseQuery = $applyFilters(Ticket::query()
+                    ->visibleTo($user)
+                    ->whereNotNull('sla_due_at'));
 
                 $metCounts = (clone $baseQuery)->where('ticket_statuses_id', 4)->where('is_sla_met', true)->groupBy('priority_id')->selectRaw('priority_id, count(*) as total')->pluck('total', 'priority_id')->toArray();
                 $closedMissedCounts = (clone $baseQuery)->where('ticket_statuses_id', 4)->where('is_sla_met', false)->groupBy('priority_id')->selectRaw('priority_id, count(*) as total')->pluck('total', 'priority_id')->toArray();

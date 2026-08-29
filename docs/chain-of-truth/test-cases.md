@@ -7,11 +7,11 @@ Status: Reviewed
 | TC-001 | FR-001, UC-001 | Root redirects to admin. | Existing feature test |
 | TC-002 | FR-003, FR-004, UC-001 | Web ticket creation stores owner, Open status, required fields, and attachments. | Missing |
 | TC-003 | FR-005, UC-002 | Ticket list supports expected actions and export. | Missing |
-| TC-004 | FR-006, UC-002 | Role-scoped ticket list returns only allowed tickets for Super Admin, Admin Unit, Staff Unit, and owner. | Missing |
-| TC-005 | FR-007, UC-002 | Workflow buttons transition Open and In Progress tickets correctly. | Missing |
+| TC-004 | FR-006, UC-002 | Mailbox scopes return outgoing tickets to the sender, incoming tickets to Admin/Staff of the destination unit, all tickets to global administrators, and no tickets to unrelated units. | Existing feature tests |
+| TC-005 | FR-007, UC-002 | Only destination processors receive workflow permission for Open tickets; report-content Edit remains unavailable to recipients, once In Progress only the eligible responsible agent can transition, an ineligible responsible can be replaced through Ambil Alih, and Cancel/Closed/soft-deleted tickets are workflow-terminal. | Existing policy and Livewire feature tests |
 | TC-006 | FR-008, UC-001, UC-002 | Ticket create/update creates history. | Partially existing through MCP ticket-creation tests |
-| TC-007 | FR-009, UC-002 | Status changes set `approved_at` and `solved_at`. | Missing |
-| TC-008 | FR-010, UC-001, UC-003 | Ticket and comment notifications go to intended recipients. | Missing |
+| TC-007 | FR-009, UC-002 | Status changes set `approved_at` and `solved_at`. | Covered for closed workflow; other date branches remain partial |
+| TC-008 | FR-010, UC-001, UC-003 | Ticket and comment notifications go to intended active recipients and fall back from an ineligible responsible user. | Covered for comment fallback and closed-ticket notification; external delivery remains untested |
 | TC-009 | FR-011, UC-003 | Comment relation manager stores comment and attachment path. | Missing |
 | TC-010 | FR-012, UC-004 | MCP intake returns relevant units, categories, priorities, and business entities when requesting or correcting classification. | Existing feature tests |
 | TC-011 | FR-013, UC-004 | MCP classification resolves valid values and rejects unknown, ambiguous, or missing values without advancing incorrectly. | Existing feature tests |

@@ -12,6 +12,7 @@ use Carbon\Carbon;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -20,6 +21,8 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
@@ -140,6 +143,134 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
     }
 
     /**
+     * Unit kerja yang berlaku untuk inbox tiket.
+     *
+     * Relasi user_entities adalah sumber utama. Kolom users.unit_id hanya
+     * menjadi fallback ketika tabel relasi belum tersedia (misalnya migrasi
+     * lama pada lingkungan pengujian).
+     *
+     * @return list<int>
+     */
+    public function assignedUnitIds(): array
+    {
+        if (Schema::hasTable('user_entities')) {
+            $unitIds = $this->relationLoaded('units')
+                ? $this->units->modelKeys()
+                : $this->units()->pluck('units.id')->all();
+        } elseif ($this->unit_id) {
+            $unitIds = [];
+            $unitIds[] = (int) $this->unit_id;
+        } else {
+            $unitIds = [];
+        }
+
+        return collect($unitIds)
+            ->map(static fn ($unitId): int => (int) $unitId)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    public function hasGlobalTicketAccess(): bool
+    {
+        return $this->hasAnyRole(['Super Admin', 'Master Admin']);
+    }
+
+    public function canProcessTickets(): bool
+    {
+        return $this->hasGlobalTicketAccess()
+            || $this->hasAnyRole(['Admin Unit', 'Staff Unit']);
+    }
+
+    public function canProcessTicketsForUnit(?int $unitId): bool
+    {
+        if ($this->hasGlobalTicketAccess()) {
+            return true;
+        }
+
+        return $unitId !== null
+            && $this->canProcessTickets()
+            && $this->isAssignedToUnit($unitId);
+    }
+
+    public function isAssignedToUnit(?int $unitId): bool
+    {
+        return $unitId !== null
+            && in_array($unitId, $this->assignedUnitIds(), true);
+    }
+
+    public function canAdministerUnit(?int $unitId): bool
+    {
+        if ($this->hasGlobalTicketAccess()) {
+            return true;
+        }
+
+        return $unitId !== null
+            && $this->hasRole('Admin Unit')
+            && $this->isAssignedToUnit($unitId);
+    }
+
+    public function isActiveTicketProcessorForUnit(?int $unitId): bool
+    {
+        return $this->is_active
+            && $this->can('Update:Ticket')
+            && $this->canProcessTicketsForUnit($unitId);
+    }
+
+    public function scopeAssignedToUnit(Builder $query, int $unitId): Builder
+    {
+        if (Schema::hasTable('user_entities')) {
+            return $query->whereHas(
+                'units',
+                fn (Builder $units): Builder => $units->whereKey($unitId),
+            );
+        }
+
+        return $query->where('users.unit_id', $unitId);
+    }
+
+    public function scopeTicketProcessorsForUnit(
+        Builder $query,
+        int $unitId,
+        bool $includeGlobal = false,
+    ): Builder {
+        $permissionTable = config('permission.table_names.permissions', 'permissions');
+
+        if (! Schema::hasTable($permissionTable)
+            || ! DB::table($permissionTable)
+                ->where('name', 'Update:Ticket')
+                ->where('guard_name', 'web')
+                ->exists()) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query
+            ->where('users.is_active', true)
+            ->permission('Update:Ticket')
+            ->where(function (Builder $query) use ($unitId, $includeGlobal): void {
+                if ($includeGlobal) {
+                    $query->whereHas(
+                        'roles',
+                        fn (Builder $roles): Builder => $roles->whereIn('name', ['Super Admin', 'Master Admin']),
+                    )->orWhere(function (Builder $query) use ($unitId): void {
+                        $query->whereHas(
+                            'roles',
+                            fn (Builder $roles): Builder => $roles->whereIn('name', ['Admin Unit', 'Staff Unit']),
+                        )->assignedToUnit($unitId);
+                    });
+
+                    return;
+                }
+
+                $query->whereHas(
+                    'roles',
+                    fn (Builder $roles): Builder => $roles->whereIn('name', ['Admin Unit', 'Staff Unit']),
+                )->assignedToUnit($unitId);
+            });
+    }
+
+    /**
      * Get all of the comments for the User.
      *
      * @return HasMany
@@ -197,13 +328,18 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
      *
      * If the role is as an admin unit, then display the user based on their unit ID.
      */
-    public function scopeByRole($query)
+    public function scopeByRole(Builder $query): Builder
     {
-        if (auth()->user()->hasRole('Admin Unit')) {
-            return $query->whereHas('units', function ($q) {
-                $q->whereIn('id', auth()->user()->units->pluck('id'));
-            });
+        $user = auth()->user();
+
+        if ($user?->hasRole('Admin Unit') && ! $user->hasGlobalTicketAccess()) {
+            return $query->whereHas(
+                'units',
+                fn (Builder $units): Builder => $units->whereIn('units.id', $user->assignedUnitIds()),
+            );
         }
+
+        return $query;
     }
 
     /**

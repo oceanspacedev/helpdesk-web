@@ -25,7 +25,7 @@ Setup, tool contract, gateway requirements, retry behavior, and security notes a
 
 ### MCP production quick start
 
-The production MCP endpoint runs inside the same Laravel web application; it does not need a separate MCP daemon. Deploy the application behind HTTPS, configure a bearer token and the WhatsApp OTP gateway, and expose:
+The production MCP endpoint runs inside the same Laravel web application; it does not need a separate MCP daemon. Deploy the application behind HTTPS, run the migrations, then use **Admin → Pengaturan → Pengaturan MCP** to add bearer tokens and tune the intake settings. The WhatsApp OTP gateway remains normal deployment configuration. Expose:
 
 ```text
 https://helpdesk.example.com/mcp/helpdesk

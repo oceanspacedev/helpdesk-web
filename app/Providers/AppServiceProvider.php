@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Filament\Auth\Pages\PhoneLogin;
+use App\Services\Integrations\HelpdeskMcpConfiguration;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -13,6 +14,11 @@ use Livewire\Livewire;
 class AppServiceProvider extends ServiceProvider
 {
     public const HOME = '/home';
+
+    public function register(): void
+    {
+        $this->app->scoped(HelpdeskMcpConfiguration::class);
+    }
 
     public function boot(): void
     {
@@ -25,12 +31,19 @@ class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('mcp', function (Request $request) {
-            $perMinute = max(60, (int) config('services.helpdesk_mcp.rate_limit_per_minute', 300));
+            $perMinute = app(HelpdeskMcpConfiguration::class)->rateLimitPerMinute();
             $token = (string) $request->bearerToken();
 
             return [
                 Limit::perMinute($perMinute)->by('mcp-token:'.($token !== '' ? sha1($token) : $request->ip())),
                 Limit::perMinute($perMinute * 2)->by('mcp-ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('mcp-pre-auth', function (Request $request) {
+            return [
+                Limit::perSecond(100)->by('mcp-pre-auth-second:'.$request->ip()),
+                Limit::perMinute(1200)->by('mcp-pre-auth-minute:'.$request->ip()),
             ];
         });
     }

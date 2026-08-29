@@ -3,19 +3,19 @@
 namespace App\Filament\Resources\TicketResource\RelationManagers;
 
 use App\Filament\Resources\TicketResource;
+use App\Models\Comment;
 use App\Models\User;
-use Filament\Forms;
 use Filament\Actions;
 use Filament\Actions\Action as NotificationAction;
+use Filament\Forms;
 use Filament\Notifications\Notification;
-use Filament\Schemas\Schema;
-use Filament\Schemas\Components\Section;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Tables\Table;
-use Filament\Tables;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\Layout\Split;
 use Filament\Tables\Columns\Layout\Stack;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Component as Livewire;
 
@@ -29,7 +29,7 @@ class CommentsRelationManager extends RelationManager
 
     public function isReadOnly(): bool
     {
-        return false;
+        return isset($this->ownerRecord) && $this->ownerRecord->trashed();
     }
 
     protected function isTablePaginationEnabled(): bool
@@ -46,10 +46,10 @@ class CommentsRelationManager extends RelationManager
                         ->required(),
                     Forms\Components\FileUpload::make('attachments')
                         ->disk('public')
-                        ->directory('comment-attachments/' . date('m-y'))
-                            ->maxSize(20480)
+                        ->directory('comment-attachments/'.date('m-y'))
+                        ->maxSize(20480)
                         ->enableDownload(),
-                ])
+                ]),
             ]);
     }
 
@@ -75,11 +75,15 @@ class CommentsRelationManager extends RelationManager
             ])
             ->filters([])
             ->headerActions([
-                Actions\CreateAction::make()->mutateFormDataUsing(function (array $data): array {
-                    $data['user_id'] = auth()->id();
+                Actions\CreateAction::make()
+                    ->authorize(fn (): bool => ! $this->isReadOnly()
+                        && (bool) auth()->user()?->can('create', Comment::class)
+                        && (bool) auth()->user()?->can('view', $this->getOwnerRecord()))
+                    ->mutateFormDataUsing(function (array $data): array {
+                        $data['user_id'] = auth()->id();
 
-                    return $data;
-                })
+                        return $data;
+                    })
                     ->label('Tambah Komentar')
                     ->after(function (Livewire $livewire) {
                         $ticket = $livewire->ownerRecord;
@@ -88,14 +92,15 @@ class CommentsRelationManager extends RelationManager
                         $isOwner = $authId === (int) $ticket->owner_id;
 
                         if ($isOwner) {
-                            if ($ticket->responsible_id) {
-                                $receiver = User::find($ticket->responsible_id);
+                            $responsible = $ticket->eligibleResponsible();
+
+                            if ($responsible) {
+                                $receiver = $responsible;
                             } else {
-                                $receiver = User::where('id', '!=', $authId)
-                                    ->whereHas(
-                                        'roles',
-                                        fn ($q) => $q->whereIn('name', ['Super Admin', 'Master Admin', 'Admin Unit', 'Staff Unit', 'Staf Unit'])
-                                    )->get();
+                                $receiver = User::query()
+                                    ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
+                                    ->where('id', '!=', $authId)
+                                    ->get();
                             }
                         } else {
                             $receiver = $ticket->owner;
@@ -113,11 +118,15 @@ class CommentsRelationManager extends RelationManager
                     }),
             ])
             ->actions([
-                Actions\Action::make('attachment')->action(function ($record) {
+                NotificationAction::make('attachment')->action(function ($record) {
                     return Storage::download($record->attachments);
                 })->hidden(fn ($record) => $record->attachments == ''),
-                Actions\EditAction::make(),
-                Actions\DeleteAction::make(),
+                Actions\EditAction::make()
+                    ->authorize(fn (Comment $record): bool => ! $this->isReadOnly()
+                        && (bool) auth()->user()?->can('update', $record)),
+                Actions\DeleteAction::make()
+                    ->authorize(fn (Comment $record): bool => ! $this->isReadOnly()
+                        && (bool) auth()->user()?->can('delete', $record)),
             ])
             ->bulkActions([]);
     }

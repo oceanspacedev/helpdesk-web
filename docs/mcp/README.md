@@ -22,7 +22,7 @@ This is the short path from a deployed Helpdesk release to the first MCP report.
 
 ### 1. Prepare the production runtime
 
-Use the normal immutable Laravel release behind HTTPS. The web server must send `/mcp/helpdesk` to `public/index.php`, preserve the `Authorization` and `MCP-Session-Id` headers, accept JSON `POST` requests, and never cache this endpoint. All application nodes must use the same database, `APP_KEY`, Helpdesk MCP secrets, WhatsApp gateway configuration, and Talenta employee file.
+Use the normal immutable Laravel release behind HTTPS. The web server must send `/mcp/helpdesk` to `public/index.php`, preserve the `Authorization` and `MCP-Session-Id` headers, accept JSON `POST` requests, and never cache this endpoint. All application nodes must use the same database, `APP_KEY`, WhatsApp gateway configuration, and Talenta employee file. MCP server-wide values live in the shared database; tokens and identity secrets are encrypted with `APP_KEY`.
 
 For more than one application node, Redis is required for the shared MCP draft, OTP, registration, rate-limit, lock, cache, and session state. A minimal MCP-related production environment is:
 
@@ -37,14 +37,6 @@ APP_KEY=base64:REPLACE_WITH_THE_SHARED_LARAVEL_KEY
 CACHE_DRIVER=redis
 SESSION_DRIVER=redis
 
-# Choose the singular setting for one client, or the plural setting for
-# separate Codex, Cursor, Antigravity, and gateway client principals.
-HELPDESK_MCP_TOKEN=REPLACE_WITH_ONE_LONG_RANDOM_TOKEN
-# HELPDESK_MCP_TOKENS=CODEX_TOKEN,CURSOR_TOKEN,ANTIGRAVITY_TOKEN
-
-HELPDESK_MCP_INTAKE_TTL_MINUTES=30
-HELPDESK_MCP_RATE_LIMIT_PER_MINUTE=300
-
 # Required because reporter ownership is proven through WhatsApp OTP.
 WAG_URL=https://whatsapp-gateway.example.com
 WAG_TOKEN=REPLACE_WITH_THE_WHATSAPP_GATEWAY_TOKEN
@@ -55,13 +47,13 @@ WHATSAPP_OTP_TTL_MINUTES=5
 # TALENTA_EMPLOYEE_FILE=/srv/helpdesk/shared/talenta-list-employee.json
 ```
 
-Generate a different MCP bearer token for each client or gateway principal so it can be revoked independently:
+After migrations, sign in as Super Admin and open `/admin/pengaturan-mcp`. Generate a different MCP bearer token for each client or gateway principal so it can be revoked independently:
 
 ```bash
 openssl rand -hex 32
 ```
 
-Store every generated value in the production secret store and give each client only its own token. Never commit tokens. `HELPDESK_MCP_CLIENT_TOKEN` in the client examples below is a client-machine environment variable; it is intentionally different from the server's `.env` variable name.
+Add every token with a clear client name on the settings page, save, and give each client only its own token. The database ciphertext is protected by `APP_KEY`; still treat the UI and database backup as sensitive. Never commit tokens. `HELPDESK_MCP_CLIENT_TOKEN` in the client examples below is a client-machine environment variable, not a server setting.
 
 ### 2. Deploy the release
 
@@ -84,7 +76,7 @@ On an application node, confirm that Laravel registered the MCP endpoint:
 php artisan route:list --path=mcp/helpdesk -v
 ```
 
-The output must include `POST mcp/helpdesk` with `VerifyHelpdeskMcpToken` and the `mcp` throttle. From outside the network, `GET https://helpdesk.example.com/up` must return HTTP 200. Opening `/mcp/helpdesk` directly in a browser returns HTTP 405 by design because an MCP client initializes it with JSON-RPC over `POST`.
+The output must include `POST mcp/helpdesk` with the `mcp-pre-auth` IP throttle before `VerifyHelpdeskMcpToken`, followed by the authenticated `mcp` throttle. From outside the network, `GET https://helpdesk.example.com/up` must return HTTP 200. Opening `/mcp/helpdesk` directly in a browser returns HTTP 405 by design because an MCP client initializes it with JSON-RPC over `POST`.
 
 ### 4. Connect and try one client
 
@@ -94,7 +86,7 @@ Choose one of the client configurations below, reload the client, and confirm it
 
 This section is the safe cutover runbook for an existing Helpdesk production database. It is intentionally more conservative than the new-environment quickstart above.
 
-For local development, run the application migrations, then configure one or more client tokens:
+For local development, run the application migrations, then configure one or more client tokens through **Admin → Pengaturan → Pengaturan MCP**:
 
 ```bash
 php artisan migrate
@@ -173,7 +165,9 @@ php artisan queue:restart
 
 Do not roll application code back to an old release after these migrations while keeping the migrated database: old code does not maintain the new identity invariants. If cutover cannot be completed, keep traffic closed and restore the tested pre-cutover database and matching old release together. Migration rollback alone cannot reconstruct revoked tokens or prior trust provenance.
 
-In a multi-instance deployment, set both cache and session stores to shared Redis so MCP drafts, OTP challenges, pending registrations, rate limits, and per-phone locks survive requests reaching different instances. All nodes must share the same `APP_KEY`, cache/session prefixes, Redis databases, tokens, identity pepper, and Talenta file. Keep Redis private and persistent enough for the configured TTLs. Set `APP_URL` to the public HTTPS origin for framework-generated application URLs. Do not clear application cache after reopening traffic because doing so destroys live OTP challenges and MCP drafts.
+In a multi-instance deployment, set both cache and session stores to shared Redis so MCP drafts, OTP challenges, pending registrations, rate limits, and per-phone locks survive requests reaching different instances. All nodes must share the same database, `APP_KEY`, cache/session prefixes, Redis databases, and Talenta file. Keep Redis private and persistent enough for the configured TTLs. Set `APP_URL` to the public HTTPS origin for framework-generated application URLs. Do not clear application cache after reopening traffic because doing so destroys live OTP challenges and MCP drafts.
+
+The following server variables are rollout fallbacks only. They are read while no database settings row exists (or while an encrypted secret has not yet been set). Import the required values through `/admin/pengaturan-mcp`, verify a controlled MCP request, then remove the fallbacks from every node:
 
 ```dotenv
 # One client
@@ -196,12 +190,17 @@ HELPDESK_MCP_IDENTITY_PEPPER=a-stable-random-secret
 # Optional fast path for a trusted WhatsApp webhook gateway
 HELPDESK_MCP_IDENTITY_ASSERTION_SECRET=another-long-random-secret
 HELPDESK_MCP_IDENTITY_ASSERTION_LEEWAY_SECONDS=300
+```
 
-# Optional: stable and unique per local stdio AI client
+The local stdio identity is the one exception: it must remain different for every local client, so it is not moved to the shared UI/database. Set it in that client's process environment:
+
+```dotenv
 HELPDESK_MCP_LOCAL_CLIENT_ID=my-local-mcp-client
 ```
 
-When `HELPDESK_MCP_TOKENS` is set, every value is accepted as a separate integration principal. Drafts, durable bindings, and idempotency records are scoped to that principal, so changing a token does not migrate them. During rotation, keep the old token accepted until its active intakes finish; users arriving through the new token will link their WhatsApp identity again. Never put a token in a tool argument, conversation ID, log message, or prompt.
+Every active token on the settings page is accepted as a separate integration principal. Drafts, durable bindings, and idempotency records are scoped to that principal, so changing a token does not migrate them. During rotation, add the new token first and keep the old token active until its intakes finish; users arriving through the new token will link their WhatsApp identity again. Never put a token in a tool argument, conversation ID, log message, or prompt.
+
+The UI accepts intake TTL values from 10 to 1,440 minutes, authenticated request limits from 60 to 600 per token per minute, and assertion clock tolerance from 30 to 3,600 seconds. A fixed cheap IP throttle also runs before token lookup so invalid-token floods do not bypass rate limiting or freely amplify database work.
 
 ## Connect clients
 
@@ -327,9 +326,9 @@ A direct MCP client that does not supply a stable `external_user_id` will ask fo
 | Symptom | Check |
 |---|---|
 | Browser shows `405` at `/mcp/helpdesk` | Expected for a browser `GET`; use an MCP Streamable HTTP client, which sends JSON-RPC over `POST`. |
-| Client receives `401` | Its bearer token must exactly match one value in `HELPDESK_MCP_TOKEN` or `HELPDESK_MCP_TOKENS`; confirm the reverse proxy preserves `Authorization`. |
+| Client receives `401` | Its bearer token must match an active entry in **Admin → Pengaturan MCP**; confirm the reverse proxy preserves `Authorization`. Before the first UI save, check the legacy environment fallback. |
 | Client receives `404` | Confirm the deployed release contains `routes/ai.php`, the proxy routes the path to Laravel, and `php artisan route:list --path=mcp/helpdesk -v` lists it. |
-| Client receives `429` | Check `HELPDESK_MCP_RATE_LIMIT_PER_MINUTE`, the token principal, and the source IP limit. |
+| Client receives `429` | Check **Batas request** on the MCP settings page, the token principal, and the source IP limit. |
 | Server connects but no tool appears | Reload/restart the client and inspect its MCP logs; the server must advertise exactly `helpdesk_intake`. |
 | `/helpdesk` is unknown | The AI host intercepted it as a slash command; send `Buat laporan helpdesk: ...` as normal text. |
 | OTP never arrives | Check `WAG_URL`, `WAG_TOKEN`, outbound network access, and WhatsApp gateway logs. |
@@ -432,7 +431,7 @@ The server keys draft state by the authenticated client and its own random `inta
 - `(authenticated client, channel, external_user_id)` identifies a channel account such as Telegram user A, B, C, or D.
 - The ticket owner is still a Helpdesk `User` selected by a WhatsApp number proven through OTP or a trusted gateway assertion. A stable external channel account is bound to that user after inline registration or successful ticket creation, so its next intake can reuse the identity without another OTP. A direct MCP intake that omits `external_user_id` remains deliberately unbound; it does not create a synthetic identity and must prove the phone again on the next intake.
 
-For a trusted WhatsApp webhook gateway, `identity_assertion` uses `v1.<unix timestamp>.<hex hmac>`. Calculate HMAC-SHA256 with `HELPDESK_MCP_IDENTITY_ASSERTION_SECRET` over these newline-separated values:
+For a trusted WhatsApp webhook gateway, `identity_assertion` uses `v1.<unix timestamp>.<hex hmac>`. Calculate HMAC-SHA256 with the assertion secret stored on the MCP settings page (or its legacy `HELPDESK_MCP_IDENTITY_ASSERTION_SECRET` fallback) over these newline-separated values:
 
 ```text
 v1

@@ -12,15 +12,11 @@ class TicketStatusesChart extends ApexChartWidget
 
     /**
      * Chart Id
-     *
-     * @var string
      */
     protected static ?string $chartId = 'ticketStatusesChart';
 
     /**
      * Widget Title
-     *
-     * @var string|null
      */
     protected static ?string $heading = 'Ticket Statuses';
 
@@ -28,7 +24,7 @@ class TicketStatusesChart extends ApexChartWidget
 
     protected static ?int $sort = 3;
 
-    protected int | string | array $columnSpan = [
+    protected int|string|array $columnSpan = [
         'default' => 'full',
         'md' => 1,
         'lg' => 1,
@@ -37,8 +33,6 @@ class TicketStatusesChart extends ApexChartWidget
     /**
      * Chart options (series, labels, types, size, animations...)
      * https://apexcharts.com/docs/options
-     *
-     * @return array
      */
     protected function getOptions(): array
     {
@@ -50,21 +44,18 @@ class TicketStatusesChart extends ApexChartWidget
 
         $ticketStatusesQuery = TicketStatus::select('id', 'name')
             ->withCount(['tickets' => function ($query) use ($user, $month, $year) {
+                $query->visibleTo($user);
+
                 if ($year && $year !== 'all') {
                     $query->whereYear('tickets.created_at', $year);
                 }
                 if ($month && $month !== 'all') {
                     $query->whereMonth('tickets.created_at', $month);
                 }
-                if (!$user->hasRole('Super Admin')) {
-                    $query->where(function($sub) use ($user) {
-                        $sub->where('unit_id', $user->unit_id)
-                            ->orWhere('owner_id', $user->id);
-                    });
-                }
             }]);
 
         $ticketStatuses = $ticketStatusesQuery->get();
+
         return [
             'chart' => [
                 'type' => 'pie',

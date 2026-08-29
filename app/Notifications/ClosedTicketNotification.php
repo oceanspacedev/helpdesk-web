@@ -5,10 +5,11 @@ namespace App\Notifications;
 use App\Channels\WhatsAppChannel;
 use App\Notifications\Concerns\ResolvesHelpdeskNotificationChannels;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class ClosedTicketNotification extends Notification
+class ClosedTicketNotification extends Notification implements ShouldQueueAfterCommit
 {
     use Queueable;
     use ResolvesHelpdeskNotificationChannels;

@@ -24,6 +24,7 @@ class PermissionSeeder extends Seeder
                 '--all' => true,
                 '--option' => 'policies_and_permissions',
                 '--panel' => 'admin',
+                '--ignore-existing-policies' => true,
             ]);
         } catch (\Throwable $e) {
             Log::error('Gagal generate permission via Filament Shield.', [

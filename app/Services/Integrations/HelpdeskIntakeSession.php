@@ -52,6 +52,7 @@ class HelpdeskIntakeSession
         private HelpdeskClassificationResolver $resolver,
         private HelpdeskFormOptionsService $formOptions,
         private HelpdeskTicketCreationService $ticketCreator,
+        private HelpdeskMcpConfiguration $configuration,
         private EmployeeService $employees,
         private WhatsAppOtpService $otp,
         private HelpdeskReporterIdentityService $reporterIdentities,
@@ -1577,7 +1578,7 @@ class HelpdeskIntakeSession
 
     private function intakeTtlMinutes(): int
     {
-        return max(10, (int) config('services.helpdesk_mcp.intake_ttl_minutes', 30));
+        return $this->configuration->intakeTtlMinutes();
     }
 
     private function normalizeChannel(string $channel): string

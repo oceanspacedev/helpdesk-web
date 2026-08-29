@@ -6,8 +6,8 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Services\WhatsAppGateway;
 use Carbon\Carbon;
-use Filament\Notifications\Notification;
 use Filament\Actions\Action as NotificationAction;
+use Filament\Notifications\Notification;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -46,6 +46,7 @@ class CheckSlaWarningCommand extends Command
 
         if ($tickets->isEmpty()) {
             $this->info('Tidak ada tiket yang mendekati batas SLA.');
+
             return Command::SUCCESS;
         }
 
@@ -54,16 +55,14 @@ class CheckSlaWarningCommand extends Command
 
         foreach ($tickets as $ticket) {
             $recipients = collect();
+            $responsible = $ticket->eligibleResponsible();
 
-            if ($ticket->responsible) {
-                $recipients->push($ticket->responsible);
+            if ($responsible) {
+                $recipients->push($responsible);
             } else {
-                $recipients = User::whereHas('roles', function ($q) {
-                    $q->whereIn('name', ['Super Admin', 'Admin Unit', 'Staf Unit']);
-                })
-                ->whereHas('units', fn($q) => $q->where('units.id', $ticket->unit_id))
-                ->where('is_active', 1)
-                ->get();
+                $recipients = User::query()
+                    ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
+                    ->get();
             }
 
             if ($recipients->isEmpty()) {
@@ -77,23 +76,23 @@ class CheckSlaWarningCommand extends Command
             $phoneLoginUrl = route('phone-login');
 
             $waMessage = "⚠️ *PERINGATAN TENGGAT SLA TIKET* ⚠️\n\n"
-                . "Tiket *#{$ticket->id}* - {$ticket->title} mendekati batas waktu SLA!\n\n"
-                . "• *Prioritas*: " . ($ticket->priority?->name ?? '-') . "\n"
-                . "• *Unit*: " . ($ticket->unit?->name ?? '-') . "\n"
-                . "• *Tenggat SLA*: {$dueFormatted}\n"
-                . "• *Sisa Waktu*: {$diffForHumans}\n\n"
-                . "🔗 *Buka Tiket*: {$ticketUrl}\n"
-                . "📱 *Login via WA*: {$phoneLoginUrl}\n\n"
-                . "Mohon segera menindaklanjuti tiket ini.\n\n"
-                . "— Supported by IT Support";
+                ."Tiket *#{$ticket->id}* - {$ticket->title} mendekati batas waktu SLA!\n\n"
+                .'• *Prioritas*: '.($ticket->priority?->name ?? '-')."\n"
+                .'• *Unit*: '.($ticket->unit?->name ?? '-')."\n"
+                ."• *Tenggat SLA*: {$dueFormatted}\n"
+                ."• *Sisa Waktu*: {$diffForHumans}\n\n"
+                ."🔗 *Buka Tiket*: {$ticketUrl}\n"
+                ."📱 *Login via WA*: {$phoneLoginUrl}\n\n"
+                ."Mohon segera menindaklanjuti tiket ini.\n\n"
+                .'— Supported by IT Support';
 
             foreach ($recipients as $recipient) {
                 // Send WhatsApp notification
-                if (!empty($recipient->phone)) {
+                if (! empty($recipient->phone)) {
                     try {
                         $whatsAppGateway->send($recipient->phone, $waMessage);
                     } catch (\Throwable $e) {
-                        Log::error("Gagal mengirim WhatsApp SLA warning untuk tiket #{$ticket->id}: " . $e->getMessage());
+                        Log::error("Gagal mengirim WhatsApp SLA warning untuk tiket #{$ticket->id}: ".$e->getMessage());
                     }
                 }
 
@@ -107,11 +106,11 @@ class CheckSlaWarningCommand extends Command
                             NotificationAction::make('view')
                                 ->button()
                                 ->label('Lihat Tiket')
-                                ->url('/admin/tickets/' . $ticket->id),
+                                ->url('/admin/tickets/'.$ticket->id),
                         ])
                         ->sendToDatabase($recipient);
                 } catch (\Throwable $e) {
-                    Log::error("Gagal mengirim database notification untuk tiket #{$ticket->id}: " . $e->getMessage());
+                    Log::error("Gagal mengirim database notification untuk tiket #{$ticket->id}: ".$e->getMessage());
                 }
             }
 
@@ -121,6 +120,7 @@ class CheckSlaWarningCommand extends Command
         }
 
         $this->info("Peringatan SLA berhasil dikirimkan untuk {$count} tiket.");
+
         return Command::SUCCESS;
     }
 }

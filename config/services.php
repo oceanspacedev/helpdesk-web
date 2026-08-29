@@ -43,6 +43,8 @@ return [
     ],
 
     'helpdesk_mcp' => [
+        // Legacy/bootstrap fallbacks. Runtime consumers resolve the encrypted
+        // database settings first through HelpdeskMcpConfiguration.
         'token' => env('HELPDESK_MCP_TOKEN'),
         'tokens' => array_values(array_filter(array_map(
             'trim',
