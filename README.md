@@ -1,100 +1,130 @@
- <img src="screenshot/create-ticket.png" width="100%"></img> 
-## Helpdesk Laravel
+<img src="screenshot/create-ticket.png" width="100%" />
 
-The Helpdesk Laravel repository is a project aimed at providing a web-based helpdesk system using [**Laravel 12**](https://laravel.com) and [**Filament 4**](https://github.com/filamentphp/filament). Helpdesk is a system that allows users to submit questions, request assistance, or report issues related to a company's products or services.
+# Helpdesk Laravel
 
-In this repository, you will find the complete source code implemented using Laravel, a popular and powerful PHP framework. This project is designed to assist web developers in building and managing helpdesk systems with ease.
+Repositori Helpdesk Laravel menyediakan sistem helpdesk berbasis web menggunakan [**Laravel 12**](https://laravel.com) dan [**Filament 4**](https://github.com/filamentphp/filament). Aplikasi ini memungkinkan pengguna mengajukan pertanyaan, meminta bantuan, atau melaporkan masalah terkait produk dan layanan perusahaan.
 
-The key features of Laravel Helpdesk include:
-1. Ticket Submission: Users can submit new tickets containing their questions, assistance requests, or issue reports.
-2. Ticket Management: Admins can view, assign, or close tickets submitted by users.
-3. Ticket Prioritization: Users can prioritize their tickets to emphasize the level of urgency.
-4. History and Tracking: The system records all activities and conversations within tickets, allowing for easy tracking and auditing.
+Repositori ini berisi kode sumber lengkap aplikasi Helpdesk. Struktur aplikasinya dirancang agar sistem mudah dikembangkan, disesuaikan, dan dikelola sesuai kebutuhan organisasi.
 
-This Laravel Helpdesk repository will provide a solid foundation for building a customizable and extensible helpdesk system according to your specific needs. By utilizing Laravel as the main framework, this project offers user-friendliness, flexibility, and good performance.
+Fitur utama Helpdesk Laravel meliputi:
 
-Feel free to explore this repository and start building a robust and responsive helpdesk application using Laravel Helpdesk!
+1. **Pembuatan tiket:** pengguna dapat mengirim pertanyaan, permintaan bantuan, atau laporan masalah.
+2. **Pengelolaan tiket:** admin dapat melihat, menugaskan, memproses, dan menutup tiket.
+3. **Prioritas tiket:** tingkat urgensi tiket dapat ditentukan agar penanganannya lebih terarah.
+4. **Riwayat dan pelacakan:** aktivitas dan percakapan tiket dicatat untuk kebutuhan pemantauan dan audit.
 
-## MCP account prerequisite and ticket intake
+## Prasyarat Akun dan Pengajuan Tiket melalui MCP
 
-The application exposes one vendor-neutral `helpdesk_intake` MCP tool with exactly two business paths: use an existing eligible reporter account and create its ticket, or create the required reporter account first and then create its ticket in the same intake. Account creation exists only as a ticket prerequisite. MCP does not expose ticket lookup, comments, updates, workflow actions, or administration.
+Aplikasi menyediakan satu alat MCP yang netral terhadap vendor, yaitu `helpdesk_intake`. Alat ini memiliki dua alur bisnis:
 
-Codex, Atlas relaying WhatsApp, and other AI hosts or channel bridges are generic MCP clients or gateways; they all use the same contract and do not change Helpdesk behavior. Ticket ownership remains tied to a verified WhatsApp number and is resolved against the Helpdesk user directory or Talenta. Generic and unsigned channels link through WhatsApp OTP when they provide a stable `external_user_id`; a trusted WhatsApp webhook gateway may use a signed one-event assertion. If a verified number is absent from both directories, MCP asks for explicit registration consent and a freshly typed full name, atomically creates a phone-only account with null email and password, then continues the original ticket intake. Declining account creation cancels the intake without creating an account or ticket. A direct MCP client that omits `external_user_id` must verify by OTP on every new intake and does not receive a durable reporter binding.
+1. Menggunakan akun pelapor yang sudah ada dan memenuhi syarat, kemudian membuat tiket.
+2. Membuat akun pelapor yang diperlukan terlebih dahulu, lalu melanjutkan pengajuan yang sama untuk membuat tiket.
 
-Setup, tool contract, gateway requirements, retry behavior, and security notes are in [docs/mcp/README.md](docs/mcp/README.md).
+Pembuatan akun hanya tersedia sebagai prasyarat pembuatan tiket. MCP tidak menyediakan pencarian tiket, komentar, perubahan tiket, aksi alur kerja, atau fungsi administrasi.
 
-### MCP production quick start
+Codex, Atlas yang meneruskan pesan WhatsApp, aplikasi AI lain, dan penghubung kanal lainnya bertindak sebagai klien atau gateway MCP generik. Semua klien menggunakan kontrak yang sama dan tidak mengubah perilaku Helpdesk.
 
-The production MCP endpoint runs inside the same Laravel web application; it does not need a separate MCP daemon. Deploy the application behind HTTPS, run the migrations, then use **Admin → Pengaturan → Pengaturan MCP** to add bearer tokens and tune the intake settings. The WhatsApp OTP gateway remains normal deployment configuration. Expose:
+Kepemilikan tiket tetap terikat pada nomor WhatsApp yang sudah diverifikasi dan dicocokkan dengan direktori pengguna Helpdesk atau Talenta. Kanal generik tanpa identitas tepercaya akan melakukan verifikasi melalui OTP WhatsApp apabila mengirimkan `external_user_id` yang stabil. Gateway webhook WhatsApp tepercaya dapat menggunakan pernyataan identitas bertanda tangan untuk satu peristiwa.
+
+Jika nomor terverifikasi tidak ditemukan pada kedua direktori, MCP akan meminta persetujuan pendaftaran dan nama lengkap yang diketik langsung oleh pengguna. Sistem kemudian membuat akun khusus nomor telepon dengan email dan kata sandi bernilai `null` secara atomik, lalu melanjutkan pengajuan tiket semula. Jika pengguna menolak pembuatan akun, proses dibatalkan tanpa membuat akun atau tiket.
+
+Klien MCP langsung yang tidak mengirimkan `external_user_id` harus melakukan verifikasi OTP pada setiap pengajuan baru dan tidak mendapatkan ikatan identitas pelapor permanen.
+
+Panduan instalasi, kontrak alat, kebutuhan gateway, mekanisme percobaan ulang, dan catatan keamanan tersedia di [dokumentasi MCP](docs/mcp/README.md).
+
+### Mulai Cepat MCP Produksi
+
+Titik akses MCP produksi berjalan di dalam aplikasi web Laravel yang sama sehingga tidak memerlukan daemon MCP terpisah. Pasang aplikasi di belakang HTTPS, jalankan migrasi, lalu buka **Admin → Pengaturan → Pengaturan MCP** untuk menambahkan token bearer dan mengatur proses pengajuan. Gateway OTP WhatsApp tetap dikelola sebagai konfigurasi penerapan biasa.
+
+Titik akses yang dipublikasikan:
 
 ```text
 https://helpdesk.example.com/mcp/helpdesk
 ```
 
-Ready-to-copy setup instructions are available for [Codex](docs/mcp/README.md#connect-codex), [Cursor](docs/mcp/README.md#connect-cursor), [Google Antigravity](docs/mcp/README.md#connect-google-antigravity), [Atlas/WhatsApp gateways](docs/mcp/README.md#connect-atlas-or-a-whatsapp-gateway), and [other Streamable HTTP clients](docs/mcp/README.md#connect-another-mcp-client). The complete production checklist is in the [MCP production quickstart](docs/mcp/README.md#production-quickstart); upgrades of an existing database must also follow the [safe cutover runbook](docs/mcp/README.md#install).
+Panduan siap salin tersedia untuk:
 
-After the client shows the single `helpdesk_intake` tool, try this portable prompt:
+- [Codex](docs/mcp/README.md#connect-codex)
+- [Cursor](docs/mcp/README.md#connect-cursor)
+- [Google Antigravity](docs/mcp/README.md#connect-google-antigravity)
+- [Atlas yang berjalan langsung/Docker dan persyaratan gateway WhatsApp](docs/mcp/README.md#connect-atlas-or-a-whatsapp-gateway)
+- [Klien Streamable HTTP lainnya](docs/mcp/README.md#connect-another-mcp-client)
+
+Daftar periksa produksi lengkap tersedia pada [panduan mulai cepat MCP produksi](docs/mcp/README.md#production-quickstart). Peningkatan basis data yang sudah digunakan juga wajib mengikuti [panduan peralihan aman](docs/mcp/README.md#install).
+
+Setelah klien menampilkan alat `helpdesk_intake`, coba instruksi berikut:
 
 ```text
 Buat laporan helpdesk: printer kasir tidak bisa mencetak sejak pagi.
 ```
 
-`/helpdesk printer kasir tidak bisa mencetak` also starts the intake when the host forwards it as normal message text. Connecting an MCP server does not automatically install a slash command in every AI client, so use the natural-language prompt when `/helpdesk` is intercepted by the host UI.
+Perintah `/helpdesk printer kasir tidak bisa mencetak` juga dapat memulai pengajuan apabila aplikasi klien meneruskannya sebagai pesan teks biasa. Menghubungkan server MCP tidak otomatis memasang perintah garis miring (`slash command`) pada setiap klien AI. Gunakan instruksi bahasa alami apabila `/helpdesk` ditangani sebagai perintah internal oleh antarmuka klien.
 
 <hr/>
 
-## Database Design
- <img src="screenshot/database-design.png" width="100%"></img> 
+## Desain Basis Data
+
+<img src="screenshot/database-design.png" width="100%" />
 
 <hr/>
 
-## Unified Modeling Language (UML)
-<img src="screenshot/uml.png" width="100%"></img> 
-<hr/>
+## Diagram UML
 
-## Requirements
-* PHP 8.2 or higher
-* Laravel 12.x
-* Filament 4.x
-* Database (eg: MySQL, PostgreSQL, SQLite)
-* Web Server (eg: Apache, Nginx, IIS)
+<img src="screenshot/uml.png" width="100%" />
 
 <hr/>
 
+## Persyaratan
 
-## Installation
-
-The commands below are for local development. Production upgrades must not use a rolling mixed-version deploy or run the dummy seeder. Follow the maintenance-window, migration-audit, reviewed-admin bootstrap, session purge, and smoke-test runbook in [docs/mcp/README.md](docs/mcp/README.md#install).
-
-* Install [Composer](https://getcomposer.org/download)
-* Clone the repository: `git clone https://github.com/apriansyahrs/cs_helpdesk.git`
-* Install PHP dependencies: `composer install`
-* Setup configuration: `cp .env.example .env`
-* Generate application key: `php artisan key:generate`
-* Create a database and update your configuration.
-* Run database migration: `php artisan migrate`
-* Run database seeder: `php artisan db:seed`
-* Create a symlink to the storage: `php artisan storage:link`
-* Run the dev server: `php artisan serve`
+- PHP 8.2 atau lebih baru
+- Laravel 12.x
+- Filament 4.x
+- Basis data, misalnya MySQL, PostgreSQL, atau SQLite
+- Server web, misalnya Apache, Nginx, atau IIS
 
 <hr/>
 
-## Development Dummy Accounts
+## Instalasi
 
-These credentials are created by development seed data only. Never create or retain these fixed passwords in production.
+Perintah berikut hanya untuk pengembangan lokal. Peningkatan produksi tidak boleh menggunakan penerapan bergulir dengan versi aplikasi campuran atau menjalankan pengisi data uji. Ikuti prosedur jendela pemeliharaan, audit migrasi, inisialisasi admin yang sudah ditinjau, penghapusan sesi, dan uji cepat pada [panduan instalasi produksi](docs/mcp/README.md#install).
+
+1. Pasang [Composer](https://getcomposer.org/download).
+2. Kloning repositori: `git clone https://github.com/CS-BusinessDev/web-helpdesk.git`.
+3. Pasang dependensi PHP: `composer install`.
+4. Siapkan konfigurasi: `cp .env.example .env`.
+5. Buat kunci aplikasi: `php artisan key:generate`.
+6. Buat basis data dan sesuaikan konfigurasinya.
+7. Jalankan migrasi basis data: `php artisan migrate`.
+8. Jalankan pengisian data pengembangan: `php artisan db:seed`.
+9. Buat tautan simbolis untuk direktori penyimpanan: `php artisan storage:link`.
+10. Jalankan server pengembangan: `php artisan serve`.
+
+<hr/>
+
+## Akun Uji Pengembangan
+
+Kredensial berikut hanya dibuat oleh proses pengisian data pengembangan. Jangan membuat atau mempertahankan kata sandi tetap ini pada lingkungan produksi.
 
 ### Super Admin
-> - Email: superadmin@cs.com
-> - Password: password
-### Admin Unit
-> - Email: adminunit@cs.com
-> - Password: password
-### Staff Unit
-> - Email: staffunit@cs.com
-> - Password: password
-### General User
-> - Email: user@cs.com
-> - Password: password
 
-## Super Admin Preview
- <img src="screenshot/super-admin.png" width="100%"></img> 
+> - Email: superadmin@cs.com
+> - Kata sandi: password
+
+### Admin Unit
+
+> - Email: adminunit@cs.com
+> - Kata sandi: password
+
+### Staff Unit
+
+> - Email: staffunit@cs.com
+> - Kata sandi: password
+
+### Pengguna Umum
+
+> - Email: user@cs.com
+> - Kata sandi: password
+
+## Pratinjau Super Admin
+
+<img src="screenshot/super-admin.png" width="100%" />
