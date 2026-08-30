@@ -50,6 +50,7 @@ class HelpdeskIntakeSession
     public function __construct(
         private HelpdeskIntakeGate $gate,
         private HelpdeskClassificationResolver $resolver,
+        private HelpdeskOperationalClassifier $operationalClassifier,
         private HelpdeskFormOptionsService $formOptions,
         private HelpdeskTicketCreationService $ticketCreator,
         private HelpdeskMcpConfiguration $configuration,
@@ -304,6 +305,7 @@ class HelpdeskIntakeSession
                 $normalizedPhone,
                 (string) ($context['external_message_id'] ?? ''),
                 (string) ($context['intake_id'] ?? ''),
+                $message,
             );
         $incomingVerified = $trustedPhone;
         $state = $this->loadActor($actorKey)
@@ -897,7 +899,7 @@ class HelpdeskIntakeSession
             return $result;
         }
 
-        return $this->reply('in_progress', true, $preamble."\n\n".$this->withGuide(self::STEP_ISSUE, "Ceritakan kendalanya langsung di sini.\nApa yang terjadi, di sistem/perangkat apa, dan dampaknya."), [
+        return $this->reply('in_progress', true, $preamble."\n\n".$this->withGuide(self::STEP_ISSUE, "Tulis kendalanya seperti tiket Helpdesk.\nContoh: printer kasir tidak bisa mencetak sejak pagi."), [
             'step' => self::STEP_ISSUE,
             'state' => $state,
         ]);
@@ -905,11 +907,8 @@ class HelpdeskIntakeSession
 
     private function fromIssue(array $state, string $message): array
     {
-        if ($message === '') {
-            return $this->reply('in_progress', true, $this->withGuide(self::STEP_ISSUE, 'Deskripsi masih kosong. Ketik kendalanya secara singkat.'), [
-                'step' => self::STEP_ISSUE,
-                'state' => $state,
-            ]);
+        if ($this->usableIssueText($message) === null) {
+            return $this->askForIssue($state);
         }
 
         return $this->captureIssue($state, $message);
@@ -917,30 +916,69 @@ class HelpdeskIntakeSession
 
     private function captureIssue(array $state, string $message): array
     {
-        $state['title'] = $message;
-        $state['description'] = $message;
+        if ($this->usableIssueText($message) === null) {
+            return $this->askForIssue($state);
+        }
+
+        $state = array_merge($state, $this->operationalClassifier->classify($message, $state));
 
         return $this->advance($state);
     }
 
+    private function askForIssue(array $state): array
+    {
+        $state['step'] = self::STEP_ISSUE;
+
+        return $this->reply('in_progress', true, $this->withGuide(
+            self::STEP_ISSUE,
+            "Deskripsi masih belum bisa dipakai. Kirim teks kendala apa adanya, bukan ringkasan atau nomor pilihan.\nContoh: printer kasir tidak bisa mencetak sejak pagi.",
+        ), [
+            'step' => self::STEP_ISSUE,
+            'state' => $state,
+        ]);
+    }
+
     private function fromClassification(array $state, string $message, string $field, string $step): array
     {
-        $context = $this->ticketContext($state);
-        $result = $this->resolver->validateField($field, $message, $context);
-
-        if (! $result['ok']) {
-            return $this->reply('in_progress', true, $this->withGuide($step, $result['message']), [
-                'step' => $step,
-                'state' => $state,
-                'field' => $field,
-            ]);
+        $tokens = preg_split('/[\s,;]+/u', trim($message), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if ($tokens === []) {
+            return $this->askClassification($state, $field, $step);
         }
 
-        $state = array_merge($state, $result['resolved']['ticket_data_patch'] ?? []);
-        $picked = trim((string) ($result['resolved']['name'] ?? ''));
+        $sequence = array_column($this->missingClassificationFields($state), 'field');
+        if ($sequence === [] || $sequence[0] !== $field) {
+            $sequence = [$field, ...array_values(array_filter($sequence, fn (string $item): bool => $item !== $field))];
+        }
+
+        $noted = [];
+        foreach (array_values($tokens) as $index => $token) {
+            if (! isset($sequence[$index])) {
+                break;
+            }
+
+            $target = $sequence[$index];
+            $targetStep = $this->stepForClassificationField($target);
+            $result = $this->resolver->validateField($target, $token, $this->ticketContext($state));
+            if (! $result['ok']) {
+                $state['step'] = $targetStep;
+
+                return $this->reply('in_progress', true, $this->withGuide($targetStep, $result['message']), [
+                    'step' => $targetStep,
+                    'state' => $state,
+                    'field' => $target,
+                ]);
+            }
+
+            $state = array_merge($state, $result['resolved']['ticket_data_patch'] ?? []);
+            $picked = trim((string) ($result['resolved']['name'] ?? ''));
+            if ($picked !== '') {
+                $noted[] = $this->shortFieldLabel($target).' *'.$picked.'*';
+            }
+        }
+
         $next = $this->advance($state);
-        if ($picked !== '') {
-            $next['user_reply'] = 'Tercatat: '.$this->shortFieldLabel($field).' *'.$picked."*.\n\n".$next['user_reply'];
+        if ($noted !== []) {
+            $next['user_reply'] = 'Tercatat: '.implode(', ', $noted).".\n\n".$next['user_reply'];
         }
 
         return $next;
@@ -964,25 +1002,38 @@ class HelpdeskIntakeSession
             $state['step'] = self::STEP_ISSUE;
             $state['title'] = '';
             $state['description'] = '';
+            $state['location'] = '';
+            $state['affected_system'] = '';
 
-            return $this->reply('in_progress', true, $this->withGuide(self::STEP_ISSUE, "Oke, ganti ceritanya saja.\nKetik ulang kendalanya. Pilihan unit dan kategori tadi tetap dipakai."), [
+            return $this->reply('in_progress', true, $this->withGuide(self::STEP_ISSUE, "Oke, ganti ceritanya saja.\nKetik ulang kendalanya."), [
                 'step' => self::STEP_ISSUE,
                 'state' => $state,
             ]);
         }
 
-        if (! $this->isYes($message)) {
-            return $this->reply('in_progress', true, $this->withGuide(self::STEP_CONFIRM, $this->confirmPrompt($state)."\n\nKetik *ya* untuk kirim ke IT.\nKetik *ulangi* untuk ganti kendala.\nKetik *batal* untuk berhenti."), [
+        if ($this->isYes($message)) {
+            if ($identityError = $this->confirmationIdentityError($state)) {
+                return $identityError;
+            }
+
+            return $this->submitTicket($state);
+        }
+
+        if ($this->looksLikeHostNoise($message) || $this->isLoneMenuChoice($message)) {
+            return $this->reply('in_progress', true, $this->withGuide(self::STEP_CONFIRM, $this->confirmFollowUp($state)), [
                 'step' => self::STEP_CONFIRM,
                 'state' => $state,
             ]);
         }
 
-        if ($identityError = $this->confirmationIdentityError($state)) {
-            return $identityError;
+        if ($this->looksLikeIssueUpdate($message)) {
+            return $this->captureIssue($state, $message);
         }
 
-        return $this->submitTicket($state);
+        return $this->reply('in_progress', true, $this->withGuide(self::STEP_CONFIRM, $this->confirmFollowUp($state)), [
+            'step' => self::STEP_CONFIRM,
+            'state' => $state,
+        ]);
     }
 
     private function confirmationIdentityError(array $state): ?array
@@ -1095,6 +1146,8 @@ class HelpdeskIntakeSession
                 'problem_category' => $state['problem_category'] ?? '',
                 'priority_id' => $state['priority_id'] ?? '',
                 'priority' => $state['priority'] ?? '',
+                'location' => $state['location'] ?? '',
+                'affected_system' => $state['affected_system'] ?? '',
             ],
             'attachments' => array_map(fn (string $url): array => ['url' => $url], $state['attachments'] ?? []),
         ];
@@ -1120,44 +1173,13 @@ class HelpdeskIntakeSession
 
     private function advance(array $state): array
     {
-        if ($this->blank($state['unit_id'] ?? null) && $this->blank($state['unit'] ?? null)) {
-            $state['step'] = self::STEP_UNIT;
-
-            return $this->askClassification($state, 'unit_id', self::STEP_UNIT);
-        }
-        if ($this->blank($state['problem_category_id'] ?? null) && $this->blank($state['problem_category'] ?? null)) {
-            $state['step'] = self::STEP_CATEGORY;
-
-            return $this->askClassification($state, 'problem_category_id', self::STEP_CATEGORY);
-        }
-        if ($this->blank($state['priority_id'] ?? null) && $this->blank($state['priority'] ?? null)) {
-            $state['step'] = self::STEP_PRIORITY;
-
-            return $this->askClassification($state, 'priority_id', self::STEP_PRIORITY);
-        }
-        if ($this->blank($state['business_entities_id'] ?? null) && $this->blank($state['business_entity'] ?? null)) {
-            $state['step'] = self::STEP_ENTITY;
-
-            return $this->askClassification($state, 'business_entities_id', self::STEP_ENTITY);
-        }
-        if (($state['attachments'] ?? []) === []) {
-            $state['step'] = self::STEP_ATTACHMENTS;
-
-            return $this->reply('in_progress', true, $this->withGuide(self::STEP_ATTACHMENTS, 'Ada foto atau file? Kirim sekarang, atau ketik *lewati*.'), [
-                'step' => self::STEP_ATTACHMENTS,
-                'state' => $state,
-            ]);
-        }
-
         return $this->goConfirm($state);
     }
 
     private function askClassification(array $state, string $field, string $step): array
     {
-        $unitId = (int) ($state['unit_id'] ?? 0);
-        $options = $this->formOptions->formOptions($unitId > 0 ? $unitId : null);
-        $issue = ['field' => $field, 'reason' => 'missing', 'provided_value' => null];
-        $prompt = $this->resolver->buildFieldValidationMessage($issue, $options);
+        $missing = $this->missingClassificationFields($state);
+        $prompt = $this->classificationPrompt($state, $missing !== [] ? $missing : [['field' => $field, 'step' => $step]]);
 
         return $this->reply('in_progress', true, $this->withGuide($step, $prompt), [
             'step' => $step,
@@ -1166,36 +1188,240 @@ class HelpdeskIntakeSession
         ]);
     }
 
+    /**
+     * @return list<array{field: string, step: string}>
+     */
+    private function missingClassificationFields(array $state): array
+    {
+        $fields = [
+            ['field' => 'unit_id', 'name' => 'unit', 'step' => self::STEP_UNIT],
+            ['field' => 'problem_category_id', 'name' => 'problem_category', 'step' => self::STEP_CATEGORY],
+            ['field' => 'priority_id', 'name' => 'priority', 'step' => self::STEP_PRIORITY],
+            ['field' => 'business_entities_id', 'name' => 'business_entity', 'step' => self::STEP_ENTITY],
+        ];
+
+        $missing = [];
+        foreach ($fields as $meta) {
+            if ($this->blank($state[$meta['field']] ?? null) && $this->blank($state[$meta['name']] ?? null)) {
+                $missing[] = ['field' => $meta['field'], 'step' => $meta['step']];
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
+     * @param  list<array{field: string, step: string}>  $missing
+     */
+    private function classificationPrompt(array $state, array $missing): string
+    {
+        $unitId = (int) ($state['unit_id'] ?? 0);
+        $options = $this->formOptions->formOptions($unitId > 0 ? $unitId : null);
+        $ask = $missing;
+        if (($missing[0]['field'] ?? '') === 'unit_id') {
+            $ask = [$missing[0]];
+        }
+
+        $blocks = [];
+        foreach ($ask as $item) {
+            $blocks[] = $this->resolver->buildFieldValidationMessage(
+                ['field' => $item['field'], 'reason' => 'missing', 'provided_value' => null],
+                $options,
+            );
+        }
+
+        $body = implode("\n\n", $blocks);
+        if (count($ask) > 1) {
+            $example = implode(' ', array_fill(0, count($ask), '1'));
+
+            return "Jawab semua sisa pilihan dalam SATU pesan. Kirim nomor urut dipisah spasi. Contoh: *{$example}*\n\n".$body;
+        }
+
+        return $body;
+    }
+
+    private function stepForClassificationField(string $field): string
+    {
+        return match ($field) {
+            'unit_id' => self::STEP_UNIT,
+            'problem_category_id' => self::STEP_CATEGORY,
+            'priority_id' => self::STEP_PRIORITY,
+            'business_entities_id' => self::STEP_ENTITY,
+            default => self::STEP_UNIT,
+        };
+    }
+
     private function goConfirm(array $state): array
     {
         $state['step'] = self::STEP_CONFIRM;
 
-        return $this->reply('in_progress', true, $this->withGuide(self::STEP_CONFIRM, $this->confirmPrompt($state)."\n\nKetik *ya* untuk kirim ke IT."), [
+        return $this->reply('in_progress', true, $this->withGuide(self::STEP_CONFIRM, $this->confirmFollowUp($state)), [
             'step' => self::STEP_CONFIRM,
             'state' => $state,
         ]);
     }
 
+    private function confirmFollowUp(array $state): string
+    {
+        $unit = trim((string) ($state['unit'] ?? '')) ?: 'Helpdesk';
+        $lines = [
+            $this->confirmPrompt($state),
+            '',
+            "Ketik *ya* untuk kirim ke {$unit}.",
+            'Teks di atas disimpan apa adanya. Jika tidak sama dengan yang Anda ketik, ketik *ulangi*.',
+            'Staf bisa mengubah kategori, unit, atau cabang nanti.',
+            'Ketik *batal* untuk berhenti.',
+        ];
+
+        $channel = Str::lower(trim((string) ($state['channel'] ?? '')));
+        $attachments = $state['attachments'] ?? [];
+        if ($channel === 'whatsapp' && (! is_array($attachments) || $attachments === [])) {
+            $lines[] = 'Lampiran opsional: kirim foto sekarang, lalu ketik *ya*.';
+        }
+
+        return implode("\n", $lines);
+    }
+
     private function confirmPrompt(array $state): string
     {
-        $description = trim((string) ($state['description'] ?? $state['title'] ?? ''));
-        if (Str::length($description) > 160) {
-            $description = Str::limit($description, 160, '…');
-        }
-        $attachmentCount = count($state['attachments'] ?? []);
+        $title = trim((string) ($state['title'] ?? ''));
+        $description = trim((string) ($state['description'] ?? ''));
+        $location = trim((string) ($state['location'] ?? ''));
 
         $lines = [
             'Rekap laporan (belum tersimpan):',
-            '• Kendala: '.($description !== '' ? $description : '-'),
-            '• Unit kerja: '.($state['unit'] ?? '-'),
-            '• Jenis masalah: '.($state['problem_category'] ?? '-'),
-            '• Prioritas: '.($state['priority'] ?? '-'),
-            '• Perusahaan/cabang: '.($state['business_entity'] ?? '-'),
-            '• Lampiran: '.($attachmentCount > 0 ? $attachmentCount.' file' : 'tidak ada'),
-            '• Atas nama: '.($state['name'] ?? '-').($this->blank($state['phone'] ?? null) ? '' : ' / '.$state['phone']),
+            '• Kendala: '.($title !== '' ? $title : '-'),
         ];
+        if ($description !== '' && Str::lower($description) !== Str::lower($title)) {
+            $lines[] = '• Uraian: '.$description;
+        }
+        if ($location !== '') {
+            $lines[] = '• Lokasi: '.$location;
+        }
+
+        $uncertain = (bool) ($state['category_uncertain'] ?? false)
+            || Str::lower((string) ($state['problem_category'] ?? '')) === Str::lower(HelpdeskOperationalClassifier::UNCLASSIFIED_CATEGORY);
+        if ($uncertain) {
+            $lines[] = '• Jenis: belum dipastikan — staf isi di Helpdesk';
+        } else {
+            $category = trim((string) ($state['problem_category'] ?? ''));
+            $lines[] = '• Jenis: '.($category !== '' ? $category : '-');
+        }
+
+        $unit = trim((string) ($state['unit'] ?? ''));
+        if ($unit !== '') {
+            $lines[] = (bool) ($state['unit_assumed'] ?? false)
+                ? '• Unit: '.$unit.' (asumsi antrian)'
+                : '• Unit: '.$unit;
+        }
+
+        $entity = trim((string) ($state['business_entity'] ?? ''));
+        if ((bool) ($state['entity_assumed'] ?? false)
+            || Str::lower($entity) === Str::lower(HelpdeskOperationalClassifier::UNSTATED_ENTITY)) {
+            $lines[] = '• Cabang: belum disebut — staf isi di Helpdesk';
+        } elseif ($entity !== '') {
+            $source = ($state['entity_source'] ?? '') === 'owner' ? ' (dari tiket sebelumnya)' : '';
+            $lines[] = '• Cabang: '.$entity.$source;
+        }
+
+        $priority = trim((string) ($state['priority'] ?? ''));
+        if ($priority !== '') {
+            $lines[] = (bool) ($state['priority_assumed'] ?? false)
+                ? '• Prioritas: '.$priority.' (antrian)'
+                : '• Prioritas: '.$priority;
+        }
+
+        $attachments = $state['attachments'] ?? [];
+        if (is_array($attachments) && $attachments !== []) {
+            $lines[] = '• Lampiran: '.count($attachments).' file';
+        }
+
+        $lines[] = '• Atas nama: '.($state['name'] ?? '-').($this->blank($state['phone'] ?? null) ? '' : ' / '.$state['phone']);
 
         return implode("\n", $lines);
+    }
+
+    private function looksLikeIssueUpdate(string $message): bool
+    {
+        if ($this->usableIssueText($message) === null) {
+            return false;
+        }
+
+        return Str::length(trim($message)) >= 8;
+    }
+
+    private function usableIssueText(string $message): ?string
+    {
+        $story = $this->operationalClassifier->stripIntakePrefix($message);
+        if ($story === '' || $this->unusableIssueMessage($story)) {
+            return null;
+        }
+
+        return $story;
+    }
+
+    private function unusableIssueMessage(string $message): bool
+    {
+        if (trim($message) === '') {
+            return true;
+        }
+
+        return $this->isLoneMenuChoice($message)
+            || $this->looksLikeHostNoise($message)
+            || $this->isYes($message)
+            || $this->isNo($message)
+            || $this->isSkip($message)
+            || $this->isCancel($message);
+    }
+
+    private function looksLikeHostNoise(string $message): bool
+    {
+        $text = trim($message);
+        if ($text === '') {
+            return false;
+        }
+
+        if (preg_match('/rekap laporan|belum tersimpan|ketik\s+\*?ya\*?|ketik\s+\*?ulangi\*|staf bisa mengubah|untuk kirim ke it|disimpan apa adanya/iu', $text)) {
+            return true;
+        }
+
+        if ($this->looksLikeModelSummary($text)) {
+            return true;
+        }
+
+        if (preg_match('/pilih\s+(kategori|unit|prioritas|nomor|salah satu|jenis)/iu', $text)) {
+            return true;
+        }
+
+        $numbered = preg_match_all('/^\s*\d+[\.\)]\s+\S/um', $text);
+        if ($numbered >= 2) {
+            return true;
+        }
+
+        if (preg_match('/^\s*\d+[\.\)]\s+/u', $text)
+            && preg_match('/\b(cctv|odoo|csa|jaringan|printer|kategori|unit|prioritas)\b/iu', $text)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function looksLikeModelSummary(string $message): bool
+    {
+        $text = trim($message);
+        if ($text === '') {
+            return false;
+        }
+
+        return (bool) preg_match(
+            '/^(the user|pengguna)\b|^user (reported|wants to|asked to)\b|\bi have summarized\b|\bhere is a summary\b|\bberikut (adalah )?(ringkasan|rekap)\b|\bringkasan (kendala|laporan|tiket)\b|^saya akan (membuat|membuatkan) tiket\b/iu',
+            $text,
+        );
+    }
+
+    private function isLoneMenuChoice(string $message): bool
+    {
+        return (bool) preg_match('/^[1-9]$/u', trim($message));
     }
 
     private function startPrompt(): string
@@ -1223,13 +1449,13 @@ class HelpdeskIntakeSession
             self::STEP_PHONE_OTP,
             self::STEP_REGISTRATION_CONSENT,
             self::STEP_REGISTRATION_NAME => 'Langkah 1 — identitas',
-            self::STEP_ISSUE => 'Langkah 2 — kendala',
-            self::STEP_UNIT => 'Langkah 3 — unit kerja',
-            self::STEP_CATEGORY => 'Langkah 4 — jenis masalah',
-            self::STEP_PRIORITY => 'Langkah 5 — prioritas',
-            self::STEP_ENTITY => 'Langkah 6 — perusahaan/cabang',
-            self::STEP_ATTACHMENTS => 'Langkah 7 — lampiran (opsional)',
-            self::STEP_CONFIRM => 'Langkah terakhir — konfirmasi',
+            self::STEP_ISSUE => 'Kendala',
+            self::STEP_UNIT => 'Unit kerja',
+            self::STEP_CATEGORY => 'Jenis masalah',
+            self::STEP_PRIORITY => 'Prioritas',
+            self::STEP_ENTITY => 'Perusahaan/cabang',
+            self::STEP_ATTACHMENTS => 'Lampiran',
+            self::STEP_CONFIRM => 'Konfirmasi',
             default => 'Helpdesk IT',
         };
 
@@ -1474,19 +1700,17 @@ class HelpdeskIntakeSession
             }
         }
         $user = trim((string) ($context['external_user_id'] ?? ''));
-        $transport = trim((string) ($context['transport_session_id'] ?? ''));
 
-        if ($conversation === '' && $user === '' && $transport === '') {
+        // Do not alias by MCP-Session-Id. Hosts such as Atlas share one
+        // Streamable HTTP session across many chats, so a transport alias
+        // would merge concurrent reports into a single intake.
+        if ($conversation === '' && $user === '') {
             return '';
         }
 
-        if ($conversation !== '') {
-            $subject = 'conversation:'.$conversation."\0".$user;
-        } elseif ($user !== '') {
-            $subject = 'user:'.$user;
-        } else {
-            $subject = 'transport:'.$transport;
-        }
+        $subject = $conversation !== ''
+            ? 'conversation:'.$conversation."\0".$user
+            : 'user:'.$user;
         $seed = $clientId."\0".$channel."\0".$subject;
 
         return 'helpdesk-intake-alias:'.hash('sha256', $seed);
@@ -1633,30 +1857,41 @@ class HelpdeskIntakeSession
 
     private function isCancel(string $message): bool
     {
-        $normalized = Str::lower(trim($message));
-
-        return in_array($normalized, ['batal', '/batal', 'cancel', 'stop'], true);
+        return in_array($this->decisionText($message), ['batal', 'cancel', 'stop'], true);
     }
 
     private function isSkip(string $message): bool
     {
-        $normalized = Str::lower(trim($message));
+        $normalized = $this->decisionText($message);
 
-        return in_array($normalized, ['lewati', 'skip', 'tidak ada', 'gaada', '0', '-'], true);
+        return in_array($normalized, ['lewati', 'skip', 'tidak ada', 'gaada', '0'], true)
+            || trim($message) === '-';
     }
 
     private function isYes(string $message): bool
     {
-        $normalized = Str::lower(trim($message));
+        $normalized = $this->decisionText($message);
+        if (in_array($normalized, ['ya', 'iya', 'yes', 'y', 'ok', 'oke', 'siap', 'kirim', 'simpan', 'setuju'], true)) {
+            return true;
+        }
 
-        return in_array($normalized, ['ya', 'iya', 'yes', 'simpan'], true);
+        return (bool) preg_match(
+            '/^(ya|iya|yes|ok|oke)(\s+(kak|kakak|min|bos|dong|lah|saja|aja|silakan|sudah|boleh|kirim))*$/u',
+            $normalized,
+        );
     }
 
     private function isNo(string $message): bool
     {
-        $normalized = Str::lower(trim($message));
+        return in_array($this->decisionText($message), ['tidak', 'nggak', 'enggak', 'gak', 'ulangi', 'tidak jadi', 'no'], true);
+    }
 
-        return in_array($normalized, ['tidak', 'nggak', 'enggak', 'ulangi', 'tidak jadi'], true);
+    private function decisionText(string $message): string
+    {
+        $normalized = Str::lower(trim($message));
+        $normalized = preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $normalized) ?? $normalized;
+
+        return trim($normalized);
     }
 
     private function blank(mixed $value): bool

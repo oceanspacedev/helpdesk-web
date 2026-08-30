@@ -8,6 +8,9 @@ class HelpdeskIntakeGate
      * @var list<string>
      */
     public const TRIGGERS = [
+        'buat laporan helpdesk',
+        'bikin laporan helpdesk',
+        'buatkan laporan helpdesk',
         'lapor',
         'buat tiket',
         'bikin tiket',

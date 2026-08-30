@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\ProblemCategoryResource;
 use App\Filament\Resources\ProblemCategoryResource\Pages\ViewProblemCategory;
 use App\Filament\Resources\ProblemCategoryResource\RelationManagers\TicketsRelationManager;
+use App\Filament\Resources\TicketResource\Pages\EditTicket;
 use App\Filament\Resources\TicketResource\Pages\ListTickets;
 use App\Filament\Resources\TicketResource\Pages\ViewTicket;
 use App\Filament\Resources\TicketResource\RelationManagers\CommentsRelationManager;
@@ -15,6 +16,7 @@ use App\Filament\Resources\UnitResource;
 use App\Filament\Resources\UnitResource\Pages\ViewUnit;
 use App\Filament\Resources\UnitResource\RelationManagers\TicketsRelationManager as UnitTicketsRelationManager;
 use App\Filament\Resources\UnitResource\RelationManagers\UsersRelationManager;
+use App\Filament\Resources\UnitSlas\UnitSlaResource;
 use App\Filament\Resources\UserResource;
 use App\Filament\Resources\UserResource\Pages\ViewUser;
 use App\Filament\Resources\UserResource\RelationManagers\TicketsRelationManager as UserTicketsRelationManager;
@@ -27,6 +29,7 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Notifications\ClosedTicketNotification;
 use App\Notifications\CommentNotification;
+use App\Notifications\NewTicketNotification;
 use App\Policies\TicketPolicy;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Database\Schema\Blueprint;
@@ -338,6 +341,23 @@ class TicketMailboxAccessTest extends TestCase
         $this->assertFalse(UsersRelationManager::canViewForRecord($legacyUnit, ViewUnit::class));
     }
 
+    public function test_unit_sla_master_data_follows_shield_view_any(): void
+    {
+        $unit = Unit::create(['name' => 'IT']);
+        $reporter = $this->user('User', 'Sla Reporter', $unit);
+        $staff = $this->unitUser('Staff Unit', $unit, 'Sla Staff');
+        $admin = $this->unitUser('Admin Unit', $unit, 'Sla Admin');
+
+        $this->actingAs($reporter);
+        $this->assertFalse(UnitSlaResource::canViewAny());
+
+        $this->actingAs($staff);
+        $this->assertFalse(UnitSlaResource::canViewAny());
+
+        $this->actingAs($admin);
+        $this->assertTrue(UnitSlaResource::canViewAny());
+    }
+
     public function test_problem_category_ticket_relation_never_bypasses_mailbox_visibility(): void
     {
         $unit = Unit::create(['name' => 'IT']);
@@ -604,6 +624,126 @@ class TicketMailboxAccessTest extends TestCase
         $this->assertSame($destinationStaff->id, (int) $ticket->responsible_id);
     }
 
+    public function test_odoo_and_printer_are_not_assigned_by_legacy_category_ids(): void
+    {
+        Notification::fake();
+
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $odoo = ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Odoo Program']);
+        $printer = ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Laptop, Komputer, Printer']);
+        $sop = ProblemCategory::create(['unit_id' => $busdev->id, 'name' => 'Standard Operating Procedure (SOP)']);
+        $sender = $this->unitUser('Admin Unit', $it, 'IT Reporter');
+        $odLead = $this->unitUser('Staff Unit', $busdev, 'Organization Development');
+
+        while ((int) User::query()->max('id') < 10) {
+            $this->user('Staff Unit', 'Pad '.User::query()->count());
+        }
+        $decoy = User::query()->find(10);
+        $this->assertNotNull($decoy);
+        $decoy->assignRole('Staff Unit');
+        $decoy->units()->syncWithoutDetaching([$it->id]);
+
+        $this->actingAs($sender);
+
+        $odooTicket = Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $it->id,
+            'owner_id' => $sender->id,
+            'problem_category_id' => $odoo->id,
+            'title' => 'Odoo tidak bisa login',
+            'description' => 'Odoo tidak bisa login',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+        $printerTicket = Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $it->id,
+            'owner_id' => $sender->id,
+            'problem_category_id' => $printer->id,
+            'title' => 'Printer kasir error',
+            'description' => 'Printer kasir error',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+        $sopTicket = Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $busdev->id,
+            'owner_id' => $sender->id,
+            'problem_category_id' => $sop->id,
+            'title' => 'Minta update SOP',
+            'description' => 'Minta update SOP',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+
+        $this->assertSame(1, (int) $odoo->id);
+        $this->assertNull($odooTicket->fresh()->responsible_id);
+        $this->assertNull($printerTicket->fresh()->responsible_id);
+        $this->assertSame($odLead->id, (int) $sopTicket->fresh()->responsible_id);
+        $this->assertNotSame($decoy->id, (int) ($odooTicket->fresh()->responsible_id ?? 0));
+    }
+
+    public function test_owner_cannot_change_destination_unit_on_edit(): void
+    {
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $sender = $this->unitUser('Admin Unit', $origin, 'Finance Edit Owner');
+        $ticket = $this->ticket($sender, $destination, 'Owner cannot reroute unit');
+
+        $this->actingAs($sender);
+
+        Livewire::test(EditTicket::class, ['record' => $ticket->getRouteKey()])
+            ->assertFormFieldIsDisabled('unit_id');
+    }
+
+    public function test_super_admin_can_change_destination_unit_on_edit(): void
+    {
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $sender = $this->unitUser('Admin Unit', $origin, 'Finance Admin For Edit');
+        $superAdmin = $this->user('Super Admin', 'Super Admin Unit Edit');
+        $ticket = $this->ticket($sender, $destination, 'Global admin can reroute unit');
+
+        $this->actingAs($superAdmin);
+
+        Livewire::test(EditTicket::class, ['record' => $ticket->getRouteKey()])
+            ->assertFormFieldIsEnabled('unit_id');
+    }
+
+    public function test_destination_processor_can_move_ticket_to_another_unit(): void
+    {
+        Notification::fake();
+
+        $origin = Unit::create(['name' => 'Finance']);
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $itCategory = ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Odoo Program']);
+        $sop = ProblemCategory::create(['unit_id' => $busdev->id, 'name' => 'Standard Operating Procedure (SOP)']);
+        $sender = $this->unitUser('Admin Unit', $origin, 'Finance Move Admin');
+        $itStaff = $this->unitUser('Staff Unit', $it, 'IT Move Staff');
+        $busdevStaff = $this->unitUser('Staff Unit', $busdev, 'BUSDEV Move Staff');
+        $ticket = $this->ticket($sender, $it, 'Misrouted to IT', category: $itCategory);
+
+        $this->actingAs($sender);
+        Livewire::test(ViewTicket::class, ['record' => $ticket->getRouteKey()])
+            ->assertActionDoesNotExist('pindah_unit');
+
+        $this->actingAs($itStaff);
+        Livewire::test(ViewTicket::class, ['record' => $ticket->getRouteKey()])
+            ->assertActionVisible('pindah_unit')
+            ->callAction('pindah_unit', [
+                'unit_id' => $busdev->id,
+                'problem_category_id' => $sop->id,
+            ])
+            ->assertHasNoActionErrors();
+
+        $ticket->refresh();
+        $this->assertSame($busdev->id, (int) $ticket->unit_id);
+        $this->assertSame($sop->id, (int) $ticket->problem_category_id);
+        $this->assertSame(TicketStatus::OPEN, (int) $ticket->ticket_statuses_id);
+        $this->assertTrue(Gate::forUser($busdevStaff)->allows('process', $ticket));
+        $this->assertFalse(Gate::forUser($itStaff)->allows('process', $ticket));
+        Notification::assertSentTo($busdevStaff, NewTicketNotification::class);
+    }
+
     public function test_destination_processor_can_take_over_from_an_ineligible_responsible(): void
     {
         $origin = Unit::create(['name' => 'Finance']);
@@ -807,6 +947,11 @@ class TicketMailboxAccessTest extends TestCase
             'Create:Comment',
             'Update:Comment',
             'Delete:Comment',
+            'ViewAny:UnitSla',
+            'View:UnitSla',
+            'Create:UnitSla',
+            'Update:UnitSla',
+            'Delete:UnitSla',
         ] as $name) {
             Permission::create(['name' => $name, 'guard_name' => 'web']);
         }

@@ -8,6 +8,7 @@ namespace App\Models;
 
 use App\Notifications\ClosedTicketNotification;
 use App\Notifications\NewTicketNotification;
+use App\Services\Integrations\HelpdeskOperationalClassifier;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -241,22 +242,10 @@ class Ticket extends Model
 
         // Event listener untuk event 'saving'
         static::saving(function ($ticket) {
-            // Pertahankan auto-assignment lama hanya bila petugas memang
-            // melayani unit tujuan. Jika tidak, tiket tetap menjadi antrean
-            // bersama agar dapat diambil oleh unit penerima.
+            // Auto-assign only named BUSDEV document types to the OD accounts.
+            // Odoo, printer, CCTV, and holding tickets stay on the unit queue.
             if (! self::$isSeeding && $ticket->isDirty('problem_category_id')) {
-                $responsibleId = null;
-
-                if (in_array($ticket->problem_category_id, [1, 2, 8, 11, 12, 24, 25])) {
-                    $responsibleId = 10; // Teh Sekar/Lead OD
-                } elseif (in_array($ticket->problem_category_id, [9, 10])) {
-                    $responsibleId = 41; // Staff OD
-                }
-
-                $candidate = $responsibleId ? User::find($responsibleId) : null;
-                $ticket->responsible_id = $candidate?->isActiveTicketProcessorForUnit((int) $ticket->unit_id)
-                    ? $candidate->getKey()
-                    : null;
+                $ticket->responsible_id = self::defaultResponsibleIdForCategory($ticket);
             }
 
             if (! self::$isSeeding
@@ -342,6 +331,21 @@ class Ticket extends Model
 
         // Event listener untuk event 'updated'
         static::updated(function ($ticket) {
+            if (! self::$isSeeding && $ticket->wasChanged('unit_id')) {
+                $responsible = $ticket->eligibleResponsible();
+                if ($responsible) {
+                    $responsible->notify(new NewTicketNotification($ticket));
+                } else {
+                    $receivers = User::query()
+                        ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
+                        ->get();
+
+                    foreach ($receivers as $receiver) {
+                        $receiver->notify(new NewTicketNotification($ticket));
+                    }
+                }
+            }
+
             if (! self::$isSeeding
                 && $ticket->wasChanged('ticket_statuses_id')
                 && (int) $ticket->ticket_statuses_id === TicketStatus::CLOSED) {
@@ -359,5 +363,24 @@ class Ticket extends Model
                 'created_at' => now(),
             ]);
         });
+    }
+
+    private static function defaultResponsibleIdForCategory(self $ticket): ?int
+    {
+        $categoryName = trim((string) ProblemCategory::query()
+            ->whereKey($ticket->problem_category_id)
+            ->value('name'));
+        $assigneeName = HelpdeskOperationalClassifier::defaultAssigneeName($categoryName);
+        if ($assigneeName === null) {
+            return null;
+        }
+
+        $candidate = User::query()
+            ->where('name', $assigneeName)
+            ->first();
+
+        return $candidate?->isActiveTicketProcessorForUnit((int) $ticket->unit_id)
+            ? $candidate->getKey()
+            : null;
     }
 }

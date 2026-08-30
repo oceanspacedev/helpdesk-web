@@ -24,11 +24,6 @@ class UnitSlaResource extends Resource
     protected static string | \UnitEnum | null $navigationGroup = 'Master Data';
     protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-clock';
 
-    public static function canViewAny(): bool
-    {
-        return true;
-    }
-
     public static function form(Schema $schema): Schema
     {
         return $schema

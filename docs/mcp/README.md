@@ -291,7 +291,7 @@ Choose one Atlas connection mode; do not copy both Helpdesk environment variable
 | Atlas running in Docker | HTTP | A dedicated bearer token | `http://host.docker.internal:8000/mcp/helpdesk` |
 | Native local development without HTTP | Command/stdio | A stable `HELPDESK_MCP_LOCAL_CLIENT_ID` | Not applicable |
 
-HTTP is the default recommendation. Atlas shares an HTTP connection across assigned profiles, while Command/stdio starts a local MCP process for each profile.
+HTTP is the default recommendation. Atlas shares an HTTP connection across assigned profiles, while Command/stdio starts a local MCP process for each profile. Concurrent Atlas chats therefore share one bearer token and usually one `MCP-Session-Id`. Helpdesk isolates those chats by `intake_id`, not by the shared transport session. Atlas must return the exact `intake_id` on every follow-up and must not invent a shared `conversation_id`. If Atlas can inject a unique per-chat or per-sender ID, send it as `conversation_id` or `external_user_id`; never reuse one ID for every user.
 
 #### Atlas HTTP setup (recommended)
 
@@ -410,8 +410,8 @@ The AI client should call `helpdesk_intake` and relay each Helpdesk question unc
 
 1. Prove the reporter's WhatsApp number with OTP when no reusable verified binding exists.
 2. Continue with the existing eligible Helpdesk account, or—only when no eligible account exists—ask for account-creation consent and the full name, create that prerequisite account, and resume the same intake.
-3. Answer the ticket classification and detail questions.
-4. Confirm the summary and receive the created ticket number.
+3. Describe the issue in one message. The server strips chat prefixes and writes a Helpdesk-style title/description. It classifies only when the text matches unambiguous ticket language (Odoo, CSA, printer/laptop, CCTV, wifi/vpn). Otherwise the ticket is stored as `Perlu diklasifikasi`. Unnamed branches are stored as `Belum disebutkan`. The recap shows the stored story. Do not pick numbered options.
+4. Confirm the recap with `ya` (or `oke` / `ya silakan`) and receive the created ticket number. If the recap is not the original wording, type `ulangi`. Numbered menus, model summaries, and a pasted recap are ignored.
 
 `/helpdesk printer kasir tidak bisa mencetak` is also a valid intake message when the host forwards it as ordinary text. MCP connection alone does not register a slash command in Codex, Cursor, Antigravity, or every other host. If the client treats `/helpdesk` as an unknown or built-in command, use the natural-language prompt above or create a client-side shortcut that instructs the agent to use `helpdesk_intake`; no additional Helpdesk endpoint or MCP tool is needed.
 
@@ -438,7 +438,7 @@ A direct MCP client that does not supply a stable `external_user_id` will ask fo
 3. While `structuredContent.status` is `in_progress`, call the tool once for each new user reply and return the exact `intake_id` from the previous result. Every external-channel call must also resend the exact same gateway-injected `channel` and `external_user_id`, starting with the first call. This includes the `registration_consent` and `registration_name` steps.
 4. Stop when `terminal=true` (`ticket_created` or `cancelled`) or the tool returns an error. A user who declines required account creation receives `cancelled`; no account or ticket is created. Repair invalid input/session context from the gateway; do not loop without a new user event. Never invent a reporter name, ticket number, or classification.
 
-Before the ticket questions, the server resolves the reporter by verified WhatsApp number. If the channel user has no existing binding, it asks for a number, sends a six-digit WhatsApp OTP, and only then checks the Helpdesk user directory and Talenta. For a number absent from both, the same intake advances to `registration_consent`. Only an explicit yes advances to `registration_name`, where the user must type the full name. The server ignores the earlier `reporter_name` hint, atomically rechecks Helpdesk and Talenta, creates an active phone-only account with null email and password, and resumes the original ticket questions with the original issue data. A no answer cancels the intake without creating an account or ticket. Forward every question and response unchanged.
+Before the ticket is created, the server resolves the reporter by verified WhatsApp number. If the channel user has no existing binding, it asks for a number, sends a six-digit WhatsApp OTP, and only then checks the Helpdesk user directory and Talenta. For a number absent from both, the same intake advances to `registration_consent`. Only an explicit yes advances to `registration_name`, where the user must type the full name. The server ignores the earlier `reporter_name` hint, atomically rechecks Helpdesk and Talenta, creates an active phone-only account with null email and password, and resumes the same intake with the original issue data. A no answer cancels the intake without creating an account or ticket. Forward every question and response unchanged.
 
 ```text
 verified phone
@@ -527,7 +527,7 @@ The server keys draft state by the authenticated client and its own random `inta
 - `(authenticated client, channel, external_user_id)` identifies a channel account such as Telegram user A, B, C, or D.
 - The ticket owner is still a Helpdesk `User` selected by a WhatsApp number proven through OTP or a trusted gateway assertion. A stable external channel account is bound to that user after inline registration or successful ticket creation, so its next intake can reuse the identity without another OTP. A direct MCP intake that omits `external_user_id` remains deliberately unbound; it does not create a synthetic identity and must prove the phone again on the next intake.
 
-For a trusted WhatsApp webhook gateway, `identity_assertion` uses `v1.<unix timestamp>.<hex hmac>`. Calculate HMAC-SHA256 with the assertion secret stored on the MCP settings page (or its legacy `HELPDESK_MCP_IDENTITY_ASSERTION_SECRET` fallback) over these newline-separated values:
+For a trusted WhatsApp webhook gateway, `identity_assertion` uses `v1.<unix timestamp>.<hex hmac>` or `v2.<unix timestamp>.<hex hmac>`. Calculate HMAC-SHA256 with the assertion secret stored on the MCP settings page (or its legacy `HELPDESK_MCP_IDENTITY_ASSERTION_SECRET` fallback) over these newline-separated values:
 
 ```text
 v1
@@ -538,6 +538,8 @@ whatsapp
 <canonical 62... phone>
 <external_message_id from the authenticated webhook event>
 ```
+
+`v2` appends one extra line, `sha256` of the exact inbound `message` (empty string for an attachment-only turn). A `v2` assertion whose message digest does not match the tool argument is rejected and falls back to OTP. Atlas and other LLM hosts cannot mint this value; the recap remains the user-visible check that the stored story matches what they typed.
 
 The gateway must generate and inject the phone, external user ID, unique external message ID, and assertion outside the LLM. The HMAC hex may be uppercase or lowercase. An assertion is claimable by only one `intake_id` during its validity window; the claim is stored in the database and survives cache loss, so replaying it into a new intake falls back to OTP. Without a valid assertion—even when `channel=whatsapp`—the safe fallback is OTP.
 

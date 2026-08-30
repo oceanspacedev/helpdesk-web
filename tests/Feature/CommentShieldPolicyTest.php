@@ -14,9 +14,11 @@ use Database\Seeders\RoleSeeder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\TestCase;
 
 class CommentShieldPolicyTest extends TestCase
@@ -54,6 +56,47 @@ class CommentShieldPolicyTest extends TestCase
         $this->assertTrue($userRole->hasPermissionTo('View:Comment'));
         $this->assertTrue($userRole->hasPermissionTo('Create:Comment'));
         $this->assertTrue($userRole->hasPermissionTo('Update:Comment'));
+    }
+
+    public function test_comment_attachment_downloads_from_public_disk_not_local(): void
+    {
+        Storage::fake('public');
+        Storage::fake('local');
+
+        $path = 'comment-attachments/08-26/bukti.pdf';
+        Storage::disk('public')->put($path, 'public-bytes');
+
+        $user = User::create([
+            'name' => 'Pelapor Lampiran',
+            'email' => 'pelapor-lampiran@example.com',
+        ]);
+        $user->assignRole('User');
+
+        $unit = Unit::create(['name' => 'IT Helpdesk']);
+        $priority = Priority::create(['name' => 'Low']);
+        $status = TicketStatus::create(['name' => 'Open']);
+        $category = ProblemCategory::create(['name' => 'Hardware', 'unit_id' => $unit->id]);
+        $ticket = Ticket::create([
+            'unit_id' => $unit->id,
+            'owner_id' => $user->id,
+            'problem_category_id' => $category->id,
+            'priority_id' => $priority->id,
+            'ticket_statuses_id' => $status->id,
+            'title' => 'Komputer Rusak',
+            'description' => 'Test Ticket',
+        ]);
+        $comment = Comment::create([
+            'tiket_id' => $ticket->id,
+            'user_id' => $user->id,
+            'comment' => 'Ada lampiran',
+            'attachments' => $path,
+        ]);
+
+        $this->assertFalse(Storage::disk('local')->exists($path));
+        $this->assertInstanceOf(StreamedResponse::class, $comment->downloadStoredAttachment());
+
+        $missing = Comment::make(['attachments' => 'comment-attachments/08-26/hilang.pdf']);
+        $this->assertNull($missing->downloadStoredAttachment());
     }
 
     public function test_comments_relation_manager_is_not_read_only_on_view_pages(): void

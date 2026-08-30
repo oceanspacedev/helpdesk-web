@@ -142,14 +142,26 @@ class HelpdeskMcpHttpFlowTest extends TestCase
         $this->assertStringContainsString('Apri Http', $verified['user_reply']);
         $this->assertFalse(Cache::has('helpdesk-intake-session:phone:'.$phone));
 
-        $this->assertSame('unit', $this->intake([
+        $classified = $this->intake([
             'intake_id' => $intakeId,
             'channel' => 'whatsapp',
             'external_user_id' => 'wa-user-7001',
-            'message' => 'Odoo tidak bisa login',
-        ])['data']['step']);
+            'message' => 'lapor odoo tidak bisa login',
+        ]);
+        $this->assertSame('confirm', $classified['data']['step']);
+        $this->assertStringContainsString('Odoo tidak bisa login', $classified['user_reply']);
+        $this->assertStringContainsString('Odoo Program', $classified['user_reply']);
+        $this->assertStringContainsString('Cabang: belum disebut', $classified['user_reply']);
+        $this->assertStringContainsString('Prioritas: Medium (antrian)', $classified['user_reply']);
+        $this->assertStringNotContainsString('Dicatat ke', $classified['user_reply']);
+        $this->assertStringNotContainsString('• Kendala: lapor', $classified['user_reply']);
+        $this->assertStringContainsString('Ketik *ya* untuk kirim ke IT', $classified['user_reply']);
+        $this->assertStringContainsString('Staf bisa mengubah', $classified['user_reply']);
+        $this->assertStringContainsString('apa adanya', $classified['user_reply']);
+        $this->assertStringContainsString('Lampiran opsional', $classified['user_reply']);
+        $this->assertStringNotContainsString('Jawab semua sisa pilihan', $classified['user_reply']);
 
-        $this->assertSame('unit', $this->intake([
+        $this->assertSame('confirm', $this->intake([
             'intake_id' => $intakeId,
             'channel' => 'whatsapp',
             'external_user_id' => 'wa-user-7001',
@@ -192,13 +204,111 @@ class HelpdeskMcpHttpFlowTest extends TestCase
         ]);
         $ticket = Ticket::firstOrFail();
         $this->assertNotNull($ticket->business_entities_id);
-        $this->assertNotNull($ticket->unit_id);
-        $this->assertNotNull($ticket->problem_category_id);
-        $this->assertNotNull($ticket->priority_id);
+        $this->assertSame('IT', $ticket->unit?->name);
+        $this->assertSame('Odoo Program', $ticket->problemCategory?->name);
+        $this->assertSame('Medium', $ticket->priority?->name);
+        $this->assertSame('Belum disebutkan', $ticket->businessEntity?->name);
+        $this->assertNull($ticket->responsible_id);
+        $this->assertStringStartsWith('<p>Odoo tidak bisa login</p>', $ticket->description);
         $this->assertStringContainsString('Dilaporkan via Helpdesk MCP', $ticket->description);
         $this->assertStringContainsString('<strong>Kanal:</strong> WhatsApp', $ticket->description);
+        $this->assertStringNotContainsString('Urgensi:', $ticket->description);
+        $this->assertStringNotContainsString('Dampak:</strong> -', $ticket->description);
         $this->assertSame(1, HelpdeskReporterBinding::count());
         $this->assertSame(0, User::query()->where('identity', 'like', 'mcp-external:%')->count());
+    }
+
+    public function test_confirm_ignores_atlas_menus_and_accepts_spoken_yes(): void
+    {
+        $phone = '6281234567011';
+        User::create([
+            'name' => 'Apri Confirm',
+            'email' => 'apri-confirm@example.test',
+            'password' => 'secret',
+            'phone' => $phone,
+            'is_active' => true,
+        ]);
+
+        $opened = $this->intake([
+            'phone' => $phone,
+            'channel' => 'whatsapp',
+            'external_conversation_id' => 'wa-chat-7011',
+            'external_user_id' => 'wa-user-7011',
+            'message' => 'lapor',
+        ]);
+        $this->assertSame('phone_otp', $opened['step']);
+        $intakeId = $opened['intake_id'];
+
+        $issue = $this->intake([
+            'intake_id' => $intakeId,
+            'channel' => 'whatsapp',
+            'external_user_id' => 'wa-user-7011',
+            'message' => $this->otpCode(),
+        ]);
+        $this->assertSame('issue', $issue['step']);
+
+        $ignoredChoice = $this->intake([
+            'intake_id' => $intakeId,
+            'channel' => 'whatsapp',
+            'external_user_id' => 'wa-user-7011',
+            'message' => '1',
+        ]);
+        $this->assertSame('issue', $ignoredChoice['step']);
+        $this->assertStringContainsString('bukan nomor pilihan', $ignoredChoice['user_reply']);
+
+        $summary = $this->intake([
+            'intake_id' => $intakeId,
+            'channel' => 'whatsapp',
+            'external_user_id' => 'wa-user-7011',
+            'message' => 'The user reported that the printer at the cashier cannot print.',
+        ]);
+        $this->assertSame('issue', $summary['step']);
+        $this->assertStringContainsString('apa adanya', $summary['user_reply']);
+
+        $classified = $this->intake([
+            'intake_id' => $intakeId,
+            'channel' => 'whatsapp',
+            'external_user_id' => 'wa-user-7011',
+            'message' => 'printer kasir tidak bisa print sejak pagi',
+        ]);
+        $this->assertSame('confirm', $classified['step']);
+        $this->assertStringContainsString('Printer kasir tidak bisa print sejak pagi', $classified['user_reply']);
+        $this->assertStringContainsString('Laptop, Komputer, Printer', $classified['user_reply']);
+        $this->assertStringContainsString('Cabang: belum disebut', $classified['user_reply']);
+        $this->assertStringNotContainsString('CCTV', $classified['user_reply']);
+
+        $quiz = $this->intake([
+            'intake_id' => $intakeId,
+            'channel' => 'whatsapp',
+            'external_user_id' => 'wa-user-7011',
+            'message' => "Pilih kategori:\n1. CCTV\n2. Odoo Program",
+        ]);
+        $this->assertSame('confirm', $quiz['step']);
+        $this->assertStringContainsString('Printer kasir tidak bisa print sejak pagi', $quiz['user_reply']);
+        $this->assertStringNotContainsString('• Kendala: Pilih kategori', $quiz['user_reply']);
+
+        $echo = $this->intake([
+            'intake_id' => $intakeId,
+            'channel' => 'whatsapp',
+            'external_user_id' => 'wa-user-7011',
+            'message' => "Rekap laporan (belum tersimpan):\n• Kendala: Printer kasir tidak bisa print sejak pagi\nKetik *ya* untuk kirim ke IT.",
+        ]);
+        $this->assertSame('confirm', $echo['step']);
+        $this->assertStringContainsString('Printer kasir tidak bisa print sejak pagi', $echo['user_reply']);
+
+        $done = $this->intake([
+            'intake_id' => $intakeId,
+            'channel' => 'whatsapp',
+            'external_user_id' => 'wa-user-7011',
+            'message' => 'ya silakan',
+        ]);
+        $this->assertSame('ticket_created', $done['status']);
+        $ticket = Ticket::firstOrFail();
+        $this->assertSame('Printer kasir tidak bisa print sejak pagi', $ticket->title);
+        $this->assertSame('Laptop, Komputer, Printer', $ticket->problemCategory?->name);
+        $this->assertSame('Belum disebutkan', $ticket->businessEntity?->name);
+        $this->assertNull($ticket->responsible_id);
+        $this->assertNotSame('CCTV', $ticket->problemCategory?->name);
     }
 
     public function test_http_telegram_links_verified_whatsapp_owner_before_creating_ticket(): void
@@ -307,7 +417,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'start' => true,
         ]);
 
-        $this->assertSame('unit', $started['step']);
+        $this->assertSame('confirm', $started['step']);
         $this->assertStringContainsString('Sender WhatsApp Terpercaya', $started['user_reply']);
         $this->assertCount(0, $this->whatsAppGateway->messages);
 
@@ -326,6 +436,75 @@ class HelpdeskMcpHttpFlowTest extends TestCase
         $this->assertSame('phone_otp', $replayedIntoAnotherIntake['step']);
         $this->assertCount(1, $this->whatsAppGateway->messages);
         $this->travelBack();
+    }
+
+    public function test_v2_whatsapp_assertion_binds_the_inbound_message_digest(): void
+    {
+        config()->set('services.helpdesk_mcp.identity_assertion_secret', 'trusted-gateway-secret');
+        config()->set('services.helpdesk_mcp.identity_assertion_leeway_seconds', 300);
+        $phone = '6281234567098';
+        User::create([
+            'name' => 'Sender WhatsApp V2',
+            'email' => 'trusted-wa-v2@example.test',
+            'password' => 'secret',
+            'phone' => $phone,
+            'is_active' => true,
+        ]);
+        $externalUserId = 'wa-jid-7098';
+        $externalMessageId = 'wa-webhook-event-7098';
+        $message = 'printer kasir tidak bisa print';
+        $timestamp = now()->timestamp;
+        $clientKey = hash('sha256', (string) config('services.helpdesk_mcp.token'));
+        $payload = implode("\n", [
+            'v2',
+            (string) $timestamp,
+            $clientKey,
+            'whatsapp',
+            $externalUserId,
+            $phone,
+            $externalMessageId,
+            hash('sha256', $message),
+        ]);
+        $assertion = 'v2.'.$timestamp.'.'.hash_hmac('sha256', $payload, 'trusted-gateway-secret');
+
+        $started = $this->intake([
+            'channel' => 'whatsapp',
+            'external_conversation_id' => 'wa-thread-trusted-v2',
+            'external_user_id' => $externalUserId,
+            'external_message_id' => $externalMessageId,
+            'phone' => $phone,
+            'identity_assertion' => $assertion,
+            'message' => $message,
+            'start' => true,
+        ]);
+        $this->assertSame('confirm', $started['step']);
+        $this->assertCount(0, $this->whatsAppGateway->messages);
+
+        $forgedMessageId = $externalMessageId.'-summary';
+        $forgedPayload = implode("\n", [
+            'v2',
+            (string) $timestamp,
+            $clientKey,
+            'whatsapp',
+            $externalUserId,
+            $phone,
+            $forgedMessageId,
+            hash('sha256', $message),
+        ]);
+        $forgedAssertion = 'v2.'.$timestamp.'.'.hash_hmac('sha256', $forgedPayload, 'trusted-gateway-secret');
+
+        $summarized = $this->intake([
+            'channel' => 'whatsapp',
+            'external_conversation_id' => 'wa-thread-trusted-v2-summarized',
+            'external_user_id' => $externalUserId,
+            'external_message_id' => $forgedMessageId,
+            'phone' => $phone,
+            'identity_assertion' => $forgedAssertion,
+            'message' => 'The user reported a printer issue',
+            'start' => true,
+        ]);
+        $this->assertSame('phone_otp', $summarized['step']);
+        $this->assertCount(1, $this->whatsAppGateway->messages);
     }
 
     public function test_direct_client_conversation_id_separates_parallel_intakes(): void
@@ -365,6 +544,41 @@ class HelpdeskMcpHttpFlowTest extends TestCase
         $this->assertSame('phone', $first['step']);
         $this->assertSame('phone', $second['step']);
         $this->assertNotSame($first['intake_id'], $second['intake_id']);
+    }
+
+    public function test_shared_transport_session_does_not_merge_parallel_direct_intakes(): void
+    {
+        $first = $this->intake([
+            'channel' => 'mcp',
+            'message' => 'lapor printer kasir A',
+            'start' => true,
+        ]);
+        $second = $this->intake([
+            'channel' => 'mcp',
+            'message' => 'lapor printer kasir B',
+            'start' => true,
+        ]);
+
+        $this->assertSame('phone', $first['step']);
+        $this->assertSame('phone', $second['step']);
+        $this->assertNotSame($first['intake_id'], $second['intake_id']);
+
+        $continueFirst = $this->intake([
+            'intake_id' => $first['intake_id'],
+            'channel' => 'mcp',
+            'message' => '081234567001',
+        ]);
+        $continueSecond = $this->intake([
+            'intake_id' => $second['intake_id'],
+            'channel' => 'mcp',
+            'message' => '081234567002',
+        ]);
+
+        $this->assertSame($first['intake_id'], $continueFirst['intake_id']);
+        $this->assertSame($second['intake_id'], $continueSecond['intake_id']);
+        $this->assertSame('phone_otp', $continueFirst['step']);
+        $this->assertSame('phone_otp', $continueSecond['step']);
+        $this->assertCount(2, $this->whatsAppGateway->messages);
     }
 
     public function test_empty_message_without_attachment_is_rejected(): void
@@ -417,7 +631,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'external_user_id' => 'discord-user-7088',
             'message' => $this->otpCode(),
         ]);
-        $this->assertSame('unit', $verified['step']);
+        $this->assertSame('confirm', $verified['step']);
         $this->assertStringContainsString('Ayu Talenta', $verified['user_reply']);
         $this->assertSame(1, $lookupCalls);
 
@@ -508,7 +722,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'message' => $this->otpCode(),
         ]);
 
-        $this->assertSame('unit', $continued['step']);
+        $this->assertSame('confirm', $continued['step']);
         $this->assertStringContainsString('Pelapor 7076', $continued['user_reply']);
         $this->assertSame(1, User::count());
         $this->assertSame(0, Ticket::count());
@@ -616,7 +830,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'external_message_id' => 'web-owner-drift-2',
             'message' => $this->otpCode(),
         ]);
-        $this->assertSame('unit', $verified['step']);
+        $this->assertSame('confirm', $verified['step']);
         $this->assertStringContainsString('Owner Saat Verifikasi', $verified['user_reply']);
 
         foreach (['1', '1', '1', '1', 'lewati'] as $index => $message) {
@@ -716,7 +930,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
 
         $continued = $continue('Reporter MCP Inline', 'web-message-new-reporter-5');
         $this->assertSame('in_progress', $continued['status']);
-        $this->assertSame('unit', $continued['step']);
+        $this->assertSame('confirm', $continued['step']);
         $this->assertSame($intakeId, $continued['intake_id']);
         $this->assertStringContainsString('Reporter MCP Inline', $continued['user_reply']);
 
@@ -732,7 +946,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
         $this->assertSame(0, Ticket::count());
 
         $replayedName = $continue('Reporter MCP Inline', 'web-message-new-reporter-5');
-        $this->assertSame('unit', $replayedName['step']);
+        $this->assertSame('confirm', $replayedName['step']);
         $this->assertTrue($replayedName['replayed']);
         $this->assertSame($continued['user_reply'], $replayedName['user_reply']);
         $this->assertSame(1, User::count());
@@ -752,7 +966,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
         $this->assertSame(1, User::count());
         $this->assertSame(1, Ticket::count());
         $this->assertSame($reporter->id, Ticket::firstOrFail()->owner_id);
-        $this->assertSame('email kantor terkunci', Ticket::firstOrFail()->title);
+        $this->assertSame('Email kantor terkunci', Ticket::firstOrFail()->title);
         $this->assertSame(1, HelpdeskReporterBinding::count());
 
         $linkedNextIntake = $this->intake([
@@ -763,7 +977,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'message' => 'printer cabang tidak tersambung',
             'start' => true,
         ]);
-        $this->assertSame('unit', $linkedNextIntake['step']);
+        $this->assertSame('confirm', $linkedNextIntake['step']);
         $this->assertStringContainsString('Reporter MCP Inline', $linkedNextIntake['user_reply']);
         $this->assertCount(1, $this->whatsAppGateway->messages);
     }
@@ -879,7 +1093,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             ]);
         };
 
-        $this->assertSame('unit', $continue($this->otpCode())['step']);
+        $this->assertSame('confirm', $continue($this->otpCode())['step']);
         foreach (['1', '1', '1', '1', 'lewati'] as $message) {
             $draft = $continue($message);
         }
@@ -957,7 +1171,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'message' => 'Nama Manual Tidak Boleh Dibuat',
         ]);
 
-        $this->assertSame('unit', $reResolved['step']);
+        $this->assertSame('confirm', $reResolved['step']);
         $this->assertSame($started['intake_id'], $reResolved['intake_id']);
         $this->assertStringContainsString('Reporter Talenta Baru', $reResolved['user_reply']);
         $this->assertStringNotContainsString('Nama Manual Tidak Boleh Dibuat', $reResolved['user_reply']);
@@ -1013,7 +1227,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'message' => 'Nama Manual Tidak Boleh Menang',
         ]);
 
-        $this->assertSame('unit', $continued['step']);
+        $this->assertSame('confirm', $continued['step']);
         $this->assertSame($started['intake_id'], $continued['intake_id']);
         $this->assertStringContainsString('Nama Autoritatif Helpdesk', $continued['user_reply']);
         $this->assertStringNotContainsString('Nama Manual Tidak Boleh Menang', $continued['user_reply']);
@@ -1146,7 +1360,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'external_message_id' => 'wa-unknown-message-98777-name',
             'message' => 'Reporter Assertion Resmi',
         ]);
-        $this->assertSame('unit', $continued['step']);
+        $this->assertSame('confirm', $continued['step']);
         $this->assertSame($offered['intake_id'], $continued['intake_id']);
         $this->assertStringContainsString('Reporter Assertion Resmi', $continued['user_reply']);
         $reporter = User::query()->where('phone_normalized', $phone)->firstOrFail();
@@ -1211,7 +1425,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
         $this->assertSame('registration_consent', $continueA($this->otpCode())['step']);
         $this->assertSame('registration_name', $continueA('ya')['step']);
         $registered = $continueA('Reporter Direct A');
-        $this->assertSame('unit', $registered['step']);
+        $this->assertSame('confirm', $registered['step']);
         $reporterA = User::query()->where('phone_normalized', $phone)->firstOrFail();
         $this->assertSame('Reporter Direct A', $reporterA->name);
         $this->assertSame(0, HelpdeskReporterBinding::count());
@@ -1279,7 +1493,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'start' => true,
         ]);
 
-        $this->assertSame('unit', $explicitIdentity['step']);
+        $this->assertSame('confirm', $explicitIdentity['step']);
         $this->assertStringContainsString('Identitas Direct Tidak Tepercaya', $explicitIdentity['user_reply']);
         $this->assertCount(0, $this->whatsAppGateway->messages);
     }
@@ -1318,7 +1532,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'external_message_id' => 'slack-message-2',
             'message' => $this->otpCode(),
         ]);
-        $this->assertSame('unit', $verified['step']);
+        $this->assertSame('confirm', $verified['step']);
         $this->assertSame($intakeId, $verified['intake_id']);
         $this->assertFalse($verified['replayed']);
         $this->assertStringContainsString('Ayu Slack Talenta', $verified['user_reply']);
@@ -1331,7 +1545,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'external_message_id' => 'slack-message-2',
             'message' => $this->otpCode(),
         ]);
-        $this->assertSame('unit', $retry['step']);
+        $this->assertSame('confirm', $retry['step']);
         $this->assertTrue($retry['replayed']);
         $this->assertCount(1, $this->whatsAppGateway->messages);
 
@@ -1406,7 +1620,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'message' => 'printer kasir mati',
             'start' => true,
         ]);
-        $this->assertSame('unit', $linkedNextIntake['step']);
+        $this->assertSame('confirm', $linkedNextIntake['step']);
         $this->assertStringContainsString('Ayu Slack Talenta', $linkedNextIntake['user_reply']);
         $this->assertCount(1, $this->whatsAppGateway->messages);
     }
@@ -1488,7 +1702,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
                 'external_user_id' => "gateway-user-{$label}",
                 'message' => $this->otpCode($index),
             ]);
-            $this->assertSame('unit', $verified['step']);
+            $this->assertSame('confirm', $verified['step']);
             $this->assertStringContainsString("User {$label}", $verified['user_reply']);
 
             foreach (['1', '1', '1', '1', 'lewati'] as $message) {

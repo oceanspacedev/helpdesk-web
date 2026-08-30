@@ -18,7 +18,7 @@ use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Tool;
 
 #[Name('helpdesk_intake')]
-#[Description('Deterministic multi-turn Helpdesk intake with only two business paths: use an existing eligible reporter account to create its ticket, or create the required reporter account first and then create its ticket in the same intake. Account creation is not standalone, and this tool never looks up, comments on, updates, or administers tickets. Reporter identity is a verified WhatsApp number resolved against Helpdesk/Talenta. External IDs identify routing context and can retrieve a previously verified binding, but never prove identity by themselves. Call once for each new user reply only while status is in_progress, pass message unchanged, and return the previous intake_id. Every call with channel other than mcp requires the exact same gateway-injected external_user_id, including the first call. A direct channel=mcp client may omit it, but then it must verify by OTP on every new intake. Stop on terminal or error instead of looping. When a verified number is absent from Helpdesk and Talenta, forward registration_consent; after explicit yes, forward registration_name and use only the full name typed in that step. The server atomically creates a phone-only account and resumes the same intake. reporter_name is never registration consent or the account name. A declined registration returns terminal cancelled without creating an account or ticket. The server asks every question, performs OTP when needed, validates choices, and creates only after confirmation. Forward content[0].text, or structuredContent.user_reply as fallback. Never invent identities, ticket numbers, or classifications.')]
+#[Description('CRITICAL: Show the user exactly content[0].text (structuredContent.user_reply). That string is already the final message. Do not add a prefix, paraphrase, translate, summarize, or ask extra troubleshooting questions. Do not pick unit, category, priority, entity, or a numbered option. Pass each new user message into this tool unchanged. Deterministic Helpdesk intake: existing reporter account, or create the required reporter account first, then create the ticket. After identity the reporter describes the issue once; the server writes the title and classifies only from unambiguous ticket language, or marks the ticket for staff review. Unnamed branches are not guessed. The recap is the stored story. The user confirms with ya. Never invent ticket numbers or identities. Omit intake_id on the first call; return the previous intake_id later. Set start=true when intent is known. Stop on terminal or error.')]
 class HelpdeskIntakeTool extends Tool
 {
     private const STRING_FIELDS = [
@@ -62,11 +62,12 @@ class HelpdeskIntakeTool extends Tool
             return $this->invalidInput('message boleh kosong hanya untuk pesan yang memiliki attachment_urls.', 'INVALID_MESSAGE');
         }
 
+        $channel = (string) ($request->get('channel') ?? 'mcp');
         $result = $this->session->handle(
             (string) ($request->get('phone') ?? ''),
             (string) ($request->get('message') ?? ''),
             $attachments,
-            (string) ($request->get('channel') ?? 'mcp'),
+            $channel,
             (string) ($request->get('reporter_name') ?? ''),
             [
                 'client_id' => $this->clientId(),
@@ -77,7 +78,7 @@ class HelpdeskIntakeTool extends Tool
                 'external_message_id' => (string) ($request->get('external_message_id') ?? $request->get('message_id') ?? ''),
                 'identity_assertion' => (string) ($request->get('identity_assertion') ?? ''),
                 'transport_session_id' => (string) ($request->sessionId() ?? ''),
-                'start' => (bool) ($request->get('start') ?? false),
+                'start' => $this->booleanFlag($request->get('start')),
             ],
         );
 
@@ -97,7 +98,7 @@ class HelpdeskIntakeTool extends Tool
                 ->description('Opaque handle returned by the previous call. Omit on the first call; never invent or modify it.'),
             'conversation_id' => $schema->string()
                 ->max(HelpdeskIntakeContract::MAX_ID_LENGTH)
-                ->description('Optional stable conversation/thread ID supplied by a client. Provide it when one direct MCP transport carries parallel chats. It is an alias only; keep using intake_id after the first result.'),
+                ->description('Optional stable per-chat ID injected by the host. Provide it only when the host has a unique ID for this chat. Never invent it, and never reuse one ID across users. On a shared MCP transport such as Atlas, omit it unless the host injects a unique value; keep using intake_id after the first result.'),
             'external_conversation_id' => $schema->string()
                 ->max(HelpdeskIntakeContract::MAX_ID_LENGTH)
                 ->description('Optional source conversation/thread ID injected by a gateway.'),
@@ -115,7 +116,7 @@ class HelpdeskIntakeTool extends Tool
                 ->description('Reporter WhatsApp number used for Helpdesk/Talenta identity. Untrusted clients may provide it as a hint; the server verifies ownership by WhatsApp OTP.'),
             'identity_assertion' => $schema->string()
                 ->max(HelpdeskIntakeContract::MAX_IDENTITY_ASSERTION_LENGTH)
-                ->description('Optional one-event HMAC assertion generated and injected by a trusted WhatsApp adapter. It requires external_message_id. Never generate, infer, or ask the user for this value.'),
+                ->description('Optional one-event HMAC assertion generated and injected by a trusted WhatsApp adapter. v1 proves the sender; v2 also binds SHA-256 of this exact message. It requires external_message_id. Never generate, infer, or ask the user for this value.'),
             'message' => $schema->string()
                 ->max(HelpdeskIntakeContract::MAX_MESSAGE_LENGTH)
                 ->description('Exact user message. It may be empty only for an attachment-only turn. Do not summarize, translate, or classify it.')
@@ -172,7 +173,7 @@ class HelpdeskIntakeTool extends Tool
             }
         }
 
-        if ($request->get('start') !== null && ! is_bool($request->get('start'))) {
+        if ($request->get('start') !== null && $this->booleanFlag($request->get('start')) === null) {
             return $this->invalidInput('start wajib berupa boolean.', 'INVALID_ARGUMENT_TYPE');
         }
 
@@ -216,6 +217,28 @@ class HelpdeskIntakeTool extends Tool
         $ephemeralId ??= Str::random(40);
 
         return 'local-ephemeral:'.$ephemeralId;
+    }
+
+    private function booleanFlag(mixed $value): ?bool
+    {
+        if ($value === null) {
+            return false;
+        }
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_int($value) || is_float($value)) {
+            return ((int) $value) === 1 ? true : (((int) $value) === 0 ? false : null);
+        }
+        if (! is_string($value)) {
+            return null;
+        }
+
+        return match (strtolower(trim($value))) {
+            'true', '1', 'yes' => true,
+            'false', '0', 'no', '' => false,
+            default => null,
+        };
     }
 
     private function invalidInput(string $message, string $code): ResponseFactory

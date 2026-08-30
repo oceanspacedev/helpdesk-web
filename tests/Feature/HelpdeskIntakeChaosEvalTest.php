@@ -42,6 +42,8 @@ class HelpdeskIntakeChaosEvalTest extends TestCase
             'catat tiket',
             'buka tiket',
             'lapor: odoo gabisa invoice',
+            'buat laporan helpdesk',
+            'Buat laporan helpdesk: printer kasir',
         ];
 
         $shouldIgnore = [

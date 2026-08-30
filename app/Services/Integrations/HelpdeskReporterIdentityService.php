@@ -112,7 +112,8 @@ class HelpdeskReporterIdentityService
 
     /**
      * Verifies an optional assertion produced outside the model/tool call by a
-     * trusted WhatsApp gateway. Format: v1.<unix timestamp>.<hex HMAC-SHA256>.
+     * trusted WhatsApp gateway. Format: v1.<unix timestamp>.<hex HMAC-SHA256>
+     * or v2 with an extra SHA-256 of the exact inbound message.
      */
     public function assertionIsValid(
         string $assertion,
@@ -122,6 +123,7 @@ class HelpdeskReporterIdentityService
         string $phone,
         string $externalMessageId,
         string $intakeId,
+        string $message = '',
     ): bool {
         $secret = $this->configuration->identityAssertionSecret();
         $phone = (string) (PhoneNumber::canonical($phone) ?? '');
@@ -135,7 +137,7 @@ class HelpdeskReporterIdentityService
         }
 
         $parts = explode('.', trim($assertion));
-        if (count($parts) !== 3 || $parts[0] !== 'v1' || ! ctype_digit($parts[1])
+        if (count($parts) !== 3 || ! in_array($parts[0], ['v1', 'v2'], true) || ! ctype_digit($parts[1])
             || ! preg_match('/^[a-f0-9]{64}$/Di', $parts[2])) {
             return false;
         }
@@ -146,15 +148,20 @@ class HelpdeskReporterIdentityService
             return false;
         }
 
-        $payload = implode("\n", [
-            'v1',
+        $version = $parts[0];
+        $payloadLines = [
+            $version,
             (string) $timestamp,
             $this->clientKey($clientId),
             $channel,
             $externalUserId,
             $phone,
             $externalMessageId,
-        ]);
+        ];
+        if ($version === 'v2') {
+            $payloadLines[] = hash('sha256', $message);
+        }
+        $payload = implode("\n", $payloadLines);
         $expected = hash_hmac('sha256', $payload, $secret);
         $signature = strtolower($parts[2]);
         if (! hash_equals($expected, $signature)) {
