@@ -10,6 +10,8 @@ use App\Notifications\CommentNotification;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Class Comment.
@@ -18,6 +20,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $tiket_id
  * @property int $user_id
  * @property string $comment
+ * @property null|string $attachments
  * @property null|Carbon $created_at
  * @property null|Carbon $updated_at
  * @property null|string $deleted_at
@@ -50,6 +53,24 @@ class Comment extends Model
     public function ticket()
     {
         return $this->belongsTo(Ticket::class, 'tiket_id');
+    }
+
+    public function storedAttachmentPath(): ?string
+    {
+        $path = ltrim((string) $this->attachments, '/');
+
+        return $path === '' ? null : $path;
+    }
+
+    public function downloadStoredAttachment(): ?StreamedResponse
+    {
+        $path = $this->storedAttachmentPath();
+        $disk = Storage::disk('public');
+        if ($path === null || ! $disk->exists($path)) {
+            return null;
+        }
+
+        return $disk->download($path);
     }
 
     protected static function booted()

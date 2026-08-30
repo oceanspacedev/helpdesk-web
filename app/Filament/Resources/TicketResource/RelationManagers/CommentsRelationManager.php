@@ -16,7 +16,6 @@ use Filament\Tables\Columns\Layout\Split;
 use Filament\Tables\Columns\Layout\Stack;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Illuminate\Support\Facades\Storage;
 use Livewire\Component as Livewire;
 
 class CommentsRelationManager extends RelationManager
@@ -118,9 +117,22 @@ class CommentsRelationManager extends RelationManager
                     }),
             ])
             ->actions([
-                NotificationAction::make('attachment')->action(function ($record) {
-                    return Storage::download($record->attachments);
-                })->hidden(fn ($record) => $record->attachments == ''),
+                NotificationAction::make('attachment')
+                    ->action(function (Comment $record) {
+                        $download = $record->downloadStoredAttachment();
+                        if ($download === null) {
+                            Notification::make()
+                                ->title('Lampiran tidak ditemukan.')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        return $download;
+                    })
+                    ->hidden(fn (?Comment $record): bool => $record === null || blank($record->attachments))
+                    ->authorize(fn (Comment $record): bool => (bool) auth()->user()?->can('view', $record)),
                 Actions\EditAction::make()
                     ->authorize(fn (Comment $record): bool => ! $this->isReadOnly()
                         && (bool) auth()->user()?->can('update', $record)),

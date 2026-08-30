@@ -19,4 +19,17 @@ class EditTicket extends EditRecord
             Actions\RestoreAction::make(),
         ];
     }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        if (! auth()->user()?->hasGlobalTicketAccess()) {
+            $data['unit_id'] = $this->getRecord()->unit_id;
+        }
+
+        return $data;
+    }
 }

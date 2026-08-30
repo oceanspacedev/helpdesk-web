@@ -202,10 +202,9 @@ class HelpdeskTicketCreationService
 
             $result = $this->execute($payload);
             $stored = $this->withIdempotency($result, $idempotencyKey, false);
-            if ($this->isRetryableIdentityPrecondition($stored)) {
-                // Identity precondition failures have no side effect. The
-                // intake may reverify or create the required account, so its
-                // idempotency key must remain available for the later retry.
+            if (! ($stored['ok'] ?? false)) {
+                // Failures here share the outer transaction, so no ticket was
+                // committed. Drop the reservation so the same intake can retry.
                 $request->delete();
 
                 return $stored;
@@ -217,14 +216,6 @@ class HelpdeskTicketCreationService
 
             return $stored;
         }, 3);
-    }
-
-    private function isRetryableIdentityPrecondition(array $result): bool
-    {
-        return in_array((string) data_get($result, 'error.code'), [
-            'HELPDESK_ACTOR_CHANGED',
-            'HELPDESK_REPORTER_ACCOUNT_REQUIRED',
-        ], true);
     }
 
     private function createTicket(array $payload, array $actor, User $owner): array
@@ -406,17 +397,26 @@ class HelpdeskTicketCreationService
 
     private function buildTicketDescription(array $ticketData, array $actor, array $payload): string
     {
-        $items = [
-            'Kanal' => $this->reportChannelLabel($actor),
-            'Pelapor' => $this->text($actor['name'] ?? '') ?: '-',
-            'Nomor kontak' => $this->reporterPhone($actor['phone'] ?? $actor['identifier'] ?? '') ?: '-',
-            'Sistem/Perangkat' => $this->text($ticketData['affected_system'] ?? '-'),
-            'Dampak' => $this->text($ticketData['impact'] ?? '-'),
-            'Urgensi' => $this->text($ticketData['urgency'] ?? 'normal'),
-        ];
+        $description = $this->text($ticketData['description'] ?? data_get($payload, 'message.text'));
+        $source = $this->text($actor['integration_source'] ?? data_get($actor, 'metadata.integration_source')) ?: 'Helpdesk MCP';
 
+        $items = [];
+        $channel = $this->reportChannelLabel($actor);
+        if ($channel !== '') {
+            $items['Kanal'] = $channel;
+        }
+        $reporter = $this->text($actor['name'] ?? '');
+        if ($reporter !== '') {
+            $items['Pelapor'] = $reporter;
+        }
+        $phone = $this->reporterPhone($actor['phone'] ?? $actor['identifier'] ?? '');
+        if ($phone) {
+            $items['Nomor kontak'] = $phone;
+        }
         foreach ([
+            'Sistem/Perangkat' => 'affected_system',
             'Lokasi' => 'location',
+            'Dampak' => 'impact',
             'Mulai terjadi' => 'started_at',
             'Pesan error' => 'error_message',
             'Harapan penyelesaian' => 'requested_outcome',
@@ -427,16 +427,17 @@ class HelpdeskTicketCreationService
             }
         }
 
-        $source = $this->text($actor['integration_source'] ?? data_get($actor, 'metadata.integration_source')) ?: 'Helpdesk MCP';
-        $html = '<p><strong>Dilaporkan via '.e($source).'</strong></p><ul>';
-        foreach ($items as $label => $value) {
-            $html .= '<li><strong>'.e($label).':</strong> '.e($value).'</li>';
-        }
-        $html .= '</ul>';
-
-        $description = $this->text($ticketData['description'] ?? data_get($payload, 'message.text'));
+        $html = '';
         if ($description !== '') {
             $html .= '<p>'.nl2br(e($description)).'</p>';
+        }
+        $html .= '<p><strong>Dilaporkan via '.e($source).'</strong></p>';
+        if ($items !== []) {
+            $html .= '<ul>';
+            foreach ($items as $label => $value) {
+                $html .= '<li><strong>'.e($label).':</strong> '.e($value).'</li>';
+            }
+            $html .= '</ul>';
         }
 
         $steps = $ticketData['attempted_steps'] ?? [];
