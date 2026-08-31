@@ -3,10 +3,12 @@
 namespace Tests\Feature;
 
 use App\Filament\Auth\Pages\PhoneLogin;
+use App\Models\TicketStatus;
 use App\Models\User;
 use App\Notifications\ClosedTicketNotification;
 use App\Notifications\CommentNotification;
 use App\Notifications\NewTicketNotification;
+use App\Notifications\TicketStatusChangedNotification;
 use App\Services\EmployeeService;
 use App\Services\WhatsAppGateway;
 use Filament\Facades\Filament;
@@ -571,6 +573,7 @@ class PhoneOtpLoginTest extends TestCase
             new NewTicketNotification((object) []),
             new CommentNotification((object) ['ticket' => (object) []]),
             new ClosedTicketNotification((object) []),
+            new TicketStatusChangedNotification((object) [], TicketStatus::IN_PROGRESS),
         ];
 
         $this->assertFalse(Auth::validate($credentials));

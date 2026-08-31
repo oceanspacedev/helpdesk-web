@@ -27,9 +27,9 @@ use App\Models\Ticket;
 use App\Models\TicketStatus;
 use App\Models\Unit;
 use App\Models\User;
-use App\Notifications\ClosedTicketNotification;
 use App\Notifications\CommentNotification;
 use App\Notifications\NewTicketNotification;
+use App\Notifications\TicketStatusChangedNotification;
 use App\Policies\TicketPolicy;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Database\Schema\Blueprint;
@@ -824,7 +824,7 @@ class TicketMailboxAccessTest extends TestCase
         $this->actingAs($responsible);
         $ticket->update(['ticket_statuses_id' => TicketStatus::CLOSED]);
 
-        Notification::assertSentTo($sender, ClosedTicketNotification::class);
+        Notification::assertSentTo($sender, TicketStatusChangedNotification::class);
         $this->assertNotNull($ticket->fresh()->solved_at);
     }
 

@@ -30,7 +30,7 @@ class TicketHistory extends Model
 
     public function ticket()
     {
-        return $this->belongsTo(Ticket::class, 'tiket_id');
+        return $this->belongsTo(Ticket::class, 'ticket_id');
     }
 
     public function ticketStatus()

@@ -11,24 +11,14 @@ use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class ClosedTicketNotification extends Notification implements ShouldQueueAfterCommit
+class TicketSubmittedNotification extends Notification implements ShouldQueueAfterCommit
 {
     use Queueable;
     use ResolvesHelpdeskNotificationChannels;
 
-    protected $ticket;
+    public function __construct(protected Ticket $ticket) {}
 
     /**
-     * Create a new notification instance.
-     */
-    public function __construct($ticket)
-    {
-        $this->ticket = $ticket;
-    }
-
-    /**
-     * Get the notification's delivery channels.
-     *
      * @return array<int, string>
      */
     public function via(object $notifiable): array
@@ -36,26 +26,20 @@ class ClosedTicketNotification extends Notification implements ShouldQueueAfterC
         return $this->withVerifiedMailChannel($notifiable, [WhatsAppChannel::class]);
     }
 
-    /**
-     * Get the mail representation of the notification.
-     */
     public function toMail(object $notifiable): MailMessage
     {
-        $number = $this->ticket instanceof Ticket
-            ? HelpdeskWhatsAppMessage::ticketNumber($this->ticket)
-            : '#'.($this->ticket->id ?? '');
+        $number = HelpdeskWhatsAppMessage::ticketNumber($this->ticket);
 
         return (new MailMessage)
-            ->subject('Laporan selesai: '.$number)
+            ->subject('Laporan diterima: '.$number)
             ->greeting('Halo '.$notifiable->name.',')
+            ->line('Laporan Anda sudah masuk Helpdesk.')
             ->line('**Nomor:** '.$number)
-            ->line('**Judul:** '.($this->ticket->title ?? ''))
-            ->line('Laporan ini sudah diselesaikan.');
+            ->line('**Judul:** '.$this->ticket->title)
+            ->line('Tim akan menindaklanjuti.');
     }
 
     /**
-     * Get the array representation of the notification.
-     *
      * @return array<string, mixed>
      */
     public function toArray(object $notifiable): array
@@ -68,10 +52,6 @@ class ClosedTicketNotification extends Notification implements ShouldQueueAfterC
 
     public function toWhatsapp($notifiable): string
     {
-        if (! $this->ticket instanceof Ticket) {
-            return '';
-        }
-
-        return HelpdeskWhatsAppMessage::closed($this->ticket);
+        return HelpdeskWhatsAppMessage::forReporter($this->ticket);
     }
 }

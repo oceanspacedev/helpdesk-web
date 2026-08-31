@@ -9,6 +9,7 @@ use App\Services\WhatsAppOtpService;
 use App\Support\HelpdeskIntakeContract;
 use App\Support\HelpdeskIntegrationClient;
 use App\Support\HelpdeskReporterName;
+use App\Support\HelpdeskWhatsAppMessage;
 use App\Support\HttpsUrl;
 use App\Support\PhoneNumber;
 use App\Support\TalentaEmployee;
@@ -1102,7 +1103,12 @@ class HelpdeskIntakeSession
         $this->bindReporterAfterTicketCreation($state, $ticket);
         $number = $ticket['ticket_number'] ?? ('#'.($ticket['id'] ?? ''));
 
-        return $this->reply('ticket_created', true, "Tiket *{$number}* sudah masuk Helpdesk.\nStatus: Open\nKendala: {$state['title']}\n\nTim IT kerjakan dari aplikasi. Ketik *lapor* untuk laporan baru.", [
+        return $this->reply('ticket_created', true, HelpdeskWhatsAppMessage::compose(
+            'Laporan diterima',
+            (string) $number,
+            (string) ($state['title'] ?? ''),
+            footer: 'Tim akan menindaklanjuti. Ketik *lapor* untuk laporan baru.',
+        ), [
             'step' => self::STEP_IDLE,
             'ticket' => $ticket,
         ]);

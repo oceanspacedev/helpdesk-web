@@ -6,8 +6,9 @@
 
 namespace App\Models;
 
-use App\Notifications\ClosedTicketNotification;
 use App\Notifications\NewTicketNotification;
+use App\Notifications\TicketStatusChangedNotification;
+use App\Notifications\TicketSubmittedNotification;
 use App\Services\Integrations\HelpdeskOperationalClassifier;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -313,11 +314,12 @@ class Ticket extends Model
                 'created_at' => now(),
             ]);
 
-            // Kirim notifikasi ke user yang bertanggung jawab atau semua user dalam unit terkait
+            $staffIds = [];
             $responsible = $ticket->eligibleResponsible();
 
             if ($responsible) {
                 $responsible->notify(new NewTicketNotification($ticket));
+                $staffIds[] = (int) $responsible->id;
             } else {
                 $receivers = User::query()
                     ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
@@ -325,7 +327,13 @@ class Ticket extends Model
 
                 foreach ($receivers as $receiver) {
                     $receiver->notify(new NewTicketNotification($ticket));
+                    $staffIds[] = (int) $receiver->id;
                 }
+            }
+
+            $owner = User::query()->find($ticket->owner_id);
+            if ($owner && ! in_array((int) $owner->id, $staffIds, true)) {
+                $owner->notify(new TicketSubmittedNotification($ticket));
             }
         });
 
@@ -346,13 +354,13 @@ class Ticket extends Model
                 }
             }
 
-            if (! self::$isSeeding
-                && $ticket->wasChanged('ticket_statuses_id')
-                && (int) $ticket->ticket_statuses_id === TicketStatus::CLOSED) {
-                $receiver = User::find($ticket->owner_id);
-
-                if ($receiver) {
-                    $receiver->notify(new ClosedTicketNotification($ticket));
+            if (! self::$isSeeding && $ticket->wasChanged('ticket_statuses_id')) {
+                $status = (int) $ticket->ticket_statuses_id;
+                if (in_array($status, [TicketStatus::IN_PROGRESS, TicketStatus::CANCEL, TicketStatus::CLOSED], true)) {
+                    $owner = User::query()->find($ticket->owner_id);
+                    if ($owner) {
+                        $owner->notify(new TicketStatusChangedNotification($ticket, $status));
+                    }
                 }
             }
 
