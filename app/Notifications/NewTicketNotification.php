@@ -3,7 +3,9 @@
 namespace App\Notifications;
 
 use App\Channels\WhatsAppChannel;
+use App\Models\Ticket;
 use App\Notifications\Concerns\ResolvesHelpdeskNotificationChannels;
+use App\Support\HelpdeskWhatsAppMessage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -39,20 +41,18 @@ class NewTicketNotification extends Notification implements ShouldQueueAfterComm
      */
     public function toMail(object $notifiable): MailMessage
     {
-        $ticketUrl = url('/admin/tickets/'.$this->ticket->id);
-        $phoneLoginUrl = route('phone-login');
+        $number = $this->ticket instanceof Ticket
+            ? HelpdeskWhatsAppMessage::ticketNumber($this->ticket)
+            : '#'.($this->ticket->id ?? '');
+        $ticketUrl = url('/admin/tickets/'.($this->ticket->id ?? ''));
 
         return (new MailMessage)
-            ->subject('🔔 Tiket Baru: #'.$this->ticket->id.' - '.$this->ticket->title)
-            ->greeting('Halo '.$notifiable->name.'!')
-            ->line('Terdapat tiket baru yang perlu Anda periksa dan tindak lanjuti.')
-            ->line('**Detail Tiket:**')
-            ->line('• **ID Tiket:** #'.$this->ticket->id)
-            ->line('• **Subjek:** '.$this->ticket->title)
-            ->line('• **Tanggal Dibuat:** '.$this->ticket->created_at->format('d M Y H:i'))
-            ->action('Buka & Lihat Tiket', $ticketUrl)
-            ->line('📱 **Login Cepat via WhatsApp:** Anda juga dapat masuk langsung ke sistem menggunakan nomor WhatsApp di: '.$phoneLoginUrl)
-            ->salutation('Supported by IT Support');
+            ->subject('Laporan baru: '.$number)
+            ->greeting('Halo '.$notifiable->name.',')
+            ->line('Ada laporan baru yang perlu ditindaklanjuti.')
+            ->line('**Nomor:** '.$number)
+            ->line('**Judul:** '.($this->ticket->title ?? ''))
+            ->action('Buka tiket', $ticketUrl);
     }
 
     /**
@@ -71,21 +71,12 @@ class NewTicketNotification extends Notification implements ShouldQueueAfterComm
     /**
      * Send the WhatsApp message notification using custom API.
      */
-    public function toWhatsapp($notifiable)
+    public function toWhatsapp($notifiable): string
     {
-        $ticketUrl = url('/admin/tickets/'.$this->ticket->id);
-        $phoneLoginUrl = route('phone-login');
+        if (! $this->ticket instanceof Ticket) {
+            return '';
+        }
 
-        $message = "🔔 *Notifikasi Tiket Baru* 🔔\n\n";
-        $message .= 'Halo *'.$notifiable->name."*, terdapat tiket baru yang perlu Anda periksa:\n\n";
-        $message .= '📝 *ID Tiket:* #'.$this->ticket->id."\n";
-        $message .= '📌 *Subjek:* '.$this->ticket->title."\n";
-        $message .= '📅 *Tanggal Dibuat:* '.$this->ticket->created_at->format('d M Y H:i')."\n\n";
-        $message .= '🔗 *Buka Tiket:* '.$ticketUrl."\n";
-        $message .= '📱 *Login via WA:* '.$phoneLoginUrl."\n\n";
-        $message .= "Terima kasih, mohon segera ditindaklanjuti.\n\n";
-        $message .= '— Supported by IT Support';
-
-        return $message;
+        return HelpdeskWhatsAppMessage::forStaff($this->ticket);
     }
 }

@@ -2,19 +2,16 @@
 
 namespace App\Filament\Resources\TicketResource\RelationManagers;
 
-use Filament\Forms;
-use Filament\Schemas\Schema;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Tables\Table;
+use Filament\Schemas\Schema;
 use Filament\Tables;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Filament\Tables\Table;
 
 class TicketHistoriesRelationManager extends RelationManager
 {
     protected static string $relationship = 'ticketHistories';
 
-    protected static ?string $recordTitleAttribute = 'tiket_id';
+    protected static ?string $recordTitleAttribute = 'ticket_id';
 
     public function form(Schema $form): Schema
     {

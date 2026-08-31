@@ -222,6 +222,15 @@ class TicketResource extends Resource
                                 ->hasAnyRole(['Super Admin', 'Master Admin', 'Admin Unit', 'Staff Unit']),
                         ),
 
+                    Forms\Components\Placeholder::make('owner_phone')
+                        ->label('Nomor WhatsApp Pelapor')
+                        ->content(fn (?Ticket $record): string => $record?->owner?->phone ?: '-')
+                        ->hidden(
+                            fn () => ! auth()
+                                ->user()
+                                ->hasAnyRole(['Super Admin', 'Master Admin', 'Admin Unit', 'Staff Unit']),
+                        ),
+
                     Forms\Components\Placeholder::make('created_at')
                         ->translateLabel()
                         ->content(fn (
@@ -271,6 +280,11 @@ class TicketResource extends Resource
                 Tables\Columns\TextColumn::make('owner.name')
                     ->label('Pengirim')
                     ->searchable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('owner.phone')
+                    ->label('WhatsApp Pelapor')
+                    ->searchable()
+                    ->copyable()
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('unit.name')
                     ->label('Unit Tujuan')

@@ -3,7 +3,9 @@
 namespace App\Notifications;
 
 use App\Channels\WhatsAppChannel;
+use App\Models\Ticket;
 use App\Notifications\Concerns\ResolvesHelpdeskNotificationChannels;
+use App\Support\HelpdeskWhatsAppMessage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -40,18 +42,17 @@ class CommentNotification extends Notification implements ShouldQueueAfterCommit
      */
     public function toMail($notifiable): MailMessage
     {
-        $ticketUrl = url('/admin/tickets/'.$this->ticket->id);
-        $phoneLoginUrl = route('phone-login');
+        $number = $this->ticket instanceof Ticket
+            ? HelpdeskWhatsAppMessage::ticketNumber($this->ticket)
+            : '#'.($this->ticket->id ?? '');
+        $ticketUrl = url('/admin/tickets/'.($this->ticket->id ?? ''));
 
         return (new MailMessage)
-            ->subject('💬 Komentar Baru: Tiket #'.$this->ticket->id.' - '.$this->ticket->title)
-            ->greeting('Halo '.$notifiable->name.'!')
-            ->line('Ada komentar/tanggapan baru pada tiket **#'.$this->ticket->id.' ('.$this->ticket->title.')**.')
-            ->line('**Isi Komentar:**')
+            ->subject('Komentar baru: '.$number)
+            ->greeting('Halo '.$notifiable->name.',')
+            ->line('Ada komentar baru pada tiket **'.$number.'**.')
             ->line(html_entity_decode(strip_tags($this->comment->comment)))
-            ->action('Lihat & Tanggapi Tiket', $ticketUrl)
-            ->line('📱 **Login Cepat via WhatsApp:** Anda dapat masuk langsung ke sistem menggunakan nomor WhatsApp di: '.$phoneLoginUrl)
-            ->salutation('Supported by IT Support');
+            ->action('Buka tiket', $ticketUrl);
     }
 
     /**
@@ -69,20 +70,12 @@ class CommentNotification extends Notification implements ShouldQueueAfterCommit
     /**
      * Mengirim notifikasi melalui WhatsApp.
      */
-    public function toWhatsapp($notifiable)
+    public function toWhatsapp($notifiable): string
     {
-        $ticketUrl = url('/admin/tickets/'.$this->ticket->id);
-        $phoneLoginUrl = route('phone-login');
+        if (! $this->ticket instanceof Ticket) {
+            return '';
+        }
 
-        $message = "🔔 *Notifikasi Komentar Baru* 🔔\n\n";
-        $message .= 'Halo *'.$notifiable->name."*, ada komentar baru pada tiket Anda:\n\n";
-        $message .= '📝 *Tiket:* #'.$this->ticket->id.' - '.$this->ticket->title."\n";
-        $message .= '💬 *Komentar:* '.html_entity_decode(strip_tags($this->comment->comment))."\n";
-        $message .= '📅 *Waktu:* '.now()->format('d M Y H:i')."\n\n";
-        $message .= '🔗 *Buka & Balas Tiket:* '.$ticketUrl."\n";
-        $message .= '📱 *Login via WA:* '.$phoneLoginUrl."\n\n";
-        $message .= '— Supported by IT Support';
-
-        return $message;
+        return HelpdeskWhatsAppMessage::comment($this->ticket, (string) $this->comment->comment);
     }
 }

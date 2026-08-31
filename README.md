@@ -8,57 +8,56 @@ Repositori ini berisi kode sumber lengkap aplikasi Helpdesk. Struktur aplikasiny
 
 Fitur utama Helpdesk Laravel meliputi:
 
-1. **Pembuatan tiket:** pengguna dapat mengirim pertanyaan, permintaan bantuan, atau laporan masalah.
+1. **Form publik:** pengguna dapat mengirim pertanyaan, permintaan bantuan, atau laporan masalah tanpa masuk ke panel admin.
 2. **Pengelolaan tiket:** admin dapat melihat, menugaskan, memproses, dan menutup tiket.
 3. **Prioritas tiket:** tingkat urgensi tiket dapat ditentukan agar penanganannya lebih terarah.
 4. **Riwayat dan pelacakan:** aktivitas dan percakapan tiket dicatat untuk kebutuhan pemantauan dan audit.
 
-## Prasyarat Akun dan Pengajuan Tiket melalui MCP
+## Alur Utama: Form Publik
 
-Aplikasi menyediakan satu alat MCP yang netral terhadap vendor, yaitu `helpdesk_intake`. Alat ini memiliki dua alur bisnis:
-
-1. Menggunakan akun pelapor yang sudah ada dan memenuhi syarat, kemudian membuat tiket.
-2. Membuat akun pelapor yang diperlukan terlebih dahulu, lalu melanjutkan pengajuan yang sama untuk membuat tiket.
-
-Pembuatan akun hanya tersedia sebagai prasyarat pembuatan tiket. MCP tidak menyediakan pencarian tiket, komentar, perubahan tiket, aksi alur kerja, atau fungsi administrasi.
-
-Codex, Atlas yang meneruskan pesan WhatsApp, aplikasi AI lain, dan penghubung kanal lainnya bertindak sebagai klien atau gateway MCP generik. Semua klien menggunakan kontrak yang sama dan tidak mengubah perilaku Helpdesk.
-
-Kepemilikan tiket tetap terikat pada nomor WhatsApp yang sudah diverifikasi dan dicocokkan dengan direktori pengguna Helpdesk atau Talenta. Kanal generik tanpa identitas tepercaya akan melakukan verifikasi melalui OTP WhatsApp apabila mengirimkan `external_user_id` yang stabil. Gateway webhook WhatsApp tepercaya dapat menggunakan pernyataan identitas bertanda tangan untuk satu peristiwa.
-
-Jika nomor terverifikasi tidak ditemukan pada kedua direktori, MCP akan meminta persetujuan pendaftaran dan nama lengkap yang diketik langsung oleh pengguna. Sistem kemudian membuat akun khusus nomor telepon dengan email dan kata sandi bernilai `null` secara atomik, lalu melanjutkan pengajuan tiket semula. Jika pengguna menolak pembuatan akun, proses dibatalkan tanpa membuat akun atau tiket.
-
-Klien MCP langsung yang tidak mengirimkan `external_user_id` harus melakukan verifikasi OTP pada setiap pengajuan baru dan tidak mendapatkan ikatan identitas pelapor permanen.
-
-Panduan instalasi, kontrak alat, kebutuhan gateway, mekanisme percobaan ulang, dan catatan keamanan tersedia di [dokumentasi MCP](docs/mcp/README.md).
-
-### Mulai Cepat MCP Produksi
-
-Titik akses MCP produksi berjalan di dalam aplikasi web Laravel yang sama sehingga tidak memerlukan daemon MCP terpisah. Pasang aplikasi di belakang HTTPS, jalankan migrasi, lalu buka **Admin → Pengaturan → Pengaturan MCP** untuk menambahkan token bearer dan mengatur proses pengajuan. Gateway OTP WhatsApp tetap dikelola sebagai konfigurasi penerapan biasa.
-
-Titik akses yang dipublikasikan:
+Pengajuan tiket utama dilakukan melalui form publik pada dua alamat berikut:
 
 ```text
-https://helpdesk.example.com/mcp/helpdesk
+https://helpdesk.example.com/
+https://helpdesk.example.com/lapor
 ```
 
-Panduan siap salin tersedia untuk:
+Kedua alamat menampilkan pengalaman pengajuan yang sama. Panel pengelolaan staf tetap tersedia terpisah di `/admin`.
 
-- [Codex](docs/mcp/README.md#connect-codex)
-- [Cursor](docs/mcp/README.md#connect-cursor)
-- [Google Antigravity](docs/mcp/README.md#connect-google-antigravity)
-- [Atlas yang berjalan langsung/Docker dan persyaratan gateway WhatsApp](docs/mcp/README.md#connect-atlas-or-a-whatsapp-gateway)
-- [Klien Streamable HTTP lainnya](docs/mcp/README.md#connect-another-mcp-client)
+### Pelapor pertama kali pada suatu perangkat
 
-Daftar periksa produksi lengkap tersedia pada [panduan mulai cepat MCP produksi](docs/mcp/README.md#production-quickstart). Peningkatan basis data yang sudah digunakan juga wajib mengikuti [panduan peralihan aman](docs/mcp/README.md#install).
+1. Pelapor memasukkan nomor WhatsApp.
+2. Sistem menormalkan nomor ke format kanonik dan menggunakan pengguna Helpdesk aktif yang sudah memiliki nomor tersebut.
+3. Jika nomor belum ditemukan, sistem otomatis membuat akun pelapor minimal berbasis nomor telepon langsung di basis data Helpdesk. Pelapor tidak perlu mengisi nama atau kode OTP.
+4. Browser/perangkat diikat ke akun pelapor dan form tiket langsung ditampilkan.
 
-Setelah klien menampilkan alat `helpdesk_intake`, coba instruksi berikut:
+Alur publik ini sengaja tidak melakukan verifikasi kepemilikan nomor. Nomor WhatsApp berfungsi sebagai identitas pencocokan sekaligus kontak agar tim Helpdesk dapat menghubungi pelapor setelah tiket dibuat. Pelapor harus memastikan nomor yang dimasukkan benar dan dapat dihubungi.
 
-```text
-Buat laporan helpdesk: printer kasir tidak bisa mencetak sejak pagi.
-```
+### Pelapor yang sudah pernah menggunakan perangkat tersebut
 
-Perintah `/helpdesk printer kasir tidak bisa mencetak` juga dapat memulai pengajuan apabila aplikasi klien meneruskannya sebagai pesan teks biasa. Menghubungkan server MCP tidak otomatis memasang perintah garis miring (`slash command`) pada setiap klien AI. Gunakan instruksi bahasa alami apabila `/helpdesk` ditangani sebagai perintah internal oleh antarmuka klien.
+Sistem mengenali ikatan browser yang masih valid, menampilkan nomor WhatsApp tersamarkan, dan langsung membuka bagian laporan tiket. Pelapor tidak perlu mengisi ulang informasi penginput sehingga dapat berfokus pada tujuan unit, kategori, judul, deskripsi, prioritas, entitas bisnis, dan lampiran tiket.
+
+`owner_id` tiket selalu ditentukan oleh server dari ikatan nomor pada perangkat. Form tidak menerima identitas pelapor dari hidden input atau parameter URL.
+
+### Mengganti pelapor
+
+Tautan **Ganti nomor** mengakhiri ikatan akun pada perangkat tersebut dan menghapus identitas lokalnya. Pengguna berikutnya harus memasukkan nomor WhatsApp sebelum mengirim tiket. Gunakan tindakan ini pada perangkat bersama atau ketika kontak pelapor perlu diganti.
+
+### Menggunakan basis data yang sudah ada
+
+Form publik tidak memerlukan migration atau tabel reporter baru. Implementasinya memaksimalkan struktur yang sudah tersedia:
+
+- `users.phone_normalized` menyimpan nomor WhatsApp kanonik untuk pencocokan identitas, termasuk saat migrasi data dilakukan kemudian.
+- `helpdesk_reporter_bindings` menyimpan pemetaan akun pelapor yang diingat per browser/perangkat, termasuk waktu pengikatan, penggunaan terakhir, dan pencabutan. Ikatan ini bukan bukti kepemilikan nomor.
+- `tickets.owner_id` menghubungkan setiap laporan ke pelapor yang benar.
+
+Data nama dan nomor tidak disalin ke tabel tiket. Pencocokan identitas pada migrasi mendatang dapat menggunakan `users.phone_normalized`; data resmi harus memperbarui baris pengguna yang sama, bukan membuat pengguna baru. Dengan begitu riwayat tiket yang sudah ada tetap terhubung melalui `tickets.owner_id`.
+
+## Integrasi MCP Opsional/Legacy
+
+Kode MCP tetap dipertahankan untuk integrasi operasional yang masih memerlukannya, tetapi bukan lagi alur utama pengguna. Endpoint `/mcp/helpdesk` dan alat `helpdesk_intake` dapat digunakan oleh klien atau gateway tepercaya untuk membuat tiket melalui kontrak integrasi yang sudah ada.
+
+Panduan instalasi, kontrak alat, konfigurasi klien, kebutuhan gateway, mekanisme percobaan ulang, dan catatan keamanan tersedia di [dokumentasi MCP](docs/mcp/README.md). Dokumentasi alur terdahulu juga tersedia pada [use case MCP](docs/chain-of-truth/ucic/uc-004-mcp-create-ticket.md).
 
 <hr/>
 

@@ -22,6 +22,110 @@ class HelpdeskReporterRegistrationServiceTest extends TestCase
         Cache::flush();
     }
 
+    public function test_phone_input_resolution_creates_a_minimal_reporter_without_directory_lookup(): void
+    {
+        $employees = Mockery::mock(EmployeeService::class);
+        $employees->shouldNotReceive('findAllByPhone');
+        $employees->shouldNotReceive('createUser');
+
+        $result = (new HelpdeskReporterRegistrationService($employees))
+            ->resolveOrCreateFromSubmittedPhone('0812-3456-0091');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('created_phone', $result['status']);
+        $this->assertTrue($result['created']);
+        $this->assertInstanceOf(User::class, $result['user']);
+
+        $user = $result['user']->fresh();
+        $this->assertNotSame('', trim($user->name));
+        $this->assertSame('6281234560091', $user->phone);
+        $this->assertSame('6281234560091', $user->phone_normalized);
+        $this->assertNull($user->email);
+        $this->assertNull($user->password);
+        $this->assertNull($user->identity);
+        $this->assertTrue($user->is_active);
+        $this->assertSame(1, User::query()->count());
+    }
+
+    public function test_phone_input_resolution_reuses_the_canonical_active_account_without_overwriting_it(): void
+    {
+        $existing = User::query()->create([
+            'name' => 'Nama Existing Tetap',
+            'email' => null,
+            'password' => null,
+            'phone' => '0812-3456-0092',
+            'is_active' => true,
+        ]);
+        $employees = Mockery::mock(EmployeeService::class);
+        $employees->shouldNotReceive('findAllByPhone');
+        $employees->shouldNotReceive('createUser');
+
+        $result = (new HelpdeskReporterRegistrationService($employees))
+            ->resolveOrCreateFromSubmittedPhone('+62 812-3456-0092');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('existing', $result['status']);
+        $this->assertFalse($result['created']);
+        $this->assertSame($existing->id, $result['user']?->id);
+        $this->assertSame('Nama Existing Tetap', $existing->fresh()->name);
+        $this->assertSame('6281234560092', $existing->fresh()->phone_normalized);
+        $this->assertSame(1, User::query()->count());
+    }
+
+    public function test_phone_input_resolution_rejects_invalid_ambiguous_and_inactive_matches(): void
+    {
+        User::query()->create([
+            'name' => 'Duplikat Lokal',
+            'email' => null,
+            'password' => null,
+            'phone' => '0812-3456-0093',
+            'is_active' => true,
+        ]);
+        User::query()->create([
+            'name' => 'Duplikat Internasional',
+            'email' => null,
+            'password' => null,
+            'phone' => '6281234560093',
+            'is_active' => true,
+        ]);
+        User::query()->create([
+            'name' => 'Reporter Nonaktif',
+            'email' => null,
+            'password' => null,
+            'phone' => '0812-3456-0094',
+            'is_active' => false,
+        ]);
+        $deleted = User::query()->create([
+            'name' => 'Reporter Terhapus',
+            'email' => null,
+            'password' => null,
+            'phone' => '0812-3456-0095',
+            'is_active' => true,
+        ]);
+        $deleted->delete();
+
+        $employees = Mockery::mock(EmployeeService::class);
+        $employees->shouldNotReceive('findAllByPhone');
+        $employees->shouldNotReceive('createUser');
+        $service = new HelpdeskReporterRegistrationService($employees);
+
+        $invalid = $service->resolveOrCreateFromSubmittedPhone('nomor-tidak-valid');
+        $ambiguous = $service->resolveOrCreateFromSubmittedPhone('6281234560093');
+        $inactive = $service->resolveOrCreateFromSubmittedPhone('6281234560094');
+        $softDeleted = $service->resolveOrCreateFromSubmittedPhone('6281234560095');
+
+        $this->assertSame('invalid_phone', $invalid['status']);
+        $this->assertSame('helpdesk_ambiguous', $ambiguous['status']);
+        $this->assertSame('helpdesk_inactive', $inactive['status']);
+        $this->assertSame('helpdesk_inactive', $softDeleted['status']);
+        foreach ([$invalid, $ambiguous, $inactive, $softDeleted] as $result) {
+            $this->assertFalse($result['ok']);
+            $this->assertFalse($result['created']);
+            $this->assertNull($result['user']);
+        }
+        $this->assertSame(4, User::query()->withTrashed()->count());
+    }
+
     public function test_it_creates_a_restricted_phone_only_reporter(): void
     {
         $employees = Mockery::mock(EmployeeService::class);

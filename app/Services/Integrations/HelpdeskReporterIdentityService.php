@@ -13,6 +13,8 @@ use Throwable;
 
 class HelpdeskReporterIdentityService
 {
+    private const WEB_BINDING_TTL_DAYS = 365;
+
     public function __construct(
         private HelpdeskMcpConfiguration $configuration,
     ) {}
@@ -38,9 +40,12 @@ class HelpdeskReporterIdentityService
                 return null;
             }
 
+            $bindingExpired = $channel === 'web'
+                && ($binding->verified_at === null
+                    || $binding->verified_at->lte(now()->subDays(self::WEB_BINDING_TTL_DAYS)));
             $user = $binding->user;
             $phone = PhoneNumber::canonical((string) ($user?->phone ?? ''));
-            if (! $user || ! $user->is_active || $phone === null
+            if ($bindingExpired || ! $user || ! $user->is_active || $phone === null
                 || ! hash_equals((string) $binding->verified_phone_hash, $this->phoneHash($phone))) {
                 $binding->update(['revoked_at' => now()]);
 
@@ -53,8 +58,8 @@ class HelpdeskReporterIdentityService
         } catch (Throwable $exception) {
             report($exception);
 
-            // Deployments must run the additive binding migration. Falling back
-            // to OTP keeps ticket intake safe if the table is temporarily absent.
+            // Deployments must run the additive binding migration. Callers fail
+            // closed and request identity input again when binding lookup fails.
             return null;
         }
     }
@@ -101,6 +106,34 @@ class HelpdeskReporterIdentityService
                 'revoked_at',
                 'updated_at',
             ]);
+
+            return true;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return false;
+        }
+    }
+
+    public function revoke(string $clientId, string $channel, string $externalUserId): bool
+    {
+        $clientKey = $this->clientKey($clientId);
+        $channel = $this->channel($channel);
+        $subjectHash = $this->subjectHash($clientKey, $channel, $externalUserId);
+        if ($subjectHash === null) {
+            return false;
+        }
+
+        try {
+            HelpdeskReporterBinding::query()
+                ->active()
+                ->where('client_key', $clientKey)
+                ->where('channel', $channel)
+                ->where('external_user_hash', $subjectHash)
+                ->update([
+                    'last_seen_at' => now(),
+                    'revoked_at' => now(),
+                ]);
 
             return true;
         } catch (Throwable $exception) {

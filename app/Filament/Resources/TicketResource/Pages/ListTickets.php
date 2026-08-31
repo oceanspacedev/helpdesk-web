@@ -123,6 +123,7 @@ class ListTickets extends ListRecords
                             Column::make('unit.name')->heading('Divisi'),
                             Column::make('problemCategory.name')->heading('Kategori Tiket'),
                             Column::make('owner.name')->heading('Pemilik Tiket'),
+                            Column::make('owner.phone')->heading('Nomor WhatsApp Pelapor'),
                             Column::make('title')->heading('Judul'),
                             Column::make('businessEntity.name')->heading('Badan Usaha'),
                             Column::make('ticketStatus.name')->heading('Status Tiket'),
