@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\Integrations\HelpdeskMcpConfiguration;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -15,6 +16,7 @@ use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Str;
 use SensitiveParameter;
 
@@ -87,10 +89,36 @@ class HelpdeskMcpSettings extends Page
                                 Toggle::make('active')
                                     ->label('Aktif')
                                     ->default(true),
+                                Toggle::make('workflow_enabled')
+                                    ->label('Akses Proses/Done')
+                                    ->default(false)
+                                    ->live()
+                                    ->helperText('Aktifkan hanya untuk token personal satu petugas, bukan token gateway bersama.'),
+                                Select::make('workflow_user_id')
+                                    ->label('PIC token ini')
+                                    ->options(fn (): array => User::query()
+                                        ->where('is_active', true)
+                                        ->whereHas(
+                                            'roles',
+                                            fn ($roles) => $roles->whereIn('name', [
+                                                'Super Admin',
+                                                'Master Admin',
+                                                'Admin Unit',
+                                                'Staff Unit',
+                                            ]),
+                                        )
+                                        ->orderBy('name')
+                                        ->pluck('name', 'id')
+                                        ->all())
+                                    ->searchable()
+                                    ->required(fn (Get $get): bool => (bool) $get('workflow_enabled'))
+                                    ->disabled(fn (Get $get): bool => ! (bool) $get('workflow_enabled'))
+                                    ->dehydrated()
+                                    ->helperText('Semua perubahan status dan PIC akan dicatat atas nama petugas ini.'),
                             ])
                             ->columns([
                                 'default' => 1,
-                                'md' => 3,
+                                'md' => 5,
                             ])
                             ->defaultItems(0)
                             ->maxItems(25)

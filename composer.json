@@ -17,6 +17,7 @@
         "filament/filament": "^4.11",
         "filament/infolists": "^4.11",
         "guzzlehttp/guzzle": "^7.2",
+        "inertiajs/inertia-laravel": "^3.3",
         "jeffgreco13/filament-breezy": "^3.2",
         "kungfufafa/mekaya-theme": "@dev",
         "laravel/framework": "^12.61",

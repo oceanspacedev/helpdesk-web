@@ -24,6 +24,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Testing\TestResponse;
+use Inertia\Testing\AssertableInertia as Assert;
 use RuntimeException;
 use Tests\Concerns\CreatesHelpdeskIntegrationSchema;
 use Tests\Fakes\RecordingWhatsAppGateway;
@@ -88,10 +90,7 @@ class PublicTicketFormTest extends TestCase
     public function test_guest_can_open_the_public_ticket_form(): void
     {
         $response = $this->get(route('public-tickets.create'));
-        $response
-            ->assertOk()
-            ->assertSee('Nomor WhatsApp')
-            ->assertSee('Buat laporan')
+        $this->assertIdentifyPage($response)
             ->assertDontSee('Form laporan publik')
             ->assertDontSee('OTP')
             ->assertDontSee('Nama lengkap')
@@ -99,16 +98,14 @@ class PublicTicketFormTest extends TestCase
             ->assertDontSee('Ceritakan kendalanya')
             ->assertDontSee('Langkah awal')
             ->assertDontSee('Apa yang sedang terjadi?')
-            ->assertDontSee('Kirim ke')
-            ->assertDontSee('Kendala');
+            ->assertDontSee('wire:')
+            ->assertDontSee('livewire', false);
         $this->assertStringContainsString(
             'no-store',
             (string) $response->headers->get('Cache-Control'),
         );
 
-        $this->get(route('public-tickets.alias'))
-            ->assertOk()
-            ->assertSee('Nomor WhatsApp')
+        $this->assertIdentifyPage($this->get(route('public-tickets.alias')))
             ->assertDontSee('OTP')
             ->assertDontSee('Nama lengkap');
 
@@ -149,14 +146,11 @@ class PublicTicketFormTest extends TestCase
         $this->assertNull($binding->revoked_at);
         $this->assertSame([], $this->whatsAppGateway->messages);
 
-        $this->withCookie(PublicReporterIdentityService::COOKIE_NAME, $postIdentificationToken)
-            ->get(route('public-tickets.create'))
-            ->assertOk()
-            ->assertSee('Nomor WhatsApp pelapor')
-            ->assertSee('0101')
-            ->assertSee('Kendala')
-            ->assertSee('Kirim ke')
-            ->assertSee('Kirim laporan')
+        $this->assertTicketPage(
+            $this->withCookie(PublicReporterIdentityService::COOKIE_NAME, $postIdentificationToken)
+                ->get(route('public-tickets.create')),
+            '0101',
+        )
             ->assertDontSee('Apa yang sedang terjadi?')
             ->assertDontSee('Nama lengkap')
             ->assertDontSee('Reporter Lama')
@@ -236,13 +230,11 @@ class PublicTicketFormTest extends TestCase
         $this->assertSame('phone_input', $binding->verification_method);
         $this->assertSame([], $this->whatsAppGateway->messages);
 
-        $this->withCookie(PublicReporterIdentityService::COOKIE_NAME, $postIdentificationToken)
-            ->get(route('public-tickets.create'))
-            ->assertOk()
-            ->assertSee('Nomor WhatsApp pelapor')
-            ->assertSee('0187')
-            ->assertDontSee($reporter->name)
-            ->assertSee('Kendala');
+        $this->assertTicketPage(
+            $this->withCookie(PublicReporterIdentityService::COOKIE_NAME, $postIdentificationToken)
+                ->get(route('public-tickets.create')),
+            '0187',
+        )->assertDontSee($reporter->name);
 
         $submissionToken = (string) session()->get(self::SUBMISSION_SESSION_KEY);
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9]{40}$/D', $submissionToken);
@@ -357,12 +349,8 @@ class PublicTicketFormTest extends TestCase
             ->get(route('public-tickets.create'));
 
         $this->assertSame($deviceToken, session()->get(self::DEVICE_SESSION_KEY));
-        $response
-            ->assertOk()
-            ->assertSee('Nomor WhatsApp pelapor')
-            ->assertSee('0181')
-            ->assertDontSee('Reporter Cookie')
-            ->assertSee('Kendala');
+        $this->assertTicketPage($response, '0181')
+            ->assertDontSee('Reporter Cookie');
 
         $this->assertSame($reporter->id, HelpdeskReporterBinding::query()->sole()->user_id);
         $this->assertTrue(Auth::guest());
@@ -376,9 +364,7 @@ class PublicTicketFormTest extends TestCase
         $binding = HelpdeskReporterBinding::query()->sole();
         $binding->update(['verified_at' => now()->subDays(366)]);
 
-        $this->get(route('public-tickets.create'))
-            ->assertOk()
-            ->assertSee('Nomor WhatsApp')
+        $this->assertIdentifyPage($this->get(route('public-tickets.create')))
             ->assertDontSee('Reporter Lama Sekali');
 
         $this->assertNotNull($binding->fresh()->revoked_at);
@@ -499,9 +485,7 @@ class PublicTicketFormTest extends TestCase
 
         // Even if an old browser resends the bearer token, a revoked binding
         // must no longer reveal the previous reporter.
-        $this->get(route('public-tickets.create'))
-            ->assertOk()
-            ->assertSee('Nomor WhatsApp')
+        $this->assertIdentifyPage($this->get(route('public-tickets.create')))
             ->assertDontSee('Reporter Diganti');
     }
 
@@ -628,6 +612,46 @@ class PublicTicketFormTest extends TestCase
         $this->assertSame(1, TicketHistory::query()->count());
         $this->assertDatabaseCount('mcp_ticket_creation_requests', 1);
         Storage::disk('public')->assertExists($attachmentPath);
+    }
+
+    private function assertIdentifyPage(TestResponse $response): TestResponse
+    {
+        return $response
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('PublicTickets/Create')
+                ->where('screen', 'identify')
+                ->where('reporter', null)
+                ->has('urls.identify')
+                ->has('urls.store')
+                ->has('urls.login')
+            );
+    }
+
+    private function assertTicketPage(TestResponse $response, ?string $phoneNeedle = null): TestResponse
+    {
+        return $response
+            ->assertOk()
+            ->assertInertia(function (Assert $page) use ($phoneNeedle) {
+                $page
+                    ->component('PublicTickets/Create')
+                    ->where('screen', 'ticket')
+                    ->has('reporter.phone')
+                    ->missing('reporter.name')
+                    ->missing('reporter.email')
+                    ->has('submissionToken')
+                    ->has('options.units')
+                    ->has('options.problem_categories')
+                    ->has('options.priorities')
+                    ->has('options.business_entities');
+
+                if ($phoneNeedle !== null) {
+                    $page->where(
+                        'reporter.phone',
+                        fn ($phone): bool => str_contains((string) $phone, $phoneNeedle),
+                    );
+                }
+            });
     }
 
     private function reporter(string $name, string $phone): User

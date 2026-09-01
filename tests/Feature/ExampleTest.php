@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 // use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\CreatesHelpdeskIntegrationSchema;
 use Tests\TestCase;
 
@@ -26,7 +27,11 @@ class ExampleTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSee('Nomor WhatsApp')
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('PublicTickets/Create')
+                ->where('screen', 'identify')
+                ->where('reporter', null)
+            )
             ->assertDontSee('OTP')
             ->assertDontSee('Nama lengkap');
     }

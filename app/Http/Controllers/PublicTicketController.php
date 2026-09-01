@@ -14,7 +14,8 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 use Throwable;
 
 class PublicTicketController extends Controller
@@ -25,22 +26,50 @@ class PublicTicketController extends Controller
         Request $request,
         PublicReporterIdentityService $reporterIdentities,
         HelpdeskFormOptionsService $formOptions,
-    ): View {
+    ): Response {
         $reporter = $reporterIdentities->current($request);
         if ($reporter) {
             $this->ensureSubmissionToken($request);
         }
 
-        $options = $formOptions->formOptions();
+        $options = $reporter
+            ? $formOptions->formOptions()
+            : [
+                'units' => [],
+                'problem_categories' => [],
+                'priorities' => [],
+                'business_entities' => [],
+            ];
 
-        return view('public-tickets.create', [
-            'reporter' => $reporter,
-            'reporterPhone' => $reporter ? $reporterIdentities->maskedPhone($reporter) : null,
+        $defaultPriorityId = collect($options['priorities'] ?? [])->first(
+            fn (array $priority): bool => Str::lower((string) ($priority['name'] ?? '')) === 'medium',
+        )['id'] ?? null;
+
+        return Inertia::render('PublicTickets/Create', [
+            'screen' => $reporter ? 'ticket' : 'identify',
+            'reporter' => $reporter ? [
+                'phone' => $reporterIdentities->maskedPhone($reporter),
+            ] : null,
             'submissionToken' => (string) $request->session()->get(self::SESSION_SUBMISSION_TOKEN, ''),
             'options' => $options,
-            'defaultPriorityId' => collect($options['priorities'] ?? [])->first(
-                fn (array $priority): bool => Str::lower((string) ($priority['name'] ?? '')) === 'medium',
-            )['id'] ?? null,
+            'defaultPriorityId' => $defaultPriorityId,
+            'old' => [
+                'phone' => old('phone', ''),
+                'business_entities_id' => old('business_entities_id', ''),
+                'unit_id' => old('unit_id', ''),
+                'problem_category_id' => old('problem_category_id', ''),
+                'priority_id' => old('priority_id', $defaultPriorityId),
+                'title' => old('title', ''),
+                'description' => old('description', ''),
+            ],
+            'urls' => [
+                'identify' => route('public-reporter.identify', absolute: false),
+                'store' => route('public-tickets.store', absolute: false),
+                'changeReporter' => route('public-reporter.change', absolute: false),
+                'login' => route('filament.admin.auth.login', absolute: false),
+            ],
+            'brandUrl' => asset('images/icon.svg'),
+            'appName' => (string) config('app.name'),
         ]);
     }
 

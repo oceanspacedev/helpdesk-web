@@ -8,6 +8,8 @@ final class HelpdeskIntegrationClient
 {
     public const REQUEST_ATTRIBUTE = 'helpdesk_mcp_client_id';
 
+    public const WORKFLOW_ACTOR_ATTRIBUTE = 'helpdesk_mcp_workflow_actor_id';
+
     public static function currentRequestFingerprint(): ?string
     {
         $request = app()->bound('request') ? app('request') : null;
@@ -18,6 +20,22 @@ final class HelpdeskIntegrationClient
         $fingerprint = (string) $request->attributes->get(self::REQUEST_ATTRIBUTE, '');
 
         return $fingerprint !== '' ? substr($fingerprint, 0, 64) : null;
+    }
+
+    public static function currentWorkflowActorId(): ?int
+    {
+        $request = app()->bound('request') ? app('request') : null;
+        if (! $request instanceof Request) {
+            return null;
+        }
+
+        $actorId = filter_var(
+            $request->attributes->get(self::WORKFLOW_ACTOR_ATTRIBUTE),
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 1]],
+        );
+
+        return is_int($actorId) ? $actorId : null;
     }
 
     public static function internalClientKey(): string
