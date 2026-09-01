@@ -25,7 +25,7 @@ class HelpdeskMcpConfiguration
     }
 
     /**
-     * @return list<array{name: string, token: string, active: bool}>
+     * @return list<array{name: string, token: string, active: bool, workflow_enabled: bool, workflow_user_id: int|null}>
      */
     public function tokenRecords(): array
     {
@@ -38,6 +38,33 @@ class HelpdeskMcpConfiguration
         return $this->normalizeTokenRecords(
             config('services.helpdesk_mcp.tokens', []),
         );
+    }
+
+    /**
+     * Resolve a personal staff credential for the mutation-only MCP server.
+     * Shared intake/gateway tokens deliberately return null.
+     *
+     * @return array{name: string, token: string, active: bool, workflow_enabled: bool, workflow_user_id: int|null}|null
+     */
+    public function workflowTokenRecord(string $provided): ?array
+    {
+        if ($provided === '') {
+            return null;
+        }
+
+        $matched = null;
+        foreach ($this->tokenRecords() as $record) {
+            if (hash_equals($record['token'], $provided)) {
+                $matched = $record;
+            }
+        }
+
+        return $matched
+            && $matched['active']
+            && $matched['workflow_enabled']
+            && $matched['workflow_user_id'] !== null
+                ? $matched
+                : null;
     }
 
     public function intakeTtlMinutes(): int
@@ -194,7 +221,7 @@ class HelpdeskMcpConfiguration
     }
 
     /**
-     * @return list<array{name: string, token: string, active: bool}>
+     * @return list<array{name: string, token: string, active: bool, workflow_enabled: bool, workflow_user_id: int|null}>
      */
     private function normalizeTokenRecords(mixed $records): array
     {
@@ -213,10 +240,15 @@ class HelpdeskMcpConfiguration
             }
 
             $seen[$token] = true;
+            $workflowUserId = filter_var($record['workflow_user_id'] ?? null, FILTER_VALIDATE_INT, [
+                'options' => ['min_range' => 1],
+            ]);
             $normalized[] = [
                 'name' => trim((string) ($record['name'] ?? '')) ?: 'Klien '.($index + 1),
                 'token' => $token,
                 'active' => (bool) ($record['active'] ?? true),
+                'workflow_enabled' => (bool) ($record['workflow_enabled'] ?? false),
+                'workflow_user_id' => is_int($workflowUserId) ? $workflowUserId : null,
             ];
         }
 

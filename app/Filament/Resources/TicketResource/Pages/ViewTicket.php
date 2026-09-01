@@ -3,17 +3,18 @@
 namespace App\Filament\Resources\TicketResource\Pages;
 
 use App\Filament\Resources\TicketResource;
+use App\Enums\TicketWorkflowAction;
 use App\Models\ProblemCategory;
 use App\Models\Ticket;
 use App\Models\TicketStatus;
 use App\Models\Unit;
+use App\Services\TicketWorkflowService;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 class ViewTicket extends ViewRecord
@@ -56,14 +57,14 @@ class ViewTicket extends ViewRecord
                 'proses',
                 'Proses',
                 'primary',
-                TicketStatus::IN_PROGRESS,
+                TicketWorkflowAction::PROCESS,
                 'Tiket berhasil diambil dan sedang diproses.',
             );
             $actions[] = $this->transitionAction(
                 'cancel',
                 'Batalkan',
                 'danger',
-                TicketStatus::CANCEL,
+                TicketWorkflowAction::CANCEL,
                 'Tiket berhasil dibatalkan.',
             );
         } elseif ((int) $record->ticket_statuses_id === TicketStatus::IN_PROGRESS
@@ -73,7 +74,7 @@ class ViewTicket extends ViewRecord
                 'ambil_alih',
                 'Ambil Alih',
                 'primary',
-                TicketStatus::IN_PROGRESS,
+                TicketWorkflowAction::PROCESS,
                 'Tiket berhasil diambil alih dan dapat dilanjutkan.',
             );
         } elseif ((int) $record->ticket_statuses_id === TicketStatus::IN_PROGRESS
@@ -82,14 +83,14 @@ class ViewTicket extends ViewRecord
                 'selesai',
                 'Selesai',
                 'success',
-                TicketStatus::CLOSED,
+                TicketWorkflowAction::DONE,
                 'Tiket berhasil diselesaikan.',
             );
             $actions[] = $this->transitionAction(
                 'cancel',
                 'Batalkan',
                 'danger',
-                TicketStatus::CANCEL,
+                TicketWorkflowAction::CANCEL,
                 'Tiket berhasil dibatalkan.',
             );
         }
@@ -197,65 +198,26 @@ class ViewTicket extends ViewRecord
         string $name,
         string $label,
         string $color,
-        int $targetStatus,
+        TicketWorkflowAction $action,
         string $successMessage,
     ): Actions\Action {
         return Actions\Action::make($name)
             ->label($label)
             ->color($color)
             ->authorize('process')
-            ->action(fn () => $this->transitionTicket($targetStatus, $successMessage));
+            ->action(fn () => $this->transitionTicket($action, $successMessage));
     }
 
-    private function transitionTicket(int $targetStatus, string $successMessage): void
+    private function transitionTicket(TicketWorkflowAction $action, string $successMessage): void
     {
-        $updated = DB::transaction(function () use ($targetStatus): bool {
-            /** @var Ticket $record */
-            $record = Ticket::query()
-                ->withTrashed()
-                ->lockForUpdate()
-                ->findOrFail($this->record->getKey());
+        $user = Auth::user();
+        $result = app(TicketWorkflowService::class)->transition(
+            \App\Support\HelpdeskTicketNumber::format($this->getRecord()),
+            $user,
+            $action,
+        );
 
-            if ($record->trashed()) {
-                return false;
-            }
-
-            $user = Auth::user();
-            $userId = (int) $user->getKey();
-            $isGlobalProcessor = $user->hasGlobalTicketAccess();
-            $responsible = $record->eligibleResponsible();
-            $isAvailableToUser = $responsible === null
-                || (int) $responsible->getKey() === $userId
-                || $isGlobalProcessor;
-
-            $isAllowedTransition = match ($targetStatus) {
-                TicketStatus::IN_PROGRESS => ((int) $record->ticket_statuses_id === TicketStatus::OPEN
-                    && $isAvailableToUser)
-                    || ((int) $record->ticket_statuses_id === TicketStatus::IN_PROGRESS
-                        && $responsible === null),
-                TicketStatus::CANCEL => ((int) $record->ticket_statuses_id === TicketStatus::OPEN
-                    && $isAvailableToUser)
-                    || ((int) $record->ticket_statuses_id === TicketStatus::IN_PROGRESS
-                        && ((int) $responsible?->getKey() === $userId || $isGlobalProcessor)),
-                TicketStatus::CLOSED => (int) $record->ticket_statuses_id === TicketStatus::IN_PROGRESS
-                    && ((int) $responsible?->getKey() === $userId || $isGlobalProcessor),
-                default => false,
-            };
-
-            if (! $isAllowedTransition) {
-                return false;
-            }
-
-            Gate::authorize('process', $record);
-
-            $record->responsible_id = $userId;
-            $record->ticket_statuses_id = $targetStatus;
-            $record->save();
-
-            return true;
-        });
-
-        if (! $updated) {
+        if (! $result['ok']) {
             Notification::make()
                 ->title('Tiket sudah berubah atau sedang diproses petugas lain.')
                 ->warning()

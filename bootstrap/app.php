@@ -6,6 +6,7 @@ use App\Http\Middleware\RedirectIfAuthenticated;
 use App\Http\Middleware\ValidateSignature;
 use App\Http\Middleware\VerifyCsrfToken;
 use App\Http\Middleware\VerifyHelpdeskMcpToken;
+use App\Http\Middleware\VerifyHelpdeskStaffMcpToken;
 use BezhanSalleh\FilamentExceptions\FilamentExceptions;
 use Illuminate\Auth\Middleware\AuthenticateWithBasicAuth;
 use Illuminate\Auth\Middleware\Authorize;
@@ -68,6 +69,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'throttle' => ThrottleRequests::class,
             'verified' => EnsureEmailIsVerified::class,
             'helpdesk.mcp' => VerifyHelpdeskMcpToken::class,
+            'helpdesk.staff.mcp' => VerifyHelpdeskStaffMcpToken::class,
         ]);
 
         $middleware->throttleApi('api');
