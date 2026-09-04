@@ -205,41 +205,65 @@ function changeReporter() {
 
                     <Section heading="Kirim ke" icon="paper-airplane">
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                            <Field id="business_entities_id" label="Entitas bisnis / cabang" required :error="ticketForm.errors.business_entities_id">
+                            <Field
+                                id="business_entities_id"
+                                label="Badan Usaha"
+                                required
+                                :error="ticketForm.errors.business_entities_id"
+                                hint="Badan usaha yang akan menangani tiket ini."
+                            >
                                 <SelectInput
                                     id="business_entities_id"
                                     v-model="ticketForm.business_entities_id"
                                     required
-                                    placeholder="Pilih entitas"
+                                    placeholder="Pilih badan usaha"
                                     :options="options.business_entities"
                                     :invalid="Boolean(ticketForm.errors.business_entities_id)"
                                 />
                             </Field>
 
-                            <Field id="unit_id" label="Unit tujuan" required :error="ticketForm.errors.unit_id">
+                            <Field
+                                id="unit_id"
+                                label="Unit / Divisi Tujuan"
+                                required
+                                :error="ticketForm.errors.unit_id"
+                                hint="Divisi yang akan menangani tiket ini."
+                            >
                                 <SelectInput
                                     id="unit_id"
                                     v-model="ticketForm.unit_id"
                                     required
-                                    placeholder="Pilih unit"
+                                    placeholder="Pilih divisi"
                                     :options="options.units"
                                     :invalid="Boolean(ticketForm.errors.unit_id)"
                                 />
                             </Field>
 
-                            <Field id="problem_category_id" label="Kategori masalah" required :error="ticketForm.errors.problem_category_id">
+                            <Field
+                                id="problem_category_id"
+                                label="Kategori Tiket"
+                                required
+                                :error="ticketForm.errors.problem_category_id"
+                                hint="Jenis tiket yang akan ditangani."
+                            >
                                 <SelectInput
                                     id="problem_category_id"
                                     v-model="ticketForm.problem_category_id"
                                     required
                                     :disabled="!ticketForm.unit_id"
-                                    :placeholder="ticketForm.unit_id ? 'Pilih kategori' : 'Pilih unit terlebih dahulu'"
+                                    :placeholder="ticketForm.unit_id ? 'Pilih kategori' : 'Pilih divisi terlebih dahulu'"
                                     :options="categoriesForUnit"
                                     :invalid="Boolean(ticketForm.errors.problem_category_id)"
                                 />
                             </Field>
 
-                            <Field id="priority_id" label="Prioritas" required :error="ticketForm.errors.priority_id">
+                            <Field
+                                id="priority_id"
+                                label="Prioritas"
+                                required
+                                :error="ticketForm.errors.priority_id"
+                                hint="Tingkat urgensi tiket ini."
+                            >
                                 <SelectInput
                                     id="priority_id"
                                     v-model="ticketForm.priority_id"

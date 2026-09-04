@@ -47,7 +47,8 @@ class TicketResource extends Resource
                             ->pluck('name', 'id'))
                         ->searchable()
                         ->required()
-                        ->helperText('Unit ini akan menerima dan memproses tiket. Salah kirim: Super Admin mengubah di sini, staf unit memakai Pindah unit.')
+                        ->placeholder('Pilih divisi')
+                        ->helperText('Divisi yang akan menangani tiket ini.')
                         ->disabled(fn (string $operation): bool => $operation === 'edit'
                             && ! auth()->user()?->hasGlobalTicketAccess())
                         ->afterStateUpdated(function (?int $state, Get $get, Set $set): void {
@@ -75,7 +76,8 @@ class TicketResource extends Resource
                         })
                         ->searchable()
                         ->required()
-                        ->helperText('Staf dapat mengubah kategori, termasuk dari Perlu diklasifikasi.'),
+                        ->placeholder('Pilih kategori')
+                        ->helperText('Jenis tiket yang akan ditangani.'),
 
                     Forms\Components\TextInput::make('title')
                         ->label(__('Title'))
@@ -177,7 +179,8 @@ class TicketResource extends Resource
                             ->pluck('name', 'id'))
                         ->searchable()
                         ->required()
-                        ->helperText('Termasuk dari Belum disebutkan bila pelapor tidak menyebut cabang.'),
+                        ->placeholder('Pilih badan usaha')
+                        ->helperText('Badan usaha yang akan menangani tiket ini.'),
 
                     Forms\Components\Select::make('ticket_statuses_id')
                         ->label(__('Status'))

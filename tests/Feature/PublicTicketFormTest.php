@@ -455,7 +455,7 @@ class PublicTicketFormTest extends TestCase
             'problem_category_id' => $this->otherCategory->id,
         ]))
             ->assertSessionHasErrors([
-                'problem_category_id' => 'Kategori tidak sesuai dengan unit tujuan yang dipilih.',
+                'problem_category_id' => 'Kategori tidak sesuai dengan divisi yang dipilih.',
             ]);
 
         $this->assertDatabaseCount('tickets', 0);
