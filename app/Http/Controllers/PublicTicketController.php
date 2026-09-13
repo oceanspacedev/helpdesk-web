@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Ticket;
 use App\Models\User;
 use App\Services\Integrations\HelpdeskFormOptionsService;
 use App\Services\Integrations\HelpdeskReporterRegistrationService;
 use App\Services\Integrations\PublicReporterIdentityService;
 use App\Services\Integrations\PublicTicketSubmissionService;
 use App\Support\PhoneNumber;
+use App\Support\SafeUploadedFile;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -192,9 +194,13 @@ class PublicTicketController extends Controller
             $files = $request->file('supporting_attachments', []);
             $files = is_array($files) ? $files : [$files];
             $totalBytes = collect($files)
-                ->sum(fn ($file): int => is_object($file) && method_exists($file, 'getSize')
-                    ? (int) $file->getSize()
-                    : 0);
+                ->sum(function ($file): int {
+                    try {
+                        return SafeUploadedFile::size($file) ?? 0;
+                    } catch (Throwable) {
+                        return 0;
+                    }
+                });
             if ($totalBytes > 10 * 1024 * 1024) {
                 $validator->errors()->add('supporting_attachments', 'Total ukuran seluruh lampiran maksimal 10 MB.');
             }
@@ -210,24 +216,23 @@ class PublicTicketController extends Controller
                 is_array($uploads) ? $uploads : [$uploads],
                 $submissionToken,
             );
-            $request->session()->forget(self::SESSION_SUBMISSION_TOKEN);
         } catch (ValidationException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
             report($exception);
-
-            return back()
-                ->withInput($request->except(['supporting_attachments']))
-                ->withErrors(['ticket' => 'Laporan belum dapat disimpan. Coba lagi atau hubungi administrator Helpdesk.']);
+            $ticket = $tickets->findCommitted($reporter, $submissionToken);
+            if (! $ticket) {
+                return back()
+                    ->withInput($request->except(['supporting_attachments']))
+                    ->withErrors(['ticket' => 'Laporan belum dapat disimpan. Coba lagi atau hubungi administrator Helpdesk.']);
+            }
         }
+
+        $request->session()->forget(self::SESSION_SUBMISSION_TOKEN);
 
         return redirect()
             ->route('public-tickets.create')
-            ->with('ticket_success', [
-                'number' => $this->ticketNumber($ticket->id, $ticket->created_at?->format('Y')),
-                'title' => $ticket->title,
-                'unit' => $ticket->unit?->name,
-            ]);
+            ->with('ticket_success', $this->successPayload($ticket));
     }
 
     private function finishReporterIdentification(
@@ -254,6 +259,32 @@ class PublicTicketController extends Controller
         if (! preg_match('/^[A-Za-z0-9]{40}$/D', $token)) {
             $request->session()->put(self::SESSION_SUBMISSION_TOKEN, Str::random(40));
         }
+    }
+
+    /**
+     * @return array{number: string, title: string, unit: ?string}
+     */
+    private function successPayload(Ticket $ticket): array
+    {
+        $unitName = null;
+        try {
+            $unitName = $ticket->unit?->name;
+        } catch (Throwable) {
+            $unitName = null;
+        }
+
+        $year = null;
+        try {
+            $year = $ticket->created_at?->format('Y');
+        } catch (Throwable) {
+            $year = null;
+        }
+
+        return [
+            'number' => $this->ticketNumber((int) $ticket->id, $year),
+            'title' => (string) $ticket->title,
+            'unit' => $unitName,
+        ];
     }
 
     private function ticketNumber(int $id, ?string $year): string

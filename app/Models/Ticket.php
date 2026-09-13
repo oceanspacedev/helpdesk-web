@@ -9,6 +9,7 @@ namespace App\Models;
 use App\Notifications\NewTicketNotification;
 use App\Notifications\TicketStatusChangedNotification;
 use App\Notifications\TicketSubmittedNotification;
+use App\Support\HelpdeskNotifier;
 use App\Services\Integrations\HelpdeskOperationalClassifier;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -246,7 +247,11 @@ class Ticket extends Model
             // Auto-assign only named BUSDEV document types to the OD accounts.
             // Odoo, printer, CCTV, and holding tickets stay on the unit queue.
             if (! self::$isSeeding && $ticket->isDirty('problem_category_id')) {
-                $ticket->responsible_id = self::defaultResponsibleIdForCategory($ticket);
+                try {
+                    $ticket->responsible_id = self::defaultResponsibleIdForCategory($ticket);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
             }
 
             if (! self::$isSeeding
@@ -306,19 +311,22 @@ class Ticket extends Model
                 return;
             }
 
-            // Membuat riwayat tiket baru
-            TicketHistory::create([
-                'ticket_id' => $ticket->id,
-                'ticket_statuses_id' => $ticket->ticket_statuses_id,
-                'user_id' => Auth::id(),
-                'created_at' => now(),
-            ]);
+            try {
+                TicketHistory::create([
+                    'ticket_id' => $ticket->id,
+                    'ticket_statuses_id' => $ticket->ticket_statuses_id,
+                    'user_id' => Auth::id(),
+                    'created_at' => now(),
+                ]);
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
 
             $staffIds = [];
             $responsible = $ticket->eligibleResponsible();
 
             if ($responsible) {
-                $responsible->notify(new NewTicketNotification($ticket));
+                HelpdeskNotifier::send($responsible, new NewTicketNotification($ticket));
                 $staffIds[] = (int) $responsible->id;
             } else {
                 $receivers = User::query()
@@ -326,14 +334,14 @@ class Ticket extends Model
                     ->get();
 
                 foreach ($receivers as $receiver) {
-                    $receiver->notify(new NewTicketNotification($ticket));
+                    HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
                     $staffIds[] = (int) $receiver->id;
                 }
             }
 
             $owner = User::query()->find($ticket->owner_id);
             if ($owner && ! in_array((int) $owner->id, $staffIds, true)) {
-                $owner->notify(new TicketSubmittedNotification($ticket));
+                HelpdeskNotifier::send($owner, new TicketSubmittedNotification($ticket));
             }
         });
 
@@ -342,14 +350,14 @@ class Ticket extends Model
             if (! self::$isSeeding && $ticket->wasChanged('unit_id')) {
                 $responsible = $ticket->eligibleResponsible();
                 if ($responsible) {
-                    $responsible->notify(new NewTicketNotification($ticket));
+                    HelpdeskNotifier::send($responsible, new NewTicketNotification($ticket));
                 } else {
                     $receivers = User::query()
                         ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
                         ->get();
 
                     foreach ($receivers as $receiver) {
-                        $receiver->notify(new NewTicketNotification($ticket));
+                        HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
                     }
                 }
             }
@@ -359,7 +367,7 @@ class Ticket extends Model
                 if (in_array($status, [TicketStatus::IN_PROGRESS, TicketStatus::CANCEL, TicketStatus::CLOSED], true)) {
                     $owner = User::query()->find($ticket->owner_id);
                     if ($owner) {
-                        $owner->notify(new TicketStatusChangedNotification($ticket, $status));
+                        HelpdeskNotifier::send($owner, new TicketStatusChangedNotification($ticket, $status));
                     }
                 }
             }

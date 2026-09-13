@@ -64,26 +64,28 @@ class HelpdeskWhatsAppMessageTest extends TestCase
         $this->assertSame("HD-".now()->format('Y').'-'.str_pad((string) $ticket->id, 5, '0', STR_PAD_LEFT), $number);
 
         foreach ([$submitted, $received] as $message) {
-            $this->assertStringStartsWith("*Helpdesk*\n\n", $message);
+            $this->assertStringStartsWith("🛠️ *Helpdesk*\n", $message);
             $this->assertStringContainsString('*'.$number.'*', $message);
-            $this->assertStringContainsString('Printer kasir tidak bisa mencetak', $message);
-            $this->assertStringContainsString('IT · Complete Selular · Medium', $message);
+            $this->assertStringContainsString('*Printer kasir tidak bisa mencetak*', $message);
+            $this->assertStringContainsString('🏢 IT · Akses Akun · Complete Selular · 🟡 Medium', $message);
             $this->assertStringNotContainsString('Supported by IT Support', $message);
             $this->assertStringNotContainsString('Login via WA', $message);
-            $this->assertDoesNotMatchRegularExpression('/🔔|📝|📌|📅|🔗|📱/', $message);
         }
 
-        $this->assertStringContainsString('Laporan diterima', $submitted);
+        $this->assertStringContainsString('✅ Laporan diterima · *'.$number.'*', $submitted);
         $this->assertStringNotContainsString('Nomor follow-up', $submitted);
         $this->assertStringNotContainsString('Koordinasi WA', $submitted);
         $this->assertStringNotContainsString('/admin/tickets/', $submitted);
-        $this->assertStringNotContainsString('Pelapor:', $submitted);
+        $this->assertStringNotContainsString('👤', $submitted);
         $this->assertStringNotContainsString('wa.me/', $submitted);
 
-        $this->assertStringContainsString('Laporan baru', $received);
-        $this->assertStringContainsString('Pelapor: Pelapor WA', $received);
-        $this->assertStringContainsString('Koordinasi WA: 6281234500401', $received);
-        $this->assertStringContainsString('https://wa.me/6281234500401?text=', $received);
+        $this->assertStringContainsString('🎫 Laporan baru · *'.$number.'*', $received);
+        $this->assertStringContainsString('👤 Pelapor WA', $received);
+        $this->assertStringContainsString('💬 https://wa.me/6281234500401?text='.rawurlencode('Terkait '.$number), $received);
+        $this->assertStringContainsString('🔗 ', $received);
+        $this->assertStringNotContainsString('Koordinasi WA', $received);
+        $this->assertStringNotContainsString('Helpdesk '.$number, $received);
+        $this->assertSame(1, substr_count($received, '6281234500401'));
         $this->assertStringContainsString('/admin/tickets/'.$ticket->id, $received);
 
         $this->assertSame(
@@ -96,6 +98,30 @@ class HelpdeskWhatsAppMessageTest extends TestCase
         );
     }
 
+    public function test_staff_message_includes_category_excerpt_and_labeled_chat_link(): void
+    {
+        $reporter = $this->user('App Dev', '62895636786435');
+        $ticket = $this->ticket(
+            $reporter,
+            'Test laporan jaringan',
+            'Wifi kantor putus-putus sejak pagi. Sudah restart modem, tetap tidak stabil.',
+        );
+        $number = HelpdeskWhatsAppMessage::ticketNumber($ticket);
+        $message = HelpdeskWhatsAppMessage::forStaff($ticket);
+
+        $this->assertSame(
+            "🛠️ *Helpdesk*\n"
+            .'🎫 Laporan baru · *'.$number."*\n\n"
+            ."*Test laporan jaringan*\n"
+            ."🏢 IT · Akses Akun · Complete Selular · 🟡 Medium\n\n"
+            ."Wifi kantor putus-putus sejak pagi. Sudah restart modem, tetap tidak stabil.\n\n"
+            ."👤 App Dev\n"
+            .'💬 https://wa.me/62895636786435?text='.rawurlencode('Terkait '.$number)."\n\n"
+            .'🔗 '.url('/admin/tickets/'.$ticket->id),
+            $message,
+        );
+    }
+
     public function test_process_cancel_and_closed_templates_match_the_reporter_frame(): void
     {
         $reporter = $this->user('Pelapor Status', '6281234500405');
@@ -103,35 +129,35 @@ class HelpdeskWhatsAppMessageTest extends TestCase
         $number = HelpdeskWhatsAppMessage::ticketNumber($ticket);
 
         $messages = [
-            'Laporan diproses' => HelpdeskWhatsAppMessage::inProgress($ticket),
-            'Laporan dibatalkan' => HelpdeskWhatsAppMessage::cancelled($ticket),
-            'Laporan selesai' => HelpdeskWhatsAppMessage::closed($ticket),
+            '⏳ Laporan diproses' => HelpdeskWhatsAppMessage::inProgress($ticket),
+            '❌ Laporan dibatalkan' => HelpdeskWhatsAppMessage::cancelled($ticket),
+            '✅ Laporan selesai' => HelpdeskWhatsAppMessage::closed($ticket),
         ];
 
         foreach ($messages as $heading => $message) {
-            $this->assertStringStartsWith("*Helpdesk*\n\n".$heading."\n*".$number.'*', $message);
+            $this->assertStringStartsWith("🛠️ *Helpdesk*\n".$heading.' · *'.$number.'*', $message);
             $this->assertStringNotContainsString('Nomor follow-up', $message);
-            $this->assertStringContainsString('AC ruang server mati', $message);
-            $this->assertStringContainsString('IT · Complete Selular · Medium', $message);
+            $this->assertStringContainsString('*AC ruang server mati*', $message);
+            $this->assertStringContainsString('🏢 IT · Akses Akun · Complete Selular · 🟡 Medium', $message);
             $this->assertStringNotContainsString('/admin/tickets/', $message);
             $this->assertStringNotContainsString('wa.me/', $message);
             $this->assertStringNotContainsString('Koordinasi WA', $message);
         }
 
-        $this->assertStringContainsString('Tim sedang menangani laporan ini.', $messages['Laporan diproses']);
-        $this->assertStringContainsString('Laporan ini tidak dilanjutkan.', $messages['Laporan dibatalkan']);
-        $this->assertStringContainsString('Laporan ini sudah diselesaikan.', $messages['Laporan selesai']);
+        $this->assertStringContainsString('Tim sedang menangani laporan ini.', $messages['⏳ Laporan diproses']);
+        $this->assertStringContainsString('Laporan ini tidak dilanjutkan.', $messages['❌ Laporan dibatalkan']);
+        $this->assertStringContainsString('Laporan ini sudah diselesaikan.', $messages['✅ Laporan selesai']);
 
         $this->assertSame(
-            $messages['Laporan diproses'],
+            $messages['⏳ Laporan diproses'],
             (new TicketStatusChangedNotification($ticket, TicketStatus::IN_PROGRESS))->toWhatsapp($reporter),
         );
         $this->assertSame(
-            $messages['Laporan dibatalkan'],
+            $messages['❌ Laporan dibatalkan'],
             (new TicketStatusChangedNotification($ticket, TicketStatus::CANCEL))->toWhatsapp($reporter),
         );
         $this->assertSame(
-            $messages['Laporan selesai'],
+            $messages['✅ Laporan selesai'],
             (new TicketStatusChangedNotification($ticket, TicketStatus::CLOSED))->toWhatsapp($reporter),
         );
     }
@@ -177,7 +203,7 @@ class HelpdeskWhatsAppMessageTest extends TestCase
         ]);
     }
 
-    private function ticket(User $owner, string $title): Ticket
+    private function ticket(User $owner, string $title, ?string $description = null): Ticket
     {
         Auth::setUser($owner);
 
@@ -187,7 +213,7 @@ class HelpdeskWhatsAppMessageTest extends TestCase
             'owner_id' => $owner->id,
             'problem_category_id' => $this->category->id,
             'title' => $title,
-            'description' => $title,
+            'description' => $description ?? $title,
             'ticket_statuses_id' => TicketStatus::OPEN,
             'business_entities_id' => $this->businessEntity->id,
         ]);
