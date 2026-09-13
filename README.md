@@ -255,7 +255,7 @@ flowchart TB
 | Form publik | Inertia.js 3, Vue 3 |
 | Frontend build | Vite 8, Tailwind CSS 4, Axios |
 | Database | MySQL (default `.env.example`); SQLite in-memory untuk test |
-| Filesystem | Disk Laravel `local` / `public`; disk `minio` opsional |
+| Filesystem | Disk Laravel `local` / `public`; disk `s3` opsional |
 | Auth panel | Filament login, Breezy profile, Socialite Google, OTP WhatsApp |
 | Authorization | Filament Shield / Spatie Permission |
 | MCP | Laravel MCP (`/mcp/helpdesk`, stdio `helpdesk`) |
@@ -274,7 +274,7 @@ flowchart TB
 - MySQL 8+ (atau MariaDB yang kompatibel) untuk development sesuai `.env.example`.
 - Extension PHP yang biasa dipakai Laravel/Filament, termasuk `curl`, `fileinfo`, `gd`, `intl`, `mbstring`, `openssl`, `pdo_mysql`, dan `xml`.
 
-Gateway WhatsApp, Google OAuth, MinIO, dan Redis bersifat opsional untuk menjalankan form publik dan panel dasar. OTP login dan notifikasi WhatsApp membutuhkan `WAG_URL` serta `WAG_TOKEN`.
+Gateway WhatsApp, Google OAuth, S3, dan Redis bersifat opsional untuk menjalankan form publik dan panel dasar. OTP login dan notifikasi WhatsApp membutuhkan `WAG_URL` serta `WAG_TOKEN`.
 
 ### Clone dan dependency
 
@@ -342,7 +342,7 @@ Jangan commit `.env` atau credential apa pun ke Git. Daftar berikut mengikuti [`
 | `APP_ENV` / `APP_DEBUG` | Ya | Environment dan debug |
 | `DB_CONNECTION` / `DB_*` | Ya | Driver dan koneksi database; default proyek `mysql` |
 | `CACHE_DRIVER` | Ya | Cache default; `.env.example` memakai `file`. Multi-instance production untuk MCP/OTP membutuhkan store bersama, biasanya Redis |
-| `FILESYSTEM_DISK` | Ya | Disk filesystem default; `local` atau `public` |
+| `FILESYSTEM_DISK` | Ya | Disk filesystem default; `local`, `public`, atau `s3` |
 | `SESSION_DRIVER` | Ya | Penyimpanan session; default `file` |
 | `QUEUE_CONNECTION` | Ya | Backend queue; default `sync` |
 | `BROADCAST_CONNECTION` | Tidak | Default `null` |
@@ -356,7 +356,8 @@ Jangan commit `.env` atau credential apa pun ke Git. Daftar berikut mengikuti [`
 | `PHONE_OTP_LOGIN_TTL_MINUTES` | Tidak | Umur tantangan OTP login; default `5` |
 | `WHATSAPP_OTP_TTL_MINUTES` | Tidak | Umur OTP WhatsApp; default `5` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_CLIENT_REDIRECT` | Untuk Google login | OAuth Socialite |
-| `MINIO_KEY` / `MINIO_SECRET` / `MINIO_ENDPOINT` / `MINIO_BUCKET` | Untuk MinIO | Disk `minio` di `config/filesystems.php` |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` / `AWS_BUCKET` | Untuk S3 | Disk `s3` di `config/filesystems.php` |
+| `AWS_USE_PATH_STYLE_ENDPOINT` | Tidak | Path-style S3; default `false`. Set `true` plus `AWS_ENDPOINT` untuk MinIO atau S3-compatible |
 | `INERTIA_SSR_ENABLED` | Tidak | SSR Inertia; default `false` |
 | `HELPDESK_MCP_LOCAL_CLIENT_ID` | Tidak | ID klien MCP stdio lokal; unik per mesin klien |
 | `TALENTA_EMPLOYEE_FILE` | Tidak | Override path JSON karyawan; default berkas di root repositori |
