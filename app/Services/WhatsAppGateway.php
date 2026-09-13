@@ -2,15 +2,21 @@
 
 namespace App\Services;
 
+use App\Support\PhpExecutionBudget;
 use GuzzleHttp\Client;
-
 use Illuminate\Support\Facades\Log;
 
 class WhatsAppGateway
 {
+    /**
+     * @param  mixed  $client  Optional Guzzle client (tests). Do not type-hint Client:
+     *                         the container would inject a bare client with no timeout.
+     */
     public function __construct(
-        private readonly ?Client $client = null,
-    ) {}
+        private mixed $client = null,
+    ) {
+        $this->client = $client instanceof Client ? $client : null;
+    }
 
     public function send($phoneNumber, string $message): bool
     {
@@ -34,12 +40,23 @@ class WhatsAppGateway
             return false;
         }
 
+        $timeouts = $this->timeouts();
+        if ($timeouts === null) {
+            Log::warning('Pengiriman WhatsApp dilewati: sisa waktu eksekusi PHP tidak cukup.', [
+                'receiver' => $target,
+            ]);
+
+            return false;
+        }
+
         try {
             $idempotencyKey = 'helpdesk-' . (string) str()->uuid();
             $apiUrl = rtrim($url, '/') . '/api/v1/messages';
 
             $response = $this->client()->post($apiUrl, [
                 'http_errors' => false,
+                'timeout' => $timeouts['timeout'],
+                'connect_timeout' => $timeouts['connect_timeout'],
                 'headers' => [
                     'Authorization' => 'Bearer ' . ltrim($token ?? '', 'Bearer '),
                     'Accept' => 'application/json',
@@ -132,10 +149,50 @@ class WhatsAppGateway
     }
 
 
+    /**
+     * @return array{timeout: float, connect_timeout: float}|null
+     */
+    public function timeouts(
+        ?int $maxExecutionTime = null,
+        ?float $requestStartedAt = null,
+    ): ?array {
+        $timeout = PhpExecutionBudget::capTimeout(
+            (float) config('services.whatsapp_gateway.timeout', 8),
+            2.0,
+            1.0,
+            $maxExecutionTime,
+            $requestStartedAt,
+        );
+        if ($timeout === null) {
+            return null;
+        }
+
+        $connect = min(
+            $timeout,
+            max(1.0, (float) config('services.whatsapp_gateway.connect_timeout', 5)),
+        );
+
+        return [
+            'timeout' => $timeout,
+            'connect_timeout' => $connect,
+        ];
+    }
+
     private function client(): Client
     {
-        return $this->client ?? new Client([
-            'timeout' => 15.0,
+        if ($this->client instanceof Client) {
+            return $this->client;
+        }
+
+        $timeouts = $this->timeouts() ?? [
+            'timeout' => 8.0,
+            'connect_timeout' => 5.0,
+        ];
+
+        return new Client([
+            'timeout' => $timeouts['timeout'],
+            'connect_timeout' => $timeouts['connect_timeout'],
+            'http_errors' => false,
         ]);
     }
 

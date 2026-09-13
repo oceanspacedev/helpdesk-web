@@ -40,6 +40,10 @@ return [
     'whatsapp_gateway' => [
         'url' => env('WAG_URL', 'https://waghub.mekayastudio.com'),
         'token' => env('WAG_TOKEN'),
+        // Keep well below PHP max_execution_time (often 30s) even when several
+        // notifications are sent on the same sync request.
+        'connect_timeout' => (float) env('WA_CONNECT_TIMEOUT', 5),
+        'timeout' => (float) env('WA_API_TIMEOUT', 8),
     ],
 
     'helpdesk_mcp' => [

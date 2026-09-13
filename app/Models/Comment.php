@@ -7,6 +7,7 @@
 namespace App\Models;
 
 use App\Notifications\CommentNotification;
+use App\Support\HelpdeskNotifier;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -107,7 +108,7 @@ class Comment extends Model
             $receivers->unique('id')
                 ->reject(fn ($u) => (int) $u->id === (int) $comment->user_id)
                 ->each(function ($user) use ($comment) {
-                    $user->notify(new CommentNotification($comment));
+                    HelpdeskNotifier::send($user, new CommentNotification($comment));
                 });
         });
     }

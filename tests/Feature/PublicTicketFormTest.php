@@ -589,15 +589,11 @@ class PublicTicketFormTest extends TestCase
             }
         });
 
-        try {
-            $service->create($reporter, $payload, [$attachment], $submissionToken);
-            $this->fail('The forced post-commit hydration failure was not thrown.');
-        } catch (RuntimeException $exception) {
-            $this->assertSame('forced post-commit hydration failure', $exception->getMessage());
-        }
+        $created = $service->create($reporter, $payload, [$attachment], $submissionToken);
 
         $this->assertTrue($hydrationExceptionThrown);
         $ticket = Ticket::query()->sole();
+        $this->assertSame($created->id, $ticket->id);
         $attachmentPath = $ticket->supporting_attachments[0] ?? null;
         $this->assertIsString($attachmentPath);
         Storage::disk('public')->assertExists($attachmentPath);

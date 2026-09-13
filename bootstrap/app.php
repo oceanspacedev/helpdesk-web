@@ -25,6 +25,8 @@ use Illuminate\Http\Middleware\SetCacheHeaders;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Validation\ValidationException;
+use League\Flysystem\UnableToRetrieveMetadata;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -75,10 +77,26 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->throttleApi('api');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->dontReportWhen(function (Throwable $e): bool {
+            return $e instanceof UnableToRetrieveMetadata
+                && str_contains($e->getMessage(), 'livewire-tmp');
+        });
+
         $exceptions->reportable(function (Throwable $e) use ($exceptions): void {
             if ($exceptions->handler->shouldReport($e)) {
                 FilamentExceptions::report($e);
             }
+        });
+
+        $exceptions->render(function (UnableToRetrieveMetadata $exception, Request $request) {
+            if (! str_contains($exception->getMessage(), 'livewire-tmp')) {
+                return null;
+            }
+
+            throw ValidationException::withMessages([
+                'data.supporting_attachments' => \App\Support\SafeUploadedFile::MISSING_MESSAGE,
+                'data.attachments' => \App\Support\SafeUploadedFile::MISSING_MESSAGE,
+            ]);
         });
 
         $exceptions->render(function (MethodNotAllowedHttpException $exception, Request $request) {

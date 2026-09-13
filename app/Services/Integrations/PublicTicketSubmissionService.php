@@ -12,18 +12,26 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Support\HelpdeskIntegrationClient;
 use App\Support\PhoneNumber;
+use App\Support\SafeUploadedFile;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use RuntimeException;
 use Throwable;
 
 class PublicTicketSubmissionService
 {
     private const CLIENT_ID = 'public-helpdesk-form';
+
+    /**
+     * Form publik adalah pengumpul data. Titik tetapnya adalah satu tiket Open
+     * milik pelapor yang terikat. Lampiran, hidrasi relasi, dan notifikasi
+     * boleh gagal tanpa membatalkan laporan yang sudah tersimpan.
+     */
 
     /**
      * @param  list<UploadedFile>  $uploads
@@ -90,11 +98,16 @@ class PublicTicketSubmissionService
                 if ($submission->status === 'completed') {
                     $ticketId = (int) data_get($submission->response, 'ticket_id');
                     $existing = Ticket::query()->find($ticketId);
-                    if (! $existing) {
-                        throw new RuntimeException('Catatan idempotensi tidak menunjuk tiket yang tersedia.');
+                    if ($existing) {
+                        return $existing;
                     }
 
-                    return $existing;
+                    Log::warning('Idempotensi form publik menunjuk tiket yang sudah tidak ada; slot dibuka ulang agar laporan tetap terkumpul.', [
+                        'ticket_id' => $ticketId,
+                    ]);
+                    $submission->status = 'processing';
+                    $submission->response = null;
+                    $submission->save();
                 }
 
                 $freshReporter = User::query()
@@ -110,22 +123,28 @@ class PublicTicketSubmissionService
                     ]);
                 }
 
-                $unit = Unit::query()->findOrFail((int) $data['unit_id']);
-                $category = ProblemCategory::query()
-                    ->whereKey((int) $data['problem_category_id'])
-                    ->where('unit_id', $unit->id)
-                    ->firstOrFail();
-                $priority = Priority::query()->findOrFail((int) $data['priority_id']);
-                $businessEntity = BusinessEntity::query()->findOrFail((int) $data['business_entities_id']);
+                try {
+                    $unit = Unit::query()->findOrFail((int) $data['unit_id']);
+                    $category = ProblemCategory::query()
+                        ->whereKey((int) $data['problem_category_id'])
+                        ->where('unit_id', $unit->id)
+                        ->firstOrFail();
+                    $priority = Priority::query()->findOrFail((int) $data['priority_id']);
+                    $businessEntity = BusinessEntity::query()->findOrFail((int) $data['business_entities_id']);
+                } catch (ModelNotFoundException) {
+                    throw ValidationException::withMessages([
+                        'ticket' => 'Pilihan divisi, kategori, prioritas, atau badan usaha sudah tidak tersedia. Muat ulang halaman.',
+                    ]);
+                }
 
                 foreach (array_slice($uploads, 0, 5) as $upload) {
                     if (! $upload instanceof UploadedFile) {
                         continue;
                     }
 
-                    $path = $upload->store('ticket-supporting/'.now()->format('m-y'), 'public');
-                    if (! is_string($path) || $path === '') {
-                        throw new RuntimeException('Lampiran gagal disimpan.');
+                    $path = $this->storeAttachment($upload);
+                    if ($path === null) {
+                        continue;
                     }
 
                     $storedPaths[] = $path;
@@ -170,14 +189,44 @@ class PublicTicketSubmissionService
             throw $exception;
         }
 
-        return $ticket->loadMissing([
-            'priority',
-            'unit',
-            'owner',
-            'problemCategory',
-            'ticketStatus',
-            'businessEntity',
-        ]);
+        try {
+            $ticket->loadMissing([
+                'priority',
+                'unit',
+                'owner',
+                'problemCategory',
+                'ticketStatus',
+                'businessEntity',
+            ]);
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+
+        return $ticket;
+    }
+
+    public function findCommitted(User $reporter, string $submissionToken): ?Ticket
+    {
+        $submissionToken = trim($submissionToken);
+        if ($submissionToken === '') {
+            return null;
+        }
+
+        $submission = McpTicketCreationRequest::query()
+            ->where('client_key', HelpdeskIntegrationClient::persistentKey(self::CLIENT_ID))
+            ->where('key_hash', hash('sha256', $submissionToken))
+            ->where('status', 'completed')
+            ->first();
+        if (! $submission) {
+            return null;
+        }
+
+        $ticket = Ticket::query()->find((int) data_get($submission->response, 'ticket_id'));
+        if (! $ticket || (int) $ticket->owner_id !== (int) $reporter->id) {
+            return null;
+        }
+
+        return $ticket;
     }
 
     /**
@@ -192,15 +241,12 @@ class PublicTicketSubmissionService
             }
 
             $path = $upload->getRealPath();
-            $contentHash = is_string($path) && $path !== '' ? hash_file('sha256', $path) : false;
-            if (! is_string($contentHash)) {
-                throw new RuntimeException('Lampiran tidak dapat dibaca untuk verifikasi pengiriman.');
-            }
+            $contentHash = is_string($path) && $path !== '' ? @hash_file('sha256', $path) : false;
 
             $files[] = [
                 'name' => $upload->getClientOriginalName(),
-                'size' => $upload->getSize(),
-                'content_hash' => $contentHash,
+                'size' => SafeUploadedFile::size($upload) ?? 0,
+                'content_hash' => is_string($contentHash) ? $contentHash : 'unreadable',
             ];
         }
 
@@ -214,6 +260,30 @@ class PublicTicketSubmissionService
             'description' => (string) $data['description'],
             'attachments' => $files,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+    }
+
+    private function storeAttachment(UploadedFile $upload): ?string
+    {
+        try {
+            $path = $upload->store('ticket-supporting/'.now()->format('m-y'), 'public');
+        } catch (Throwable $exception) {
+            report($exception);
+            Log::warning('Lampiran form publik dilewati karena gagal disimpan.', [
+                'name' => $upload->getClientOriginalName(),
+            ]);
+
+            return null;
+        }
+
+        if (! is_string($path) || $path === '') {
+            Log::warning('Lampiran form publik dilewati karena penyimpanan mengembalikan path kosong.', [
+                'name' => $upload->getClientOriginalName(),
+            ]);
+
+            return null;
+        }
+
+        return $path;
     }
 
     private function description(string $description): string

@@ -12,6 +12,7 @@ use App\Models\Ticket;
 use App\Models\TicketStatus;
 use App\Models\Unit;
 use App\Models\User;
+use App\Support\SafeUploadedFile;
 use Carbon\Carbon;
 use Filament\Actions;
 use Filament\Forms;
@@ -121,27 +122,10 @@ class TicketResource extends Resource
                             'image/jpeg',
                             'image/png',
                         ])
-                        ->maxSize(10240)
                         ->maxFiles(5)
                         ->enableDownload()
                         ->rules([
-                            fn () => function ($attribute, $value, $fail): void {
-                                if (! is_array($value)) {
-                                    return;
-                                }
-
-                                $totalBytes = 0;
-
-                                foreach ($value as $file) {
-                                    if (is_object($file) && method_exists($file, 'getSize')) {
-                                        $totalBytes += $file->getSize();
-                                    }
-                                }
-
-                                if ($totalBytes > (10 * 1024 * 1024)) {
-                                    $fail('Total ukuran file maksimal 10MB.');
-                                }
-                            },
+                            SafeUploadedFile::rule(10 * 1024 * 1024, 10 * 1024 * 1024, 5),
                         ])
                         ->helperText(__('Diizinkan: PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, ZIP, RAR, JPG, PNG. Total maksimal 10MB (maks 5 file).'))
                         ->columnSpan([
