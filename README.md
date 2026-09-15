@@ -341,11 +341,10 @@ Jangan commit `.env` atau credential apa pun ke Git. Daftar berikut mengikuti [`
 | `APP_NAME` | Tidak | Nama tampilan; default `Helpdesk` |
 | `APP_ENV` / `APP_DEBUG` | Ya | Environment dan debug |
 | `DB_CONNECTION` / `DB_*` | Ya | Driver dan koneksi database; default proyek `mysql` |
-| `CACHE_DRIVER` | Ya | Cache default; `.env.example` memakai `file`. Multi-instance production untuk MCP/OTP membutuhkan store bersama, biasanya Redis |
+| `CACHE_STORE` | Ya | Cache default; `.env.example` memakai `file`. Multi-instance production untuk MCP/OTP membutuhkan store bersama, biasanya Redis |
 | `FILESYSTEM_DISK` | Ya | Disk filesystem default; `local`, `public`, atau `s3` |
 | `SESSION_DRIVER` | Ya | Penyimpanan session; default `file` |
 | `QUEUE_CONNECTION` | Ya | Backend queue; default `sync` |
-| `BROADCAST_CONNECTION` | Tidak | Default `null` |
 | `REDIS_HOST` / `REDIS_PASSWORD` / `REDIS_PORT` | Jika Redis dipakai | Koneksi Redis untuk cache/session/lock bersama |
 | `MAIL_*` | Untuk email | SMTP dan identitas pengirim; `.env.example` menunjuk Mailpit |
 | `MAIL_TIMEOUT` | Tidak | Timeout SMTP dalam detik; default `10` agar hang mail tidak memakan `max_execution_time` |
@@ -361,9 +360,8 @@ Jangan commit `.env` atau credential apa pun ke Git. Daftar berikut mengikuti [`
 | `INERTIA_SSR_ENABLED` | Tidak | SSR Inertia; default `false` |
 | `HELPDESK_MCP_LOCAL_CLIENT_ID` | Tidak | ID klien MCP stdio lokal; unik per mesin klien |
 | `TALENTA_EMPLOYEE_FILE` | Tidak | Override path JSON karyawan; default berkas di root repositori |
-| `PUSHER_*` / `VITE_PUSHER_*` | Tidak | Kredensial broadcast Vite/Pusher |
 
-Proyek ini membaca cache lewat `CACHE_DRIVER` di `config/cache.php`. Setelah migration, token MCP server-wide dikelola di **Admin → Pengaturan → Pengaturan MCP**. Environment MCP lama tetap didukung sebagai fallback rollout; daftar lengkapnya ada di [`docs/mcp/README.md`](docs/mcp/README.md).
+Proyek ini membaca cache lewat `CACHE_STORE` di `config/cache.php`. Setelah migration, token MCP server-wide dikelola di **Admin → Pengaturan → Pengaturan MCP**. Environment MCP lama tetap didukung sebagai fallback rollout; daftar lengkapnya ada di [`docs/mcp/README.md`](docs/mcp/README.md).
 
 Untuk local development tanpa SMTP:
 
@@ -496,7 +494,7 @@ Sebelum membuka PR, pastikan:
 
 ## Testing dan quality check
 
-`phpunit.xml` mengunci test ke SQLite in-memory (`DB_CONNECTION=sqlite`, `DB_DATABASE=:memory:`), `CACHE_DRIVER=array`, session array, queue sync, dan mail array. Full test suite tidak menggunakan database development dari `.env`.
+`phpunit.xml` mengunci test ke SQLite in-memory (`DB_CONNECTION=sqlite`, `DB_DATABASE=:memory:`), `CACHE_STORE=array`, session array, queue sync, dan mail array. Full test suite tidak menggunakan database development dari `.env`.
 
 ```bash
 php artisan test
