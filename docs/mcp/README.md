@@ -34,7 +34,7 @@ APP_URL=https://helpdesk.example.com
 # Keep one existing value on every node; do not regenerate it during deploys.
 APP_KEY=base64:REPLACE_WITH_THE_SHARED_LARAVEL_KEY
 
-CACHE_DRIVER=redis
+CACHE_STORE=redis
 SESSION_DRIVER=redis
 
 # Required because reporter ownership is proven through WhatsApp OTP.
