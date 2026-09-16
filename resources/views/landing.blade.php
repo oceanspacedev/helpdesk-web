@@ -6,7 +6,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ config('app.name') }} </title>
-    <meta name="description" content="{{ env('APP_DESCRIPTION', 'Laravel description') }}">
+    <meta name="description" content="{{ config('app.description') }}">
     @vite(['resources/css/app.css'])
 </head>
 
@@ -34,7 +34,7 @@
                 <h1 class="mb-4 max-w-2xl text-4xl font-extrabold leading-none md:text-5xl xl:text-6xl dark:text-white">
                     {{ config('app.name') }}</h1>
                 <p class="mb-6 max-w-2xl font-light text-gray-500 lg:mb-8 md:text-lg lg:text-xl dark:text-gray-400">
-                    {{ env('APP_DESCRIPTION', 'This is descriptions') }}</p>
+                    {{ config('app.description') }}</p>
                 <a href="{{ route('filament.admin.auth.login') }}"
                     class="inline-flex justify-center items-center py-3 px-5 mr-3 text-base font-medium text-center text-white rounded-lg bg-primary-700 hover:bg-primary-800 focus:ring-4 focus:ring-primary-300 dark:focus:ring-primary-900">
                     {{ __('Login') }}

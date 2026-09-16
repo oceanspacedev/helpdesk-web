@@ -260,6 +260,8 @@ flowchart TB
 | Authorization | Filament Shield / Spatie Permission |
 | MCP | Laravel MCP (`/mcp/helpdesk`, stdio `helpdesk`) |
 | Notifikasi | Mail + WhatsApp gateway (`WAG_URL`, `WAG_TOKEN`) |
+| Queue | Laravel Horizon 5 (`php artisan horizon` bila `QUEUE_CONNECTION=redis`) |
+| Logs | [opcodesio/log-viewer](https://github.com/opcodesio/log-viewer) di `/log-viewer` |
 | Test | PHPUnit 11 / `php artisan test` |
 | Formatter | Laravel Pint |
 
@@ -344,7 +346,9 @@ Jangan commit `.env` atau credential apa pun ke Git. Daftar berikut mengikuti [`
 | `CACHE_STORE` | Ya | Cache default; `.env.example` memakai `file`. Multi-instance production untuk MCP/OTP membutuhkan store bersama, biasanya Redis |
 | `FILESYSTEM_DISK` | Ya | Disk filesystem default; `local`, `public`, atau `s3` |
 | `SESSION_DRIVER` | Ya | Penyimpanan session; default `file` |
-| `QUEUE_CONNECTION` | Ya | Backend queue; default `sync` |
+| `QUEUE_CONNECTION` | Ya | Backend queue; default `sync`. Horizon membutuhkan `redis` |
+| `HORIZON_PATH` | Tidak | UI Horizon; default `horizon` |
+| `LOG_VIEWER_ENABLED` / `LOG_VIEWER_PATH` | Tidak | UI [Log Viewer](https://github.com/opcodesio/log-viewer); default `/log-viewer` |
 | `REDIS_HOST` / `REDIS_PASSWORD` / `REDIS_PORT` | Jika Redis dipakai | Koneksi Redis untuk cache/session/lock bersama |
 | `MAIL_*` | Untuk email | SMTP dan identitas pengirim; `.env.example` menunjuk Mailpit |
 | `MAIL_TIMEOUT` | Tidak | Timeout SMTP dalam detik; default `10` agar hang mail tidak memakan `max_execution_time` |

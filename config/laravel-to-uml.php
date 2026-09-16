@@ -69,7 +69,7 @@ return [
         'Exceptions/Handler.php',
         'Http/Controllers/Controller.php',
         'Http/Middleware/Authenticate.php',
-        'Http/Middleware/EncryptCookies.php',
+        'Http/Middleware/HandleInertiaRequests.php',
         'Http/Middleware/PreventRequestsDuringMaintenance.php',
         'Http/Middleware/RedirectIfAuthenticated.php',
         'Http/Middleware/TrimStrings.php',

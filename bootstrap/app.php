@@ -1,30 +1,12 @@
 <?php
 
-use App\Http\Middleware\Authenticate;
-use App\Http\Middleware\EncryptCookies;
-use App\Http\Middleware\RedirectIfAuthenticated;
-use App\Http\Middleware\ValidateSignature;
-use App\Http\Middleware\VerifyCsrfToken;
 use App\Http\Middleware\VerifyHelpdeskMcpToken;
 use App\Http\Middleware\VerifyHelpdeskStaffMcpToken;
 use BezhanSalleh\FilamentExceptions\FilamentExceptions;
-use Illuminate\Auth\Middleware\AuthenticateWithBasicAuth;
-use Illuminate\Auth\Middleware\Authorize;
-use Illuminate\Auth\Middleware\EnsureEmailIsVerified;
-use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
-use Illuminate\Foundation\Http\Middleware\PreventRequestsDuringMaintenance;
-use Illuminate\Foundation\Http\Middleware\TrimStrings;
-use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
-use Illuminate\Foundation\Http\Middleware\ValidatePostSize;
-use Illuminate\Http\Middleware\HandleCors;
-use Illuminate\Http\Middleware\SetCacheHeaders;
-use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Validation\ValidationException;
 use League\Flysystem\UnableToRetrieveMetadata;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
@@ -46,35 +28,15 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_AWS_ELB,
         );
 
-        $middleware->use([
-            TrustProxies::class,
-            HandleCors::class,
-            PreventRequestsDuringMaintenance::class,
-            ValidatePostSize::class,
-            TrimStrings::class,
-            ConvertEmptyStringsToNull::class,
-        ]);
-
-        $middleware->web(replace: [
-            Illuminate\Cookie\Middleware\EncryptCookies::class => EncryptCookies::class,
-            ValidateCsrfToken::class => VerifyCsrfToken::class,
-        ]);
-
         $middleware->alias([
-            'auth' => Authenticate::class,
-            'auth.basic' => AuthenticateWithBasicAuth::class,
-            'cache.headers' => SetCacheHeaders::class,
-            'can' => Authorize::class,
-            'guest' => RedirectIfAuthenticated::class,
-            'password.confirm' => RequirePassword::class,
-            'signed' => ValidateSignature::class,
-            'throttle' => ThrottleRequests::class,
-            'verified' => EnsureEmailIsVerified::class,
             'helpdesk.mcp' => VerifyHelpdeskMcpToken::class,
             'helpdesk.staff.mcp' => VerifyHelpdeskStaffMcpToken::class,
         ]);
 
         $middleware->throttleApi('api');
+
+        $middleware->redirectGuestsTo(fn () => route('filament.admin.auth.login'));
+        $middleware->redirectUsersTo('/admin');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->dontReportWhen(function (Throwable $e): bool {

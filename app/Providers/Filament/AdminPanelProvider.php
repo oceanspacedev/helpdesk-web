@@ -6,6 +6,7 @@ use App\Filament\Livewire\PersonalInfo;
 use App\Filament\Livewire\UpdatePassword;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\MyProfile;
+use App\Support\ObservabilityAccess;
 use Apriansyahrs\MekayaTheme\MekayaPlugin;
 use Awcodes\Overlook\OverlookPlugin;
 use Awcodes\Overlook\Widgets\OverlookWidget;
@@ -61,6 +62,7 @@ class AdminPanelProvider extends PanelProvider
                 Dashboard::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
+            ->navigationItems(ObservabilityAccess::filamentNavigationItems())
             ->widgets([
                 Widgets\AccountWidget::class,
                 OverlookWidget::class,
