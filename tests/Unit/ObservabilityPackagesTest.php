@@ -27,5 +27,7 @@ class ObservabilityPackagesTest extends TestCase
         $this->assertStringContainsString('HorizonServiceProvider::class', $providers);
         $this->assertStringContainsString('ObservabilityAccess::filamentNavigationItems()', (string) file_get_contents($root.'/app/Providers/Filament/AdminPanelProvider.php'));
         $this->assertStringContainsString('horizon:snapshot', (string) file_get_contents($root.'/routes/console.php'));
+        $this->assertStringContainsString("'queue' => ['notifications', 'default']", (string) file_get_contents($root.'/config/horizon.php'));
+        $this->assertStringNotContainsString('supervisor-notifications', (string) file_get_contents($root.'/config/horizon.php'));
     }
 }

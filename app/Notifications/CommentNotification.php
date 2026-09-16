@@ -27,6 +27,7 @@ class CommentNotification extends Notification implements ShouldQueueAfterCommit
     {
         $this->comment = $comment;
         $this->ticket = $comment->ticket;
+        $this->onQueue('notifications');
     }
 
     /**

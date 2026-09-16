@@ -260,7 +260,7 @@ flowchart TB
 | Authorization | Filament Shield / Spatie Permission |
 | MCP | Laravel MCP (`/mcp/helpdesk`, stdio `helpdesk`) |
 | Notifikasi | Mail + WhatsApp gateway (`WAG_URL`, `WAG_TOKEN`) |
-| Queue | Laravel Horizon 5 (`php artisan horizon` bila `QUEUE_CONNECTION=redis`) |
+| Queue | Laravel Horizon 5 (`php artisan horizon`, `QUEUE_CONNECTION=redis`) |
 | Logs | [opcodesio/log-viewer](https://github.com/opcodesio/log-viewer) di `/log-viewer` |
 | Test | PHPUnit 11 / `php artisan test` |
 | Formatter | Laravel Pint |
@@ -346,10 +346,10 @@ Jangan commit `.env` atau credential apa pun ke Git. Daftar berikut mengikuti [`
 | `CACHE_STORE` | Ya | Cache default; `.env.example` memakai `file`. Multi-instance production untuk MCP/OTP membutuhkan store bersama, biasanya Redis |
 | `FILESYSTEM_DISK` | Ya | Disk filesystem default; `local`, `public`, atau `s3` |
 | `SESSION_DRIVER` | Ya | Penyimpanan session; default `file` |
-| `QUEUE_CONNECTION` | Ya | Backend queue; default `sync`. Horizon membutuhkan `redis` |
+| `QUEUE_CONNECTION` | Ya | Backend queue; default `redis`. Worker: `php artisan horizon` |
 | `HORIZON_PATH` | Tidak | UI Horizon; default `horizon` |
 | `LOG_VIEWER_ENABLED` / `LOG_VIEWER_PATH` | Tidak | UI [Log Viewer](https://github.com/opcodesio/log-viewer); default `/log-viewer` |
-| `REDIS_HOST` / `REDIS_PASSWORD` / `REDIS_PORT` | Jika Redis dipakai | Koneksi Redis untuk cache/session/lock bersama |
+| `REDIS_HOST` / `REDIS_PASSWORD` / `REDIS_PORT` | Ya | Koneksi Redis untuk Horizon; cache/session/lock bersama di multi-instance |
 | `MAIL_*` | Untuk email | SMTP dan identitas pengirim; `.env.example` menunjuk Mailpit |
 | `MAIL_TIMEOUT` | Tidak | Timeout SMTP dalam detik; default `10` agar hang mail tidak memakan `max_execution_time` |
 | `WAG_URL` | Untuk WhatsApp | Endpoint gateway WhatsApp (OTP, notifikasi, peringatan SLA, MCP) |
@@ -402,10 +402,10 @@ Scheduler tidak wajib untuk UI, tetapi harus dijalankan bila sedang mengembangka
 php artisan schedule:work
 ```
 
-Queue default adalah `sync`. Jalankan worker hanya jika `QUEUE_CONNECTION` diubah ke driver yang mengantri:
+Queue default adalah `redis`. Jalankan Horizon agar notifikasi tiket tidak menumpuk:
 
 ```bash
-php artisan queue:work
+php artisan horizon
 ```
 
 Untuk frontend production-like:
@@ -522,7 +522,7 @@ Daftar ini adalah batas perilaku aktual, bukan fitur yang dijanjikan:
 3. **Role `Master Admin` tidak memiliki akun seed.** Hanya Super Admin, Admin Unit, dan Staff Unit yang punya login contoh.
 4. **MCP bukan produk utama.** Dokumentasi operasional MCP tetap berbahasa Inggris di `docs/mcp/README.md` dan tidak diganti oleh README ini.
 5. **Tidak ada REST API domain.** Jangan mengasumsikan klien mobile/API terpisah; satu-satunya route `routes/api.php` adalah `GET /api/user`.
-6. **Queue default `sync`.** Notifikasi dan pekerjaan berjalan inline sampai `QUEUE_CONNECTION` diubah.
+6. **Queue default `redis` + Horizon.** Notifikasi tiket mengantri di `notifications`. Tanpa Redis dan `php artisan horizon`, notifikasi tidak terkirim. Tes memakai `QUEUE_CONNECTION=sync` di `phpunit.xml`.
 7. **Multi-instance membutuhkan store bersama.** Komentar di `.env.example` menyatakan Redis diperlukan agar draft MCP, OTP, registrasi, rate limit, dan lock terbagi.
 8. **Registrasi panel, reset password, dan registrasi Socialite dimatikan.** Onboarding staf tetap manual / seeder / Talenta OTP.
 

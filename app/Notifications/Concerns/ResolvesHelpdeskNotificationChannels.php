@@ -4,6 +4,10 @@ namespace App\Notifications\Concerns;
 
 trait ResolvesHelpdeskNotificationChannels
 {
+    public int $tries = 3;
+
+    public int $timeout = 60;
+
     /**
      * @param  list<class-string|string>  $channels
      * @return list<class-string|string>

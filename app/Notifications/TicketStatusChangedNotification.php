@@ -20,7 +20,9 @@ class TicketStatusChangedNotification extends Notification implements ShouldQueu
     public function __construct(
         protected $ticket,
         protected int $status,
-    ) {}
+    ) {
+        $this->onQueue('notifications');
+    }
 
     /**
      * @return array<int, string>

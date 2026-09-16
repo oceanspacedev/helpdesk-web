@@ -24,6 +24,7 @@ class ClosedTicketNotification extends Notification implements ShouldQueueAfterC
     public function __construct($ticket)
     {
         $this->ticket = $ticket;
+        $this->onQueue('notifications');
     }
 
     /**

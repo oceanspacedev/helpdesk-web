@@ -16,7 +16,10 @@ class TicketSubmittedNotification extends Notification implements ShouldQueueAft
     use Queueable;
     use ResolvesHelpdeskNotificationChannels;
 
-    public function __construct(protected Ticket $ticket) {}
+    public function __construct(protected Ticket $ticket)
+    {
+        $this->onQueue('notifications');
+    }
 
     /**
      * @return array<int, string>

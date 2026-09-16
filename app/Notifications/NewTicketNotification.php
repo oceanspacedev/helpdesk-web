@@ -24,6 +24,7 @@ class NewTicketNotification extends Notification implements ShouldQueueAfterComm
     public function __construct($ticket)
     {
         $this->ticket = $ticket;
+        $this->onQueue('notifications');
     }
 
     /**
