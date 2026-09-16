@@ -3,15 +3,25 @@
 namespace App\Providers;
 
 use App\Filament\Auth\Pages\PhoneLogin;
+use App\Models\User;
+use App\Policies\ActivityPolicy;
+use App\Policies\ExceptionPolicy;
+use App\Policies\PermissionPolicy;
+use App\Policies\RolePolicy;
 use App\Services\Integrations\HelpdeskMcpConfiguration;
 use App\Services\Integrations\PublicReporterIdentityService;
 use App\Support\ObservabilityAccess;
+use BezhanSalleh\FilamentExceptions\Models\Exception;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Livewire\Livewire;
+use Spatie\Activitylog\Models\Activity;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -20,10 +30,23 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(HelpdeskMcpConfiguration::class);
     }
 
+    protected function registerAuthorization(): void
+    {
+        Gate::policy(Role::class, RolePolicy::class);
+        Gate::policy(Permission::class, PermissionPolicy::class);
+        Gate::policy(Activity::class, ActivityPolicy::class);
+        Gate::policy(Exception::class, ExceptionPolicy::class);
+
+        Gate::before(function (User $user): ?bool {
+            return $user->isSuperAdmin() ? true : null;
+        });
+    }
+
     public function boot(): void
     {
         Livewire::component('phone-login', PhoneLogin::class);
         ObservabilityAccess::register();
+        $this->registerAuthorization();
 
         View::prependNamespace('filament-panels', resource_path('views/vendor/filament-panels'));
 

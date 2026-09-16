@@ -1,6 +1,8 @@
 <?php
 
 use App\Filament\Pages\Dashboard;
+use Awcodes\Overlook\Overlook;
+use Filament\AvatarProviders\UiAvatarsProvider;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Http\Middleware\MirrorConfigToSubpackages;
@@ -11,6 +13,7 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use JeffGreco13\FilamentBreezy\Http\Livewire\Auth\Login;
 
 return [
     /*
@@ -85,7 +88,7 @@ return [
     'auth' => [
         'guard' => env('FILAMENT_AUTH_GUARD', 'web'),
         'pages' => [
-            'login' => \JeffGreco13\FilamentBreezy\Http\Livewire\Auth\Login::class,
+            'login' => Login::class,
         ],
     ],
 
@@ -136,7 +139,7 @@ return [
         'path' => app_path('Filament/Widgets'),
         'register' => [
             Widgets\AccountWidget::class,
-            \Awcodes\Overlook\Overlook::class,
+            Overlook::class,
         ],
     ],
 
@@ -181,8 +184,6 @@ return [
         'enabled' => true,
         'polling_interval' => '30s',
     ],
-
-
 
     /*
     |--------------------------------------------------------------------------
@@ -250,7 +251,7 @@ return [
     |
     */
 
-    'default_avatar_provider' => \Filament\AvatarProviders\UiAvatarsProvider::class,
+    'default_avatar_provider' => UiAvatarsProvider::class,
 
     /*
     |--------------------------------------------------------------------------
@@ -262,7 +263,7 @@ return [
     |
     */
 
-    'default_filesystem_disk' => env('FILAMENT_FILESYSTEM_DRIVER', 'public'),
+    'default_filesystem_disk' => env('FILAMENT_FILESYSTEM_DISK', 'public'),
 
     /*
     |--------------------------------------------------------------------------
@@ -292,7 +293,7 @@ return [
     'middleware' => [
         'auth' => [
             Authenticate::class,
-            'verified'
+            'verified',
         ],
         'base' => [
             EncryptCookies::class,
