@@ -19,6 +19,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Application Description
+    |--------------------------------------------------------------------------
+    |
+    | Used for public HTML metadata. Read this through config() so the value
+    | remains available after `php artisan config:cache`.
+    |
+    */
+
+    'description' => env('APP_DESCRIPTION', 'Sistem helpdesk untuk pengajuan dan penyelesaian tiket dukungan'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |
@@ -125,6 +137,12 @@ return [
 
     'cipher' => 'AES-256-CBC',
 
+    'previous_keys' => [
+        ...array_filter(
+            explode(',', (string) env('APP_PREVIOUS_KEYS', ''))
+        ),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Maintenance Mode Driver
@@ -140,7 +158,7 @@ return [
 
     'maintenance' => [
         'driver' => env('APP_MAINTENANCE_DRIVER', 'file'),
-        // 'store'  => 'redis',
+        'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
     /*

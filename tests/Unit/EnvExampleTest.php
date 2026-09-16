@@ -18,6 +18,7 @@ class EnvExampleTest extends TestCase
         foreach ([
             'CACHE_STORE',
             'MAIL_SCHEME',
+            'BROADCAST_CONNECTION',
             'APP_LOCALE',
             'APP_FALLBACK_LOCALE',
             'APP_FAKER_LOCALE',
@@ -36,6 +37,7 @@ class EnvExampleTest extends TestCase
         foreach ([
             'CACHE_DRIVER',
             'MAIL_ENCRYPTION',
+            'BROADCAST_DRIVER',
             'PUSHER_APP_ID',
             'PUSHER_APP_KEY',
             'PUSHER_APP_SECRET',
@@ -68,10 +70,16 @@ class EnvExampleTest extends TestCase
             'PHONE_OTP_LOGIN_TTL_MINUTES',
             'WHATSAPP_OTP_TTL_MINUTES',
             'HELPDESK_MCP_LOCAL_CLIENT_ID',
+            'HORIZON_PATH',
+            'LOG_VIEWER_ENABLED',
+            'LOG_VIEWER_PATH',
         ] as $key) {
             $this->assertContains($key, $keys, "{$key} must remain in .env.example");
         }
 
+        $this->assertMatchesRegularExpression('/^\s*#\s*APP_MAINTENANCE_STORE=/m', $contents);
+        $this->assertMatchesRegularExpression('/^\s*#\s*PHP_CLI_SERVER_WORKERS=/m', $contents);
+        $this->assertMatchesRegularExpression('/^\s*#\s*CACHE_PREFIX=/m', $contents);
         $this->assertMatchesRegularExpression('/^\s*#\s*TALENTA_EMPLOYEE_FILE=/m', $contents);
     }
 
