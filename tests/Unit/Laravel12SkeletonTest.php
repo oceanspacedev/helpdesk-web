@@ -26,6 +26,8 @@ class Laravel12SkeletonTest extends TestCase
         $this->assertFileDoesNotExist($root.'/app/Providers/RouteServiceProvider.php');
         $this->assertFileDoesNotExist($root.'/app/Providers/EventServiceProvider.php');
         $this->assertFileDoesNotExist($root.'/app/Providers/BroadcastServiceProvider.php');
+        $this->assertFileDoesNotExist($root.'/app/Providers/AuthServiceProvider.php');
+        $this->assertTrue(str_starts_with((string) ($composer['require']['filament/filament'] ?? ''), '^4.'));
         $this->assertFileDoesNotExist($root.'/tests/CreatesApplication.php');
         $this->assertFileDoesNotExist($root.'/app/Http/Middleware/EncryptCookies.php');
         $this->assertFileDoesNotExist($root.'/app/Http/Middleware/VerifyCsrfToken.php');
@@ -33,5 +35,7 @@ class Laravel12SkeletonTest extends TestCase
         $this->assertStringNotContainsString('CACHE_DRIVER', $phpunit);
         $this->assertStringNotContainsString('MAIL_ENCRYPTION', $phpunit);
         $this->assertStringNotContainsString('BROADCAST_DRIVER', $phpunit);
+        $this->assertStringNotContainsString('BadgeColumn', (string) file_get_contents($root.'/app/Filament/Resources/TicketResource.php'));
+        $this->assertStringNotContainsString('enableDownload()', (string) file_get_contents($root.'/app/Filament/Resources/TicketResource.php'));
     }
 }

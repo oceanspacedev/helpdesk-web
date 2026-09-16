@@ -123,7 +123,7 @@ class TicketResource extends Resource
                             'image/png',
                         ])
                         ->maxFiles(5)
-                        ->enableDownload()
+                        ->downloadable()
                         ->rules([
                             SafeUploadedFile::rule(10 * 1024 * 1024, 10 * 1024 * 1024, 5),
                         ])
@@ -287,21 +287,23 @@ class TicketResource extends Resource
                     ->label(__('Problem Category'))
                     ->limit(20)
                     ->toggleable(),
-                Tables\Columns\BadgeColumn::make('ticketStatus.name')
+                Tables\Columns\TextColumn::make('ticketStatus.name')
                     ->label(__('Status'))
+                    ->badge()
                     ->sortable()
-                    ->colors([
-                        'secondary' => static fn ($state): bool => $state === 'Open',
-                        'warning' => static fn ($state): bool => $state === 'In Progress',
-                        'danger' => static fn ($state): bool => $state === 'Cancel',
-                        'success' => static fn ($state): bool => $state === 'Closed',
-                    ])
-                    ->icons([
-                        'heroicon-o-sparkles' => static fn ($state): bool => $state === 'Open',
-                        'heroicon-o-paper-airplane' => static fn ($state): bool => $state === 'In Progress',
-                        'heroicon-o-x-mark' => static fn ($state): bool => $state === 'Cancel',
-                        'heroicon-o-check' => static fn ($state): bool => $state === 'Closed',
-                    ]),
+                    ->color(fn (?string $state): string => match ($state) {
+                        'In Progress' => 'warning',
+                        'Cancel' => 'danger',
+                        'Closed' => 'success',
+                        default => 'gray',
+                    })
+                    ->icon(fn (?string $state): ?string => match ($state) {
+                        'Open' => 'heroicon-o-sparkles',
+                        'In Progress' => 'heroicon-o-paper-airplane',
+                        'Cancel' => 'heroicon-o-x-mark',
+                        'Closed' => 'heroicon-o-check',
+                        default => null,
+                    }),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime('F j, Y')
                     ->translateLabel()

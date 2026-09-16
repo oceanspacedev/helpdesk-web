@@ -4,8 +4,8 @@ namespace App\Filament\Resources\TicketResource\RelationManagers;
 
 use App\Filament\Resources\TicketResource;
 use App\Models\Comment;
-use App\Support\SafeUploadedFile;
 use App\Models\User;
+use App\Support\SafeUploadedFile;
 use Filament\Actions;
 use Filament\Actions\Action as NotificationAction;
 use Filament\Forms;
@@ -47,7 +47,7 @@ class CommentsRelationManager extends RelationManager
                     Forms\Components\FileUpload::make('attachments')
                         ->disk('public')
                         ->directory('comment-attachments/'.date('m-y'))
-                        ->enableDownload()
+                        ->downloadable()
                         ->rules([
                             SafeUploadedFile::rule(20 * 1024 * 1024, 20 * 1024 * 1024),
                         ]),
