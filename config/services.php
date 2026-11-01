@@ -77,5 +77,11 @@ return [
         // Path file JSON berisi data karyawan (struktur: { "data": { "data": [...] } })
         // Digunakan untuk auto-registrasi akun saat login OTP WhatsApp.
         'employee_file' => env('TALENTA_EMPLOYEE_FILE', base_path('talenta-list-employee.json')),
+
+        // Nama divisi Talenta => nama divisi Helpdesk yang sudah ada, dipakai
+        // php artisan helpdesk:sync-employees. Divisi lain dibuat otomatis.
+        'division_aliases' => [
+            'IT SUPPORT' => 'IT',
+        ],
     ],
 ];

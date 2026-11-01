@@ -12,9 +12,7 @@ class EditUser extends EditRecord
 
     protected function afterSave(): void
     {
-        $this->record->forceFill([
-            'unit_id' => $this->record->units()->orderBy('units.id')->value('units.id'),
-        ])->saveQuietly();
+        $this->record->ensurePrimaryUnitMembership();
     }
 
     protected function getHeaderActions(): array

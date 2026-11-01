@@ -32,6 +32,7 @@ Bahasa utama aplikasi adalah Bahasa Indonesia (locale `id`) dan seluruh perhitun
 - [Konfigurasi environment](#konfigurasi-environment)
 - [Menjalankan aplikasi](#menjalankan-aplikasi)
 - [MCP opsional](#mcp-opsional)
+- [Sinkron data karyawan Talenta](#sinkron-data-karyawan-talenta)
 - [Scheduler SLA](#scheduler-sla)
 - [Workflow development](#workflow-development)
 - [Testing dan quality check](#testing-dan-quality-check)
@@ -95,14 +96,15 @@ Hak akses panel ditentukan permission Filament Shield pada masing-masing role, l
 |---|---|
 | `Super Admin` | Seluruh permission, termasuk Pengaturan MCP. Akses tiket global. |
 | `Master Admin` | Master data (unit, kategori, status, user, SLA unit) dan tiket lintas unit. Bukan Super Admin: halaman Pengaturan MCP menolak akses. |
-| `Admin Unit` | Tiket, kategori, entitas bisnis, komentar, dan tampilan SLA pada unit yang ditugaskan. |
-| `Staff Unit` | Melihat, membuat, dan memperbarui tiket serta komentar pada unit yang ditugaskan. |
+| Anggota divisi (role apa pun) | Menerima notifikasi dan memproses tiket yang masuk ke divisinya. |
+| `Admin Unit` | Seperti anggota divisi, plus kelola kategori, entitas bisnis, hapus tiket, dan tampilan SLA pada unitnya. |
+| `Staff Unit` | Sama dengan anggota divisi; dipertahankan untuk data lama. |
 | `User` | Permission pelapor (lihat/buat tiket dan komentar). Role di-seed, tetapi akun contoh `user@cs.com` **tidak** di-assign role ini. |
 | Pelapor form publik | Tidak memakai panel. Akun minimal berbasis nomor telepon; `tickets.owner_id` menghubungkan tiket ke pelapor. |
 
 Hanya user aktif yang dapat masuk panel. `User::canAccessPanel()` menolak akun nonaktif, dan mengizinkan login bila email terverifikasi **atau** sesi OTP WhatsApp (`helpdesk_phone_verified_user_id`) cocok.
 
-`Super Admin` dan `Master Admin` memiliki akses tiket global (`hasGlobalTicketAccess()`). `Admin Unit` dan `Staff Unit` hanya memproses tiket pada unit yang ditugaskan (`user_entities` / `unit_id`).
+`Super Admin` dan `Master Admin` memiliki akses tiket global (`hasGlobalTicketAccess()`). Selain itu, **setiap anggota aktif sebuah divisi adalah penindak** tiket yang masuk ke divisi itu (`user_entities`): ikut di-blast saat tiket baru masuk dan boleh memproses selama belum ada PIC. Divisi asal (`users.unit_id`) selalu ikut menjadi keanggotaan.
 
 ### Akun uji development
 
@@ -433,6 +435,21 @@ MCP **bukan** alur utama pelapor. Jangan mengarahkan pengguna akhir ke `/mcp/hel
 
 Untuk instalasi klien, kontrak alat, token, gateway WhatsApp, percobaan ulang, dan cutover database production, lihat [dokumentasi MCP](docs/mcp/README.md). Use case terdahulu: [uc-004-mcp-create-ticket](docs/chain-of-truth/ucic/uc-004-mcp-create-ticket.md).
 
+## Sinkron data karyawan Talenta
+
+Profil karyawan (badan usaha, divisi, jabatan, level) diambil dari ekspor direktori Talenta. Tiket menyimpan profil pelapor saat dibuat sebagai bagian "Dari", seperti kop surat.
+
+```bash
+php artisan helpdesk:sync-employees /path/ke/list-employee.json          # preview, tidak menyimpan
+php artisan helpdesk:sync-employees /path/ke/list-employee.json --apply  # simpan
+```
+
+- Akun dicocokkan per NIK (`users.identity`), lalu per nomor HP. Karyawan tanpa akun dibuat dengan role `User`.
+- `branch` → badan usaha, `organization` → divisi, `job` → jabatan, `title` → level. Nama yang belum ada dibuat otomatis.
+- Divisi Talenta yang namanya berbeda dari divisi Helpdesk dipetakan di `services.talenta.division_aliases` (default `IT SUPPORT` → `IT`). Selain itu, ganti nama divisi atau badan usaha di panel agar cocok sebelum `--apply`.
+- Akun yang punya NIK tetapi tidak ada lagi di file dinonaktifkan. `Super Admin` dan `Master Admin` tidak disentuh.
+- Hanya divisi yang punya kategori masalah yang muncul sebagai tujuan laporan.
+
 ## Scheduler SLA
 
 Scheduler menjalankan `sla:check-warnings` **setiap 15 menit**. Command mencari tiket aktif yang `sla_due_at`-nya tersisa ≤ 2 jam dan belum dikirimi peringatan, lalu memberi notifikasi Filament dan WhatsApp kepada PIC atau staf unit.
@@ -450,6 +467,7 @@ Temukan binary PHP dengan `command -v php`. Pantau dan rotasi log scheduler. Com
 | Command | Fungsi |
 |---|---|
 | `php artisan sla:check-warnings` | Cek dan kirim peringatan SLA sekarang |
+| `php artisan helpdesk:sync-employees` | Preview/simpan sinkron data karyawan Talenta |
 | `php artisan schedule:work` | Menjalankan scheduler di proses foreground (local) |
 | `php artisan optimize:clear` | Menghapus cache config, route, event, dan view |
 

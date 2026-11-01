@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class EmployeeService
 {
@@ -136,7 +137,7 @@ class EmployeeService
             $email = '';
         }
 
-        return User::create([
+        $user = User::create([
             'name' => $name,
             'email' => $email !== '' ? $email : null,
             'phone' => $canonicalPhone,
@@ -144,5 +145,22 @@ class EmployeeService
             'identity' => TalentaEmployee::identity($data),
             'is_active' => true,
         ]);
+
+        self::applyTalentaProfile($user, $data);
+
+        return $user;
+    }
+
+    /**
+     * Badan usaha, divisi, dan jabatan dari Talenta. Gagal melengkapi profil
+     * tidak boleh menggagalkan pendaftaran akun.
+     */
+    public static function applyTalentaProfile(User $user, array $employee): void
+    {
+        try {
+            app(TalentaEmployeeSync::class)->applyProfile($user, $employee);
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 }

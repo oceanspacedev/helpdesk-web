@@ -44,8 +44,12 @@ class TicketResource extends Resource
                 Section::make()->schema([
                     Forms\Components\Select::make('unit_id')
                         ->label('Unit / Divisi Tujuan')
-                        ->options(Unit::all()
-                            ->pluck('name', 'id'))
+                        ->options(fn (?Ticket $record): array => Unit::query()
+                            ->acceptingTickets()
+                            ->when($record?->unit_id, fn (Builder $query, int $unitId) => $query->orWhere('units.id', $unitId))
+                            ->orderBy('name')
+                            ->pluck('name', 'id')
+                            ->all())
                         ->searchable()
                         ->required()
                         ->placeholder('Pilih divisi')
@@ -158,13 +162,16 @@ class TicketResource extends Resource
                         ->required(),
 
                     Forms\Components\Select::make('business_entities_id')
-                        ->label(__('Business Entity'))
+                        ->label('Badan Usaha Pelapor')
                         ->options(BusinessEntity::all()
                             ->pluck('name', 'id'))
                         ->searchable()
-                        ->required()
                         ->placeholder('Pilih badan usaha')
-                        ->helperText('Badan usaha yang akan menangani tiket ini.'),
+                        ->helperText('Terisi otomatis dari data karyawan pelapor.')
+                        // Pelapor yang sudah punya profil karyawan tidak perlu memilih.
+                        ->hidden(fn (string $operation): bool => $operation === 'create'
+                            && filled(auth()->user()?->business_entity_id))
+                        ->required(fn (string $operation): bool => $operation === 'create'),
 
                     Forms\Components\Select::make('ticket_statuses_id')
                         ->label(__('Status'))
@@ -199,24 +206,14 @@ class TicketResource extends Resource
                         ),
 
                     Forms\Components\Placeholder::make('owner')
-                        ->translateLabel()
-                        ->content(fn (
-                            ?Ticket $record,
-                        ): string => $record ? $record->owner->name : '-')
-                        ->hidden(
-                            fn () => ! auth()
-                                ->user()
-                                ->hasAnyRole(['Super Admin', 'Master Admin', 'Admin Unit', 'Staff Unit']),
-                        ),
+                        ->label('Dari')
+                        ->content(fn (?Ticket $record): string => $record ? self::senderLine($record) : '-')
+                        ->hidden(fn (?Ticket $record): bool => ! self::canSeeSender($record)),
 
                     Forms\Components\Placeholder::make('owner_phone')
                         ->label('Nomor WhatsApp Pelapor')
                         ->content(fn (?Ticket $record): string => $record?->owner?->phone ?: '-')
-                        ->hidden(
-                            fn () => ! auth()
-                                ->user()
-                                ->hasAnyRole(['Super Admin', 'Master Admin', 'Admin Unit', 'Staff Unit']),
-                        ),
+                        ->hidden(fn (?Ticket $record): bool => ! self::canSeeSender($record)),
 
                     Forms\Components\Placeholder::make('created_at')
                         ->translateLabel()
@@ -461,6 +458,35 @@ class TicketResource extends Resource
         });
 
         return (string) $count;
+    }
+
+    /**
+     * Baris "Dari" seperti kop surat: nama, jabatan, divisi asal, badan usaha.
+     */
+    public static function senderLine(Ticket $record): string
+    {
+        $record->loadMissing(['owner', 'reporterUnit', 'businessEntity']);
+
+        return collect([
+            $record->owner?->name,
+            $record->reporter_job_title,
+            $record->reporterUnit?->name,
+            $record->businessEntity?->name,
+        ])->map(fn (?string $part): string => trim((string) $part))
+            ->filter()
+            ->implode(' · ') ?: '-';
+    }
+
+    private static function canSeeSender(?Ticket $record): bool
+    {
+        $user = auth()->user();
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        return $record
+            ? $user->canProcessTicketsForUnit((int) $record->unit_id)
+            : $user->canProcessTickets();
     }
 
     public static function getPluralModelLabel(): string

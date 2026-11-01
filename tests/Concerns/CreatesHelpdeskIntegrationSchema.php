@@ -49,6 +49,7 @@ trait CreatesHelpdeskIntegrationSchema
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('unit_id')->nullable();
+            $table->unsignedBigInteger('business_entity_id')->nullable();
             $table->string('name');
             $table->string('email')->nullable()->unique();
             $table->timestamp('email_verified_at')->nullable();
@@ -56,6 +57,9 @@ trait CreatesHelpdeskIntegrationSchema
             $table->string('password')->nullable();
             $table->string('remember_token')->nullable();
             $table->string('identity')->nullable();
+            $table->string('job_title', 150)->nullable();
+            $table->string('job_level', 100)->nullable();
+            $table->timestamp('talenta_synced_at')->nullable();
             $table->string('phone', 20)->nullable()->unique();
             $table->string('phone_normalized', 20)->nullable()->index();
             $table->boolean('is_active')->default(true);
@@ -149,6 +153,8 @@ trait CreatesHelpdeskIntegrationSchema
             $table->unsignedBigInteger('priority_id');
             $table->unsignedBigInteger('unit_id');
             $table->unsignedBigInteger('owner_id');
+            $table->unsignedBigInteger('reporter_unit_id')->nullable();
+            $table->string('reporter_job_title', 150)->nullable();
             $table->unsignedBigInteger('problem_category_id');
             $table->string('title');
             $table->text('description');
