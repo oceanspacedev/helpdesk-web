@@ -11,7 +11,7 @@ class HelpdeskFormOptionsService
 {
     public function formOptions(?int $unitId = null): array
     {
-        $units = Unit::query()->orderBy('name')->get(['id', 'name'])->map(fn (Unit $unit) => [
+        $units = Unit::query()->acceptingTickets()->orderBy('name')->get(['id', 'name'])->map(fn (Unit $unit) => [
             'id' => $unit->id,
             'name' => $unit->name,
         ])->values()->all();

@@ -53,7 +53,6 @@ class VerifyHelpdeskStaffMcpToken
             return $actor
                 && $actor->is_active
                 && $actor->canProcessTickets()
-                && $actor->can('Update:Ticket')
                     ? $actor
                     : null;
         } catch (Throwable $exception) {

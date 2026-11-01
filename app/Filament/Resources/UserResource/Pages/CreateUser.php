@@ -11,13 +11,6 @@ class CreateUser extends CreateRecord
 
     protected function afterCreate(): void
     {
-        $this->syncLegacyUnitId();
-    }
-
-    private function syncLegacyUnitId(): void
-    {
-        $this->record->forceFill([
-            'unit_id' => $this->record->units()->orderBy('units.id')->value('units.id'),
-        ])->saveQuietly();
+        $this->record->ensurePrimaryUnitMembership();
     }
 }

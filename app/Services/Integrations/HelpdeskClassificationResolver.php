@@ -37,7 +37,9 @@ class HelpdeskClassificationResolver
             ['business_entities_id', 'business_entity_id'],
             ['business_entity', 'business_entity_name']
         );
-        $businessEntity = $this->resolveBusinessEntity($ticketData);
+        // Pelapor dengan profil karyawan tidak perlu ditanya badan usahanya.
+        $businessEntity = ($owner?->business_entity_id ? $owner->businessEntity : null)
+            ?? $this->resolveBusinessEntity($ticketData);
         if (! $businessEntity) {
             $issues[] = $this->fieldIssue('business_entities_id', $entityProvided);
         }
@@ -108,7 +110,7 @@ class HelpdeskClassificationResolver
 
         foreach ([
             'business_entities_id' => $this->matchUniqueMasterRecord($message, BusinessEntity::query()->orderBy('name')->get(['id', 'name'])),
-            'unit_id' => $this->matchUniqueMasterRecord($message, Unit::query()->orderBy('name')->get(['id', 'name'])),
+            'unit_id' => $this->matchUniqueMasterRecord($message, Unit::query()->acceptingTickets()->orderBy('name')->get(['id', 'name'])),
             'priority_id' => $this->matchUniquePriority($message),
         ] as $field => $result) {
             if (($result['status'] ?? '') === 'matched' && isset($result['record'])) {
@@ -308,7 +310,8 @@ class HelpdeskClassificationResolver
 
         if ($owner) {
             try {
-                $ownerUnits = $owner->units()->get();
+                // Divisi asal pelapor hanya dipakai bila divisi itu memang menerima laporan.
+                $ownerUnits = $owner->units()->acceptingTickets()->get();
                 if ($ownerUnits->count() === 1) {
                     return $ownerUnits->first();
                 }

@@ -98,15 +98,12 @@ class HelpdeskMcpSettings extends Page
                                     ->label('PIC token ini')
                                     ->options(fn (): array => User::query()
                                         ->where('is_active', true)
-                                        ->whereHas(
-                                            'roles',
-                                            fn ($roles) => $roles->whereIn('name', [
-                                                'Super Admin',
-                                                'Master Admin',
-                                                'Admin Unit',
-                                                'Staff Unit',
-                                            ]),
-                                        )
+                                        ->where(fn ($query) => $query
+                                            ->assignedToAnyUnit()
+                                            ->orWhereHas(
+                                                'roles',
+                                                fn ($roles) => $roles->whereIn('name', ['Super Admin', 'Master Admin']),
+                                            ))
                                         ->orderBy('name')
                                         ->pluck('name', 'id')
                                         ->all())

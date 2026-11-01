@@ -138,6 +138,7 @@ class ViewTicket extends ViewRecord
                 Forms\Components\Select::make('unit_id')
                     ->label('Unit tujuan')
                     ->options(fn (): array => Unit::query()
+                        ->acceptingTickets()
                         ->orderBy('name')
                         ->pluck('name', 'id')
                         ->all())

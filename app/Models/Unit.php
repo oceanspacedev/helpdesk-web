@@ -6,6 +6,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -38,6 +39,15 @@ class Unit extends Model
     public function problemCategories()
     {
         return $this->hasMany(ProblemCategory::class);
+    }
+
+    /**
+     * Divisi yang bisa dituju laporan: hanya yang sudah punya kategori masalah.
+     * Divisi lain (dari Talenta) tetap dipakai sebagai divisi asal pelapor.
+     */
+    public function scopeAcceptingTickets(Builder $query): Builder
+    {
+        return $query->whereHas('problemCategories');
     }
 
     /**

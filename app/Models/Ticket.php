@@ -28,6 +28,8 @@ use Illuminate\Support\Facades\Schema;
  * @property int $priority_id
  * @property int $unit_id
  * @property int $owner_id
+ * @property null|int $reporter_unit_id
+ * @property null|string $reporter_job_title
  * @property int $problem_category_id
  * @property string $title
  * @property string $description
@@ -40,6 +42,7 @@ use Illuminate\Support\Facades\Schema;
  * @property null|string $deleted_at
  * @property Priority $priority
  * @property Unit $unit
+ * @property null|Unit $reporterUnit
  * @property null|User $user
  * @property ProblemCategory $problem_category
  * @property TicketStatus $ticket_status
@@ -55,6 +58,7 @@ class Ticket extends Model
         'priority_id' => 'int',
         'unit_id' => 'int',
         'owner_id' => 'int',
+        'reporter_unit_id' => 'int',
         'problem_category_id' => 'int',
         'ticket_statuses_id' => 'int',
         'responsible_id' => 'int',
@@ -70,6 +74,8 @@ class Ticket extends Model
     protected $fillable = [
         'priority_id',
         'unit_id',
+        'reporter_unit_id',
+        'reporter_job_title',
         'owner_id',
         'problem_category_id',
         'title',
@@ -106,6 +112,16 @@ class Ticket extends Model
     public function unit()
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    /**
+     * Divisi asal pelapor saat tiket dibuat (bagian "Dari").
+     *
+     * @return BelongsTo
+     */
+    public function reporterUnit()
+    {
+        return $this->belongsTo(Unit::class, 'reporter_unit_id');
     }
 
     /**
@@ -241,6 +257,25 @@ class Ticket extends Model
     protected static function boot()
     {
         parent::boot();
+
+        // Seperti kop surat: bagian "Dari" diambil dari profil pelapor saat
+        // tiket dibuat dan tidak ikut berubah bila pelapor pindah divisi.
+        static::creating(function (self $ticket): void {
+            $owner = $ticket->owner_id ? User::query()->find($ticket->owner_id) : null;
+            if (! $owner) {
+                return;
+            }
+
+            if ($ticket->reporter_unit_id === null && $owner->unit_id) {
+                $ticket->reporter_unit_id = $owner->unit_id;
+            }
+            if ($ticket->reporter_job_title === null && filled($owner->job_title)) {
+                $ticket->reporter_job_title = $owner->job_title;
+            }
+            if ($owner->business_entity_id) {
+                $ticket->business_entities_id = $owner->business_entity_id;
+            }
+        });
 
         // Event listener untuk event 'saving'
         static::saving(function ($ticket) {
