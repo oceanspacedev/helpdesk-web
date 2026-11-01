@@ -451,6 +451,8 @@ class CommentShieldPolicyTest extends TestCase
             $table->unsignedBigInteger('priority_id');
             $table->unsignedBigInteger('unit_id');
             $table->unsignedBigInteger('owner_id');
+            $table->unsignedBigInteger('reporter_unit_id')->nullable();
+            $table->string('reporter_job_title', 150)->nullable();
             $table->unsignedBigInteger('problem_category_id');
             $table->string('title');
             $table->text('description');

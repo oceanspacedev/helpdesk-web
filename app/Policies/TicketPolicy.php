@@ -45,8 +45,9 @@ class TicketPolicy
 
     public function process(User $authUser, Ticket $ticket): bool
     {
+        // Anggota divisi tujuan adalah penindak; tidak perlu role khusus.
         if ($ticket->trashed()
-            || ! $authUser->can('Update:Ticket')
+            || ! $authUser->is_active
             || ! $authUser->canProcessTicketsForUnit((int) $ticket->unit_id)) {
             return false;
         }

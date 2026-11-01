@@ -339,7 +339,7 @@ class HelpdeskTicketCreationService
             $email = '';
         }
 
-        return User::query()->create([
+        $user = User::query()->create([
             'name' => $name,
             'email' => $email !== '' ? $email : null,
             'phone' => $phone,
@@ -347,6 +347,10 @@ class HelpdeskTicketCreationService
             'identity' => TalentaEmployee::identity($employee),
             'is_active' => true,
         ]);
+
+        EmployeeService::applyTalentaProfile($user, $employee);
+
+        return $user;
     }
 
     private function identityChangedError(): array
