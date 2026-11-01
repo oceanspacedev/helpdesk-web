@@ -5,7 +5,6 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource\RelationManagers\RolesRelationManager;
 use App\Filament\Resources\UserResource\RelationManagers\TicketsRelationManager;
-use App\Models\Unit;
 use App\Models\User;
 use App\Support\PhoneNumber;
 use Filament\Actions;
@@ -31,14 +30,38 @@ class UserResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Select::make('units')
-                    ->relationship('units', 'name') // Menggunakan relasi 'units' dengan mengambil 'name' dari Unit
-                    ->options(Unit::all()->pluck('name', 'id'))
-                    ->multiple()
-                    ->searchable(),
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->maxLength(255),
+                Forms\Components\TextInput::make('identity')
+                    ->label('NIK Karyawan')
+                    ->disabled()
+                    ->dehydrated(false)
+                    ->helperText('Diisi dari Talenta.'),
+                Forms\Components\Select::make('business_entity_id')
+                    ->label('Badan Usaha')
+                    ->relationship('businessEntity', 'name')
+                    ->searchable()
+                    ->preload(),
+                Forms\Components\Select::make('unit_id')
+                    ->label('Divisi')
+                    ->relationship('unit', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->helperText('Divisi asal. Anggota divisi menerima dan menangani laporan ke divisinya.'),
+                Forms\Components\Select::make('units')
+                    ->label('Divisi tambahan yang ditangani')
+                    ->relationship('units', 'name')
+                    ->multiple()
+                    ->searchable()
+                    ->preload()
+                    ->helperText('Opsional. Divisi asal selalu ikut ditangani.'),
+                Forms\Components\TextInput::make('job_title')
+                    ->label('Jabatan')
+                    ->maxLength(150),
+                Forms\Components\TextInput::make('job_level')
+                    ->label('Level')
+                    ->maxLength(100),
                 Forms\Components\TextInput::make('email')
                     ->email()
                     ->maxLength(255),
@@ -75,15 +98,38 @@ class UserResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('email'),
+                Tables\Columns\TextColumn::make('job_title')
+                    ->label('Jabatan')
+                    ->searchable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('unit.name')
+                    ->label('Divisi')
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('businessEntity.name')
+                    ->label('Badan Usaha')
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('email')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('roles.name')
                     ->badge(),
                 Tables\Columns\TextColumn::make('units.name')
-                    ->badge(),
+                    ->label('Divisi ditangani')
+                    ->badge()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean(),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('unit_id')
+                    ->label('Divisi')
+                    ->relationship('unit', 'name')
+                    ->searchable()
+                    ->preload(),
+                Tables\Filters\SelectFilter::make('business_entity_id')
+                    ->label('Badan Usaha')
+                    ->relationship('businessEntity', 'name')
+                    ->searchable()
+                    ->preload(),
                 Tables\Filters\TrashedFilter::make(),
             ])
             ->actions([
@@ -126,7 +172,7 @@ class UserResource extends Resource
     {
         return parent::getEloquentQuery()
             ->byRole()
-            ->with(['roles', 'units'])
+            ->with(['roles', 'units', 'unit', 'businessEntity'])
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ]);

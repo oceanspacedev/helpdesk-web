@@ -130,7 +130,11 @@ class PublicTicketSubmissionService
                         ->where('unit_id', $unit->id)
                         ->firstOrFail();
                     $priority = Priority::query()->findOrFail((int) $data['priority_id']);
-                    $businessEntity = BusinessEntity::query()->findOrFail((int) $data['business_entities_id']);
+                    // Badan usaha adalah bagian "Dari" dan diambil dari profil karyawan.
+                    $businessEntityId = $freshReporter->business_entity_id
+                        ?: (filled($data['business_entities_id'] ?? null)
+                            ? BusinessEntity::query()->findOrFail((int) $data['business_entities_id'])->id
+                            : null);
                 } catch (ModelNotFoundException) {
                     throw ValidationException::withMessages([
                         'ticket' => 'Pilihan divisi, kategori, prioritas, atau badan usaha sudah tidak tersedia. Muat ulang halaman.',
@@ -164,7 +168,7 @@ class PublicTicketSubmissionService
                         'description' => $description,
                         'supporting_attachments' => $storedPaths === [] ? null : $storedPaths,
                         'ticket_statuses_id' => TicketStatus::OPEN,
-                        'business_entities_id' => $businessEntity->id,
+                        'business_entities_id' => $businessEntityId,
                     ]);
                 } finally {
                     if ($previousUser) {
@@ -252,7 +256,7 @@ class PublicTicketSubmissionService
 
         return hash('sha256', json_encode([
             'reporter_id' => $reporter->id,
-            'business_entities_id' => (int) $data['business_entities_id'],
+            'business_entities_id' => (int) ($data['business_entities_id'] ?? 0),
             'unit_id' => (int) $data['unit_id'],
             'problem_category_id' => (int) $data['problem_category_id'],
             'priority_id' => (int) $data['priority_id'],

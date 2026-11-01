@@ -42,6 +42,8 @@ class UsersRelationManager extends RelationManager
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name'),
+                Tables\Columns\TextColumn::make('job_title')
+                    ->label('Jabatan'),
                 Tables\Columns\TextColumn::make('roles.name')
                     ->badge(),
             ])

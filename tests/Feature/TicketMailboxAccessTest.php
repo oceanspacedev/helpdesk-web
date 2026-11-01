@@ -30,6 +30,7 @@ use App\Models\User;
 use App\Notifications\CommentNotification;
 use App\Notifications\NewTicketNotification;
 use App\Notifications\TicketStatusChangedNotification;
+use App\Notifications\TicketSubmittedNotification;
 use App\Policies\TicketPolicy;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Database\Schema\Blueprint;
@@ -123,24 +124,54 @@ class TicketMailboxAccessTest extends TestCase
         }
     }
 
-    public function test_destination_processor_without_update_permission_can_view_but_cannot_update(): void
+    public function test_any_active_division_member_processes_incoming_tickets(): void
     {
         $origin = Unit::create(['name' => 'Finance']);
         $destination = Unit::create(['name' => 'IT']);
         $sender = $this->unitUser('Admin Unit', $origin, 'Finance Admin');
-        $viewer = $this->unitUser('Staff Unit', $destination, 'IT Staff Read Only');
-        $viewer->roles()->firstOrFail()->revokePermissionTo('Update:Ticket');
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
-        $viewer = $viewer->fresh();
+        $member = $this->unitUser('User', $destination, 'IT Member');
+        $inactive = $this->unitUser('User', $destination, 'IT Member Nonaktif');
+        $inactive->update(['is_active' => false]);
         $ticket = $this->ticket($sender, $destination, 'Email finance bermasalah');
 
-        $this->assertTrue($viewer->canProcessTickets());
-        $this->assertFalse($viewer->can('Update:Ticket'));
-        $this->assertTrue(Ticket::query()->incomingFor($viewer)->whereKey($ticket)->exists());
-        $this->assertTrue(Ticket::query()->visibleTo($viewer)->whereKey($ticket)->exists());
-        $this->assertTrue(Gate::forUser($viewer)->allows('view', $ticket));
-        $this->assertFalse(Gate::forUser($viewer)->allows('update', $ticket));
-        $this->assertFalse(Gate::forUser($viewer)->allows('process', $ticket));
+        // Anggota divisi adalah penindak walau tanpa role Staff/Admin Unit.
+        $this->assertFalse($member->can('Update:Ticket'));
+        $this->assertTrue($member->canProcessTickets());
+        $this->assertTrue(Ticket::query()->incomingFor($member)->whereKey($ticket)->exists());
+        $this->assertTrue(Gate::forUser($member)->allows('view', $ticket));
+        $this->assertFalse(Gate::forUser($member)->allows('update', $ticket));
+        $this->assertTrue(Gate::forUser($member)->allows('process', $ticket));
+        $this->assertFalse(Gate::forUser($inactive->fresh())->allows('process', $ticket));
+        $this->assertFalse(Gate::forUser($sender)->allows('process', $ticket));
+    }
+
+    public function test_new_ticket_notifies_every_active_member_of_the_destination_division(): void
+    {
+        Notification::fake();
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'Human Capital']);
+        $category = ProblemCategory::create(['unit_id' => $destination->id, 'name' => 'Payroll']);
+        $reporter = $this->unitUser('User', $origin, 'Finance Reporter');
+        $staff = $this->unitUser('Staff Unit', $destination, 'HC Staff');
+        $member = $this->unitUser('User', $destination, 'HC Member');
+        $inactive = $this->unitUser('User', $destination, 'HC Member Nonaktif');
+        $inactive->update(['is_active' => false]);
+        $outsider = $this->unitUser('User', $origin, 'Finance Colleague');
+
+        $this->actingAs($reporter);
+        Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $destination->id,
+            'owner_id' => $reporter->id,
+            'problem_category_id' => $category->id,
+            'title' => 'Slip gaji belum keluar',
+            'description' => 'Slip gaji bulan ini belum bisa diunduh.',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+
+        Notification::assertSentTo([$staff, $member], NewTicketNotification::class);
+        Notification::assertNotSentTo([$inactive, $outsider, $reporter], NewTicketNotification::class);
+        Notification::assertSentTo($reporter, TicketSubmittedNotification::class);
     }
 
     public function test_in_progress_ticket_can_only_be_processed_by_its_destination_responsible_user(): void
@@ -362,8 +393,10 @@ class TicketMailboxAccessTest extends TestCase
     {
         $unit = Unit::create(['name' => 'IT']);
         $otherOrigin = Unit::create(['name' => 'Finance']);
+        $reporterOrigin = Unit::create(['name' => 'Gudang']);
         $status = TicketStatus::create(['name' => 'Open']);
-        $reporter = $this->unitUser('User', $unit, 'Assigned Reporter');
+        // Pelapor dari divisi lain: anggota IT sendiri adalah penindak tiket IT.
+        $reporter = $this->unitUser('User', $reporterOrigin, 'Assigned Reporter');
         $otherSender = $this->unitUser('Admin Unit', $otherOrigin, 'Other Finance Sender');
         $unrelatedStaff = $this->unitUser('Staff Unit', $otherOrigin, 'Unrelated Finance Staff');
         $category = ProblemCategory::create([
@@ -401,16 +434,20 @@ class TicketMailboxAccessTest extends TestCase
         $this->assertFalse(Gate::forUser($unrelatedStaff)->allows('view', $category));
         $this->assertFalse(ProblemCategoryResource::getEloquentQuery()->whereKey($category)->exists());
 
-        $this->actingAs($reporter);
+        // Pelapor dari divisi lain tidak bisa membuka kategori IT. Anggota IT
+        // adalah penindak sehingga melihat semua tiket di kategori itu.
+        $this->assertFalse(Gate::forUser($reporter)->allows('view', $category));
 
-        $this->assertTrue(Gate::forUser($reporter)->allows('view', $category));
+        $itMember = $this->unitUser('User', $unit, 'IT Member');
+        $this->actingAs($itMember);
 
         Livewire::test(TicketsRelationManager::class, [
             'ownerRecord' => $category,
             'pageClass' => ViewProblemCategory::class,
         ])
-            ->assertCanSeeTableRecords([$ownedTicket])
-            ->assertCanNotSeeTableRecords([$otherTicket]);
+            ->assertCanSeeTableRecords([$ownedTicket, $otherTicket]);
+
+        $this->actingAs($reporter);
 
         $this->assertSame(
             2,

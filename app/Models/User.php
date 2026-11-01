@@ -15,13 +15,13 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Traits\HasRoles;
 
@@ -30,6 +30,7 @@ use Spatie\Permission\Traits\HasRoles;
  *
  * @property int $id
  * @property null|int $unit_id
+ * @property null|int $business_entity_id
  * @property string $name
  * @property null|string $email
  * @property null|Carbon $email_verified_at
@@ -42,12 +43,16 @@ use Spatie\Permission\Traits\HasRoles;
  * @property null|Carbon $created_at
  * @property null|Carbon $updated_at
  * @property null|string $identity
+ * @property null|string $job_title
+ * @property null|string $job_level
+ * @property null|Carbon $talenta_synced_at
  * @property null|string $phone
  * @property null|string $phone_normalized
  * @property null|int $user_level_id
  * @property bool $is_active
  * @property null|string $deleted_at
  * @property null|Unit $unit
+ * @property null|BusinessEntity $businessEntity
  * @property Collection|Comment[] $comments
  * @property Collection|Ticket[] $tickets
  */
@@ -59,7 +64,9 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
 
     protected $casts = [
         'unit_id' => 'int',
+        'business_entity_id' => 'int',
         'email_verified_at' => 'datetime',
+        'talenta_synced_at' => 'datetime',
         'two_factor_confirmed_at' => 'datetime',
         'user_level_id' => 'int',
         'is_active' => 'bool',
@@ -73,6 +80,7 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
 
     protected $fillable = [
         'unit_id',
+        'business_entity_id',
         'name',
         'email',
         'email_verified_at',
@@ -83,6 +91,8 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
         'two_factor_confirmed_at',
         'remember_token',
         'identity',
+        'job_title',
+        'job_level',
         'phone',
         'user_level_id',
         'is_active',
@@ -133,6 +143,36 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
     }
 
     /**
+     * Divisi asal karyawan (dari Talenta). Divisi ini juga selalu menjadi
+     * salah satu divisi yang ditangani user.
+     */
+    public function unit(): BelongsTo
+    {
+        return $this->belongsTo(Unit::class);
+    }
+
+    /**
+     * Badan usaha tempat karyawan bekerja (dari Talenta).
+     */
+    public function businessEntity(): BelongsTo
+    {
+        return $this->belongsTo(BusinessEntity::class);
+    }
+
+    /**
+     * Pastikan divisi asal ikut tercatat sebagai divisi yang ditangani.
+     */
+    public function ensurePrimaryUnitMembership(): void
+    {
+        if (! $this->unit_id || ! Schema::hasTable('user_entities')) {
+            return;
+        }
+
+        $this->units()->syncWithoutDetaching([(int) $this->unit_id]);
+        $this->unsetRelation('units');
+    }
+
+    /**
      * Mendapatkan semua unit yang terkait dengan pengguna.
      *
      * @return HasManyThrough
@@ -177,10 +217,13 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
         return $this->hasAnyRole(['Super Admin', 'Master Admin']);
     }
 
+    /**
+     * Setiap anggota divisi adalah penindak tiket yang masuk ke divisinya.
+     */
     public function canProcessTickets(): bool
     {
         return $this->hasGlobalTicketAccess()
-            || $this->hasAnyRole(['Admin Unit', 'Staff Unit']);
+            || $this->assignedUnitIds() !== [];
     }
 
     public function canProcessTicketsForUnit(?int $unitId): bool
@@ -190,7 +233,6 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
         }
 
         return $unitId !== null
-            && $this->canProcessTickets()
             && $this->isAssignedToUnit($unitId);
     }
 
@@ -214,8 +256,14 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
     public function isActiveTicketProcessorForUnit(?int $unitId): bool
     {
         return $this->is_active
-            && $this->can('Update:Ticket')
             && $this->canProcessTicketsForUnit($unitId);
+    }
+
+    public function scopeAssignedToAnyUnit(Builder $query): Builder
+    {
+        return Schema::hasTable('user_entities')
+            ? $query->whereHas('units')
+            : $query->whereNotNull('users.unit_id');
     }
 
     public function scopeAssignedToUnit(Builder $query, int $unitId): Builder
@@ -230,43 +278,26 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
         return $query->where('users.unit_id', $unitId);
     }
 
+    /**
+     * Penindak tiket sebuah divisi: semua anggota aktif divisi tersebut,
+     * ditambah admin global bila diminta.
+     */
     public function scopeTicketProcessorsForUnit(
         Builder $query,
         int $unitId,
         bool $includeGlobal = false,
     ): Builder {
-        $permissionTable = config('permission.table_names.permissions', 'permissions');
-
-        if (! Schema::hasTable($permissionTable)
-            || ! DB::table($permissionTable)
-                ->where('name', 'Update:Ticket')
-                ->where('guard_name', 'web')
-                ->exists()) {
-            return $query->whereRaw('1 = 0');
-        }
-
         return $query
             ->where('users.is_active', true)
-            ->permission('Update:Ticket')
             ->where(function (Builder $query) use ($unitId, $includeGlobal): void {
+                $query->assignedToUnit($unitId);
+
                 if ($includeGlobal) {
-                    $query->whereHas(
+                    $query->orWhereHas(
                         'roles',
                         fn (Builder $roles): Builder => $roles->whereIn('name', ['Super Admin', 'Master Admin']),
-                    )->orWhere(function (Builder $query) use ($unitId): void {
-                        $query->whereHas(
-                            'roles',
-                            fn (Builder $roles): Builder => $roles->whereIn('name', ['Admin Unit', 'Staff Unit']),
-                        )->assignedToUnit($unitId);
-                    });
-
-                    return;
+                    );
                 }
-
-                $query->whereHas(
-                    'roles',
-                    fn (Builder $roles): Builder => $roles->whereIn('name', ['Admin Unit', 'Staff Unit']),
-                )->assignedToUnit($unitId);
             });
     }
 
