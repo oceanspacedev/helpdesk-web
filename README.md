@@ -297,6 +297,7 @@ Gateway WhatsApp, SMTP, S3, dan Redis bersifat opsional untuk menjalankan form p
 ```bash
 git clone https://github.com/oceanspacedev/helpdesk-web.git
 cd helpdesk-web
+git switch staging
 
 composer install
 cp .env.example .env
@@ -497,13 +498,19 @@ Temukan binary PHP dengan `command -v php`. Pantau dan rotasi log scheduler. Com
 
 ## Workflow development
 
-Branch default repositori adalah `main`. Buat cabang pekerjaan dari `main` dengan pola `feat/<scope>`, `fix/<scope>`, atau `docs/<scope>`.
+Konvensi branch (sama seperti dnd-web):
+
+- `staging`: branch integrasi. Semua perubahan masuk ke sini dulu dan diuji di staging.
+- `main`: branch release untuk production. `main` diproteksi: tidak menerima push langsung, dan hanya menerima pull request **dari `staging`** (check GitHub Actions `PR dari staging` di [`.github/workflows/pr-to-main.yml`](.github/workflows/pr-to-main.yml) wajib hijau, berlaku juga untuk admin). Tidak ada perubahan yang masuk `main` tanpa lewat staging dulu.
+- Branch pekerjaan: buat dari `staging` dengan pola `feat/<scope>`, `fix/<scope>`, atau `docs/<scope>`; PR ke `staging`, bukan ke `main`.
+
+Alurnya: branch pekerjaan → PR ke `staging` → uji di staging → PR `staging` → `main`.
 
 ### Memulai pekerjaan
 
 ```bash
-git switch main
-git pull --ff-only origin main
+git switch staging
+git pull --ff-only origin staging
 git switch -c feat/<nama-fitur>
 ```
 
