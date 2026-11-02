@@ -132,7 +132,7 @@ class AdminPanelProvider extends PanelProvider
                     ]),
             ])
             // Mekaya mengaktifkan dua route ini secara implisit. Helpdesk memakai
-            // OTP WhatsApp sampai tersedia verifikasi email yang terpisah.
+            // login OTP WhatsApp dan email (kode atau magic link), bukan reset password.
             ->passwordReset(null, null)
             ->profile(null)
             ->viteTheme('resources/css/admin/theme.css')

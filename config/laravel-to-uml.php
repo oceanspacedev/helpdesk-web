@@ -97,7 +97,6 @@ return [
         'Policies/UnitPolicy.php',
         'Policies/UserPolicy.php',
         'Models/Role.php',
-        'Http/Controllers/Auth/SocialiteController.php',
         'Filament/Pages/Dashboard.php',
         'Filament/Pages/MyProfile.php',
         'Filament/Resources/ProblemCategoryResource/Pages/CreateProblemCategory.php',
