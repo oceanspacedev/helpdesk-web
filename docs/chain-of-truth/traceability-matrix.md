@@ -22,7 +22,7 @@ Status: Reviewed
 | FR-016 | UC-004 | ENT-001 | MCP-001, MCP-002 | TC-014 |
 | FR-019 | UC-004 | `mcp_ticket_creation_requests`, cache | MCP-001, MCP-002 | TC-017 |
 | FR-020 | UC-004, UC-006 | ENT-001, cache, reporter bindings | MCP-001, MCP-002, PAGE-012, WhatsApp gateway | TC-018, TC-025 |
-| FR-021 | UC-007 | ENT-001, ENT-010 | AUTH-001 | TC-019 |
+| FR-021 | UC-007 | ENT-001, ENT-013 | AUTH-001, `/email-login` | TC-019 |
 | FR-022 | UC-008 | ENT-001, ENT-003, ENT-004, ENT-006, ENT-007 | Filament resources | TC-020 |
 
 ## NFR Trace
