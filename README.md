@@ -455,7 +455,7 @@ php artisan helpdesk:sync-employees /path/ke/list-employee.json --apply  # simpa
 
 - Akun dicocokkan per NIK (`users.identity`), lalu per nomor HP. Karyawan tanpa akun dibuat dengan role `User`.
 - `branch` → badan usaha, `organization` → divisi, `job` → jabatan, `title` → level. Nama yang belum ada dibuat otomatis.
-- Divisi Talenta yang namanya berbeda dari divisi Helpdesk dipetakan di `services.talenta.division_aliases` (default `IT SUPPORT` → `IT`). Selain itu, ganti nama divisi atau badan usaha di panel agar cocok sebelum `--apply`.
+- Divisi Talenta yang namanya berbeda dari divisi Helpdesk dipetakan di `services.talenta.division_aliases` (default `IT SUPPORT` → `IT`, `HUMAN CAPITAL` → `HR`). Selain itu, ganti nama divisi atau badan usaha di panel agar cocok sebelum `--apply`.
 - Akun yang punya NIK tetapi tidak ada lagi di file dinonaktifkan. `Super Admin` dan `Master Admin` tidak disentuh.
 - Hanya divisi yang punya kategori masalah yang muncul sebagai tujuan laporan.
 

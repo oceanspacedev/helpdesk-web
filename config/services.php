@@ -82,6 +82,7 @@ return [
         // php artisan helpdesk:sync-employees. Divisi lain dibuat otomatis.
         'division_aliases' => [
             'IT SUPPORT' => 'IT',
+            'HUMAN CAPITAL' => 'HR',
         ],
     ],
 ];
