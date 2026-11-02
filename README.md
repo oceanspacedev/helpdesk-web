@@ -437,7 +437,16 @@ Untuk instalasi klien, kontrak alat, token, gateway WhatsApp, percobaan ulang, d
 
 ## Sinkron data karyawan Talenta
 
-Profil karyawan (badan usaha, divisi, jabatan, level) diambil dari ekspor direktori Talenta. Tiket menyimpan profil pelapor saat dibuat sebagai bagian "Dari", seperti kop surat.
+Karyawan holding terikat kontrak ke **satu** badan usaha dan satu divisi asal, tetapi pekerjaannya bisa menyentuh banyak badan usaha. Karena itu data dipisah dua lapis:
+
+| Lapis | Sumber | Isi |
+|---|---|---|
+| Kontrak | Talenta | Badan usaha (`users.business_entity_id`), divisi asal (`users.unit_id`), jabatan, level. Dikunci di form user bila user punya ID Karyawan. |
+| Penugasan | Panel Helpdesk | Divisi yang ditangani (`user_entities`). Tiket masuk ke semua anggota aktif divisi tujuan, apa pun badan usahanya. |
+
+Tiket menyimpan keduanya terpisah: `reporter_business_entity_id` (badan usaha kontrak pelapor, bagian "Dari" seperti kop surat) dan `business_entities_id` (badan usaha yang dilaporkan, dipilih pelapor dengan isian awal badan usaha kontraknya).
+
+Sinkron dijalankan dari menu **Organisasi → Users → Import JSON (Talenta)** (khusus `Super Admin`/`Master Admin`; matikan "Simpan perubahan" untuk preview) atau dari CLI:
 
 ```bash
 php artisan helpdesk:sync-employees /path/ke/list-employee.json          # preview, tidak menyimpan

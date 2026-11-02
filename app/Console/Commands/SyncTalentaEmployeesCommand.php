@@ -33,8 +33,8 @@ class SyncTalentaEmployeesCommand extends Command
             return self::FAILURE;
         }
 
-        $employees = json_decode(File::get($path), true)['data']['data'] ?? null;
-        if (! is_array($employees)) {
+        $employees = TalentaEmployeeSync::employeesFromJson(File::get($path));
+        if ($employees === null) {
             $this->error('Struktur JSON tidak sesuai. Harus { "data": { "data": [...] } } seperti ekspor Talenta.');
 
             return self::FAILURE;
@@ -46,16 +46,10 @@ class SyncTalentaEmployeesCommand extends Command
         $this->info($apply ? 'Sinkron disimpan.' : 'PREVIEW — belum ada yang disimpan. Jalankan ulang dengan --apply untuk menyimpan.');
         $this->newLine();
 
-        $this->table(['Hasil', 'Jumlah'], [
-            ['Karyawan di file', count($employees)],
-            ['Badan usaha baru', count($report['entities_created'])],
-            ['Divisi baru', count($report['divisions_created'])],
-            ['Akun baru', count($report['users_created'])],
-            ['Akun diperbarui', count($report['users_updated'])],
-            ['Akun sudah sesuai', $report['users_unchanged']],
-            ['Dilewati', count($report['users_skipped'])],
-            ['Dinonaktifkan (keluar)', count($report['users_deactivated'])],
-        ]);
+        $this->table(['Hasil', 'Jumlah'], collect(TalentaEmployeeSync::summary($report, count($employees)))
+            ->map(fn (int $count, string $label): array => [$label, $count])
+            ->values()
+            ->all());
 
         $this->listSection('Badan usaha baru', $report['entities_created']);
         $this->listSection('Divisi baru', $report['divisions_created']);

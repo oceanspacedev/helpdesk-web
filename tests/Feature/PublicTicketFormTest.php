@@ -445,6 +445,39 @@ class PublicTicketFormTest extends TestCase
         $this->assertDatabaseCount('mcp_ticket_creation_requests', 1);
     }
 
+    public function test_reporter_may_report_for_a_business_entity_other_than_their_contract(): void
+    {
+        $holding = BusinessEntity::query()->create(['name' => 'PT Holding']);
+        $reporter = $this->reporter('Reporter Holding', '6281234500103');
+        $reporter->forceFill(['business_entity_id' => $holding->id])->save();
+        $submissionToken = str_repeat('H', 40);
+        $this->rememberReporter($reporter, str_repeat('K', 64), $submissionToken);
+
+        // Isian awal adalah badan usaha kontrak pelapor.
+        $this->assertTicketPage($this->get(route('public-tickets.create')))
+            ->assertInertia(fn (Assert $page) => $page->where('old.business_entities_id', $holding->id));
+
+        $this->post(route('public-tickets.store'), $this->validTicketPayload($submissionToken))
+            ->assertSessionHas('ticket_success');
+
+        $ticket = Ticket::query()->sole();
+        $this->assertSame($this->businessEntity->id, $ticket->business_entities_id);
+        $this->assertSame($holding->id, $ticket->reporter_business_entity_id);
+    }
+
+    public function test_public_submission_requires_a_business_entity(): void
+    {
+        $reporter = $this->reporter('Reporter Tanpa BU', '6281234500104');
+        $submissionToken = str_repeat('B', 40);
+        $this->rememberReporter($reporter, str_repeat('L', 64), $submissionToken);
+
+        $this->post(route('public-tickets.store'), $this->validTicketPayload($submissionToken, [
+            'business_entities_id' => '',
+        ]))->assertSessionHasErrors(['business_entities_id' => 'Badan usaha wajib dipilih.']);
+
+        $this->assertDatabaseCount('tickets', 0);
+    }
+
     public function test_public_submission_rejects_a_category_from_another_unit(): void
     {
         $reporter = $this->reporter('Reporter Validasi', '6281234500103');
