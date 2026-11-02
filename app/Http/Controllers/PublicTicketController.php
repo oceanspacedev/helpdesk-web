@@ -57,6 +57,9 @@ class PublicTicketController extends Controller
             'defaultPriorityId' => $defaultPriorityId,
             'old' => [
                 'phone' => old('phone', ''),
+                // Isian awal badan usaha kontrak pelapor; bisa diganti bila
+                // laporannya untuk badan usaha lain.
+                'business_entities_id' => old('business_entities_id', $reporter?->business_entity_id ?? ''),
                 'unit_id' => old('unit_id', ''),
                 'problem_category_id' => old('problem_category_id', ''),
                 'priority_id' => old('priority_id', $defaultPriorityId),
@@ -146,7 +149,7 @@ class PublicTicketController extends Controller
             'submission_token' => ['required', 'string', 'size:40'],
             'website' => ['nullable', 'string', 'max:0'],
             'business_entities_id' => [
-                'nullable',
+                'required',
                 'integer',
                 Rule::exists('business_entities', 'id')->whereNull('deleted_at'),
             ],
@@ -172,6 +175,7 @@ class PublicTicketController extends Controller
                 'max:10240',
             ],
         ], [
+            'business_entities_id.required' => 'Badan usaha wajib dipilih.',
             'unit_id.required' => 'Divisi wajib dipilih.',
             'problem_category_id.required' => 'Kategori tiket wajib dipilih.',
             'problem_category_id.exists' => 'Kategori tidak sesuai dengan divisi yang dipilih.',

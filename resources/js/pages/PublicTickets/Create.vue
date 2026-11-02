@@ -40,6 +40,7 @@ const identityForm = useForm({
 const ticketForm = useForm({
     submission_token: props.submissionToken,
     website: '',
+    business_entities_id: props.old.business_entities_id ?? '',
     unit_id: props.old.unit_id ?? '',
     problem_category_id: props.old.problem_category_id ?? '',
     priority_id: props.old.priority_id ?? props.defaultPriorityId ?? '',
@@ -204,6 +205,23 @@ function changeReporter() {
 
                     <Section heading="Kirim ke" icon="paper-airplane">
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            <Field
+                                id="business_entities_id"
+                                label="Badan Usaha yang Dilaporkan"
+                                required
+                                :error="ticketForm.errors.business_entities_id"
+                                hint="Badan usaha tempat kendala terjadi. Ganti bila bukan badan usaha kontrak Anda."
+                            >
+                                <SelectInput
+                                    id="business_entities_id"
+                                    v-model="ticketForm.business_entities_id"
+                                    required
+                                    placeholder="Pilih badan usaha"
+                                    :options="options.business_entities"
+                                    :invalid="Boolean(ticketForm.errors.business_entities_id)"
+                                />
+                            </Field>
+
                             <Field
                                 id="unit_id"
                                 label="Unit / Divisi Tujuan"

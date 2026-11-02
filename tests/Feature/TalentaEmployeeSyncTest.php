@@ -204,10 +204,28 @@ class TalentaEmployeeSyncTest extends TestCase
 
         $this->assertSame($supplyChain->id, $ticket->reporter_unit_id);
         $this->assertSame('STAFF WAREHOUSE', $ticket->reporter_job_title);
-        $this->assertSame($entity->id, $ticket->business_entities_id);
+        // Kontrak di PT Media, tetapi laporannya untuk badan usaha lain.
+        $this->assertSame($entity->id, $ticket->reporter_business_entity_id);
+        $this->assertSame($otherEntity->id, $ticket->business_entities_id);
         $this->assertStringContainsString(
-            '👤 ANDI GUDANG · STAFF WAREHOUSE · SUPPLY CHAIN',
+            '👤 ANDI GUDANG · STAFF WAREHOUSE · SUPPLY CHAIN · PT Media Selular Indonesia',
             HelpdeskWhatsAppMessage::forStaff($ticket->fresh()),
+        );
+
+        // Tanpa pilihan, badan usaha kontrak menjadi badan usaha yang dilaporkan.
+        $sameEntity = Ticket::create([
+            'priority_id' => $priority->id,
+            'unit_id' => $it->id,
+            'owner_id' => $reporter->id,
+            'problem_category_id' => $category->id,
+            'title' => 'Scanner gudang mati',
+            'description' => 'Scanner barcode gudang tidak menyala.',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+        $this->assertSame($entity->id, $sameEntity->business_entities_id);
+        $this->assertStringNotContainsString(
+            'SUPPLY CHAIN · PT Media Selular Indonesia',
+            HelpdeskWhatsAppMessage::forStaff($sameEntity->fresh()),
         );
 
         // Pindah divisi tidak mengubah "kop surat" tiket lama.

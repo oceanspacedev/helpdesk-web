@@ -155,6 +155,7 @@ trait CreatesHelpdeskIntegrationSchema
             $table->unsignedBigInteger('owner_id');
             $table->unsignedBigInteger('reporter_unit_id')->nullable();
             $table->string('reporter_job_title', 150)->nullable();
+            $table->unsignedBigInteger('reporter_business_entity_id')->nullable();
             $table->unsignedBigInteger('problem_category_id');
             $table->string('title');
             $table->text('description');
