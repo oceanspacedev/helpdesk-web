@@ -50,6 +50,9 @@ class EnvExampleTest extends TestCase
             'VITE_PUSHER_PORT',
             'VITE_PUSHER_SCHEME',
             'VITE_PUSHER_APP_CLUSTER',
+            'GOOGLE_CLIENT_ID',
+            'GOOGLE_CLIENT_SECRET',
+            'GOOGLE_CLIENT_REDIRECT',
         ] as $key) {
             $this->assertStringNotContainsString($key, $contents);
             $this->assertNotContains($key, $keys);
@@ -59,9 +62,7 @@ class EnvExampleTest extends TestCase
             'APP_NAME',
             'APP_DESCRIPTION',
             'INERTIA_SSR_ENABLED',
-            'GOOGLE_CLIENT_ID',
-            'GOOGLE_CLIENT_SECRET',
-            'GOOGLE_CLIENT_REDIRECT',
+            'EMAIL_LOGIN_EXPIRES_IN',
             'WAG_URL',
             'WAG_TOKEN',
             'WA_CONNECT_TIMEOUT',

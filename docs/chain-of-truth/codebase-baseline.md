@@ -7,21 +7,21 @@ Method note: This documentation uses the Chain of Truth method by Farid Suryanto
 
 ## Executive Outcome
 
-The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket management, master data administration, role-based visibility, WhatsApp OTP login, Socialite login linking, WhatsApp gateway sending, and deterministic ticket creation through one vendor-neutral MCP tool. MCP has exactly two business paths: an existing eligible account proceeds to ticket creation, or a missing account is created as a prerequisite before the same intake creates the ticket. Confidence is medium-high for implementation facts because they are observed in source, routes, migrations, seeders, and tests. Confidence is medium for business intent because most requirements are reconstructed from implementation rather than stakeholder-approved artifacts.
+The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket management, master data administration, role-based visibility, WhatsApp OTP login, email OTP or magic link login, WhatsApp gateway sending, and deterministic ticket creation through one vendor-neutral MCP tool. MCP has exactly two business paths: an existing eligible account proceeds to ticket creation, or a missing account is created as a prerequisite before the same intake creates the ticket. Confidence is medium-high for implementation facts because they are observed in source, routes, migrations, seeders, and tests. Confidence is medium for business intent because most requirements are reconstructed from implementation rather than stakeholder-approved artifacts.
 
 ## Scope
 
 - Observed: `/` redirects to the Filament admin panel at `/admin`.
 - Observed: Filament resources exist for Ticket, User, Unit, Problem Category, Ticket Status, and Business Entity.
 - Observed: `routes/ai.php` exposes the `helpdesk` MCP server over token-protected HTTP at `/mcp/helpdesk` and as a local MCP transport.
-- Observed: web routes expose the Livewire `/phone-login` flow and Socialite provider redirects/callbacks. OTP verification is a server-side Livewire action, not a separate public form route.
+- Observed: web routes expose the Livewire `/phone-login` and `/email-login` flows plus `/email-login/link/{token}`. OTP verification is a server-side Livewire action, not a separate public form route. Google (Socialite) routes were removed.
 - Inferred: The product supports internal Complete Selular helpdesk operations and MCP-assisted ticket reporting across generic clients such as Codex, Atlas relaying WhatsApp, other AI hosts, and other channel bridges. No client receives a vendor-specific server path.
 
 ## Runtime And Dependencies
 
 - Observed: PHP requirement is `^8.2`.
 - Observed: `laravel/framework` is `^12.61`, `filament/filament` and `filament/infolists` are `^4.11`.
-- Observed: Key packages include Filament Shield, Filament Breezy, Filament Socialite, Laravel Sanctum, Laravel Socialite, Guzzle, Pusher, Filament Excel, Apex Charts, Filament Exceptions, Overlook, and a Mekaya theme repository.
+- Observed: Key packages include Filament Shield, Filament Breezy, Laravel Sanctum, Guzzle, Pusher, Filament Excel, Apex Charts, Filament Exceptions, Overlook, and a Mekaya theme repository.
 - Observed: Node frontend tooling uses Vite, Tailwind CSS 4, Axios, and Laravel Vite plugin.
 - Unknown: Production database, queue, cache, mail, storage, and deployment topology are not documented in repository docs.
 
@@ -60,12 +60,12 @@ The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket m
 - UC-003: Participants add comments to tickets in the ticket relation manager and notifications are sent.
 - UC-004: MCP reporters create tickets through exactly two business paths after their canonical phone resolves safely. An existing eligible Helpdesk account proceeds to ticket creation. If that account is missing, the server creates the prerequisite account—using an exact Talenta match when available or explicit consent plus a freshly typed name otherwise—and continues the same intake to ticket creation. Declining account creation cancels the intake without writes. Conflicting phone claims are rejected.
 - UC-006: Users log in or register with a phone number OTP sent through WhatsApp. New manual or Talenta-backed accounts remain encrypted pending data until OTP succeeds, preventing active credentials from being created for an unverified number.
-- UC-007: Existing active Helpdesk users with trusted email provenance may link Socialite identities; unknown Socialite identities never auto-register.
+- UC-007: Active Helpdesk users sign in with a single-use code or magic link sent to their account email; the flow never creates accounts.
 - UC-008: Admin users manage master data and users through Filament resources.
 
 ## Data Stores And Entities
 
-- Observed: Relational tables include `users`, `tickets`, `comments`, `ticket_histories`, `units`, `problem_categories`, `priorities`, `ticket_statuses`, `business_entities`, `user_entities`, `socialite_users`, permission tables, notifications, activity log, failed jobs, and personal access tokens.
+- Observed: Relational tables include `users`, `tickets`, `comments`, `ticket_histories`, `units`, `problem_categories`, `priorities`, `ticket_statuses`, `business_entities`, `user_entities`, `email_otps`, legacy `socialite_users` (unused), permission tables, notifications, activity log, failed jobs, and personal access tokens.
 - Observed: Ticket soft deletes are enabled and ticket status dates include `approved_at` and `solved_at`.
 - Observed: A historical nullable-email migration supports Talenta-backed and consent-gated MCP phone-only reporters. Its deployment-ledger filename remains unchanged as migration history and is not part of the active integration contract.
 - Observed: Comments use column `tiket_id`, not `ticket_id`.
@@ -75,7 +75,7 @@ The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket m
 
 - Observed: WhatsApp outbound gateway supports WAHA and Fonnte providers through Guzzle and config-driven credentials.
 - Observed: MCP intake verifies a single canonical reporter phone before directory resolution. Conflicting claims are rejected. An existing eligible Helpdesk account proceeds to ticket creation. If no eligible account exists, exactly one Talenta match may supply the prerequisite account data; a reporter absent from both directories must explicitly consent and type a fresh full name before atomic phone-only account creation continues the same intake. Declining returns terminal cancellation without an account or ticket write.
-- Observed: Socialite routes call `Socialite::driver($provider)` and link only active users whose Helpdesk email has trusted verification provenance; provider auto-registration remains disabled.
+- Observed: Email login sends its code and magic link synchronously through the default Laravel mailer and is offered only when that mailer really sends mail.
 - Observed: MCP over HTTP uses its own bearer-token middleware. A trusted WhatsApp gateway may inject a one-event identity assertion, but that assertion does not authorize the MCP client transport. Atlas, Codex, and channel bridges remain generic MCP clients of this same contract.
 
 ## Operational Topology
@@ -86,7 +86,7 @@ The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket m
 
 ## Test Coverage
 
-- Observed: Feature tests cover root redirect, disabled admin registration, strict Socialite linking, panel/profile credential gates, deferred phone registration, identity migrations, MCP HTTP/local contracts, isolated external users, retry/idempotency, ticket creation, and chaos evaluation of the intake trigger.
+- Observed: Feature tests cover root redirect, disabled admin registration, email OTP and magic-link login, panel/profile credential gates, deferred phone registration, identity migrations, MCP HTTP/local contracts, isolated external users, retry/idempotency, ticket creation, and chaos evaluation of the intake trigger.
 - Observed: Unit tests cover employee matching/provisioning, phone canonicalization, WhatsApp OTP isolation/rate limits/locks, and WhatsApp gateway behavior.
 - Observed: Livewire feature tests cover Filament mailbox tabs, role-filtered ticket records, claim/takeover actions, and problem-category unit scoping. Browser/E2E coverage and relation-manager attachment coverage remain absent.
 
@@ -98,6 +98,6 @@ The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket m
 | Ticket CRUD and workflow exists | Observed | `TicketResource.php`, ticket pages, `TicketPolicy.php`, `Ticket.php` |
 | One MCP tool implements exactly two account-to-ticket paths | Observed | `routes/ai.php`, `HelpdeskServer.php`, `HelpdeskIntakeTool.php`, `HelpdeskIntakeSession.php`, MCP feature tests |
 | OTP login exists | Observed | `PhoneLogin.php`, `WhatsAppOtpService.php`, `PhoneOtpLoginTest.php` |
-| Socialite registration disabled behavior is tested | Observed | `SocialiteController.php`, `SocialiteRegistrationDisabledTest.php` |
+| Email OTP and magic-link login is tested | Observed | `EmailLogin.php`, `EmailOtpService.php`, `EmailOtpLoginTest.php` |
 | Business rules are stakeholder-approved | Unknown | No SRS, decision log, or validation log existed before this reconstruction |
 | Role spelling is consistent | Pass | Ticket, comment, SLA, notification, and permission paths use `Staff Unit` |

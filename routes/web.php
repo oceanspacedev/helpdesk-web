@@ -1,7 +1,7 @@
 <?php
 
+use App\Filament\Auth\Pages\EmailLogin;
 use App\Filament\Auth\Pages\PhoneLogin;
-use App\Http\Controllers\Auth\SocialiteController;
 use App\Http\Controllers\PublicTicketController;
 use App\Http\Middleware\HandleInertiaRequests;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -55,6 +55,14 @@ Route::get('/phone-login', PhoneLogin::class)
     ])
     ->name('phone-login');
 
-// socialite login
-Route::get('/auth/{provider}', [SocialiteController::class, 'redirectToProvider']);
-Route::get('/auth/{provider}/callback', [SocialiteController::class, 'handleProvideCallback']);
+Route::middleware([
+    DisableBladeIconComponents::class,
+    DispatchServingFilamentEvent::class,
+])->group(function (): void {
+    Route::get('/email-login', EmailLogin::class)->name('email-login');
+
+    // Magic link dari email. Membuka URL saja tidak memakai token; lihat EmailLogin::$magicToken.
+    Route::get('/email-login/link/{token}', EmailLogin::class)
+        ->where('token', '[A-Za-z0-9]{64}')
+        ->name('email-login.link');
+});

@@ -31,10 +31,9 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
-    'google' => [
-        'client_id' => env('GOOGLE_CLIENT_ID'),
-        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
-        'redirect' => env('GOOGLE_CLIENT_REDIRECT'),
+    // Login email (kode OTP + magic link) memakai mailer default Laravel (MAIL_*).
+    'email_login' => [
+        'expires_in' => (int) env('EMAIL_LOGIN_EXPIRES_IN', 600),
     ],
 
     'whatsapp_gateway' => [

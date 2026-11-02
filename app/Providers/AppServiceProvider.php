@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Filament\Auth\Pages\EmailLogin;
 use App\Filament\Auth\Pages\PhoneLogin;
 use App\Models\User;
 use App\Policies\ActivityPolicy;
@@ -45,6 +46,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Livewire::component('phone-login', PhoneLogin::class);
+        Livewire::component('email-login', EmailLogin::class);
         ObservabilityAccess::register();
         $this->registerAuthorization();
 
