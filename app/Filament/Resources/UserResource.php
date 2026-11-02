@@ -106,7 +106,7 @@ class UserResource extends Resource
                             ->maxLength(255),
                         Forms\Components\DateTimePicker::make('email_verified_at')
                             ->label('Email diverifikasi pada')
-                            ->helperText('Email belum dapat dipakai sampai waktu verifikasi dan sumber tepercaya diisi.'),
+                            ->helperText('Notifikasi email baru dikirim setelah waktu verifikasi dan sumber tepercaya diisi. Login tidak bergantung pada kolom ini.'),
                         Forms\Components\Select::make('email_verified_via')
                             ->label('Sumber verifikasi email')
                             ->options(static::emailVerificationSources())

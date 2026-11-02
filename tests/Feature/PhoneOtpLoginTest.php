@@ -558,7 +558,7 @@ class PhoneOtpLoginTest extends TestCase
         $this->assertFalse(Auth::check());
     }
 
-    public function test_unverified_email_is_not_a_login_or_mail_notification_channel(): void
+    public function test_unverified_email_allows_password_login_but_receives_no_mail(): void
     {
         $user = User::query()->create([
             'name' => 'Email Belum Terverifikasi',
@@ -576,7 +576,8 @@ class PhoneOtpLoginTest extends TestCase
             new TicketStatusChangedNotification((object) [], TicketStatus::IN_PROGRESS),
         ];
 
-        $this->assertFalse(Auth::validate($credentials));
+        // Seperti gais-web dan dnd-web, kata sandi cukup untuk login; verifikasi email hanya mengatur notifikasi email.
+        $this->assertTrue(Auth::validate($credentials));
         foreach ($notifications as $notification) {
             $this->assertNotContains('mail', $notification->via($user));
         }
@@ -594,10 +595,13 @@ class PhoneOtpLoginTest extends TestCase
         $user->update(['email' => 'changed@example.test']);
         $this->assertNull($user->fresh()->email_verified_at);
         $this->assertNull($user->fresh()->email_verified_via);
-        $this->assertFalse(Auth::validate([
+        $this->assertTrue(Auth::validate([
             'email' => 'changed@example.test',
             'password' => 'secret123',
         ]));
+        foreach ($notifications as $notification) {
+            $this->assertNotContains('mail', $notification->via($user->fresh()));
+        }
     }
 
     public function test_factory_accounts_have_explicit_email_verification_provenance(): void
@@ -612,7 +616,7 @@ class PhoneOtpLoginTest extends TestCase
         $this->assertFalse($unverified->canUseVerifiedEmail());
     }
 
-    public function test_panel_access_requires_a_matching_phone_session_or_trusted_email(): void
+    public function test_panel_access_only_requires_an_active_account(): void
     {
         $panel = Filament::getPanel('admin');
         $legacyUser = User::query()->create([
@@ -624,7 +628,7 @@ class PhoneOtpLoginTest extends TestCase
             'phone' => '6281200004001',
             'is_active' => true,
         ]);
-        $otherUser = User::query()->create([
+        $phoneOnlyUser = User::query()->create([
             'name' => 'Other Phone User',
             'email' => null,
             'password' => null,
@@ -632,19 +636,12 @@ class PhoneOtpLoginTest extends TestCase
             'is_active' => true,
         ]);
 
-        session()->forget('helpdesk_phone_verified_user_id');
-        $this->assertFalse($legacyUser->canAccessPanel($panel));
-
-        session()->put('helpdesk_phone_verified_user_id', $otherUser->id);
-        $this->assertFalse($legacyUser->canAccessPanel($panel));
-
-        session()->put('helpdesk_phone_verified_user_id', $legacyUser->id);
         $this->assertTrue($legacyUser->canAccessPanel($panel));
+        $this->assertTrue($phoneOnlyUser->canAccessPanel($panel));
 
         $legacyUser->update(['is_active' => false]);
         $this->assertFalse($legacyUser->canAccessPanel($panel));
 
-        session()->forget('helpdesk_phone_verified_user_id');
         $trustedUser = User::query()->create([
             'name' => 'Trusted Admin',
             'email' => 'trusted-panel@example.test',
@@ -704,6 +701,67 @@ class PhoneOtpLoginTest extends TestCase
             ->assertHasFormErrors(['otp' => 'Kode OTP tidak valid atau sudah kedaluwarsa.']);
 
         $this->assertFalse(Auth::check());
+    }
+
+    public function test_phone_otp_login_rejects_an_expired_code(): void
+    {
+        User::create([
+            'name' => 'Budi Outlet Depok',
+            'email' => null,
+            'password' => null,
+            'phone' => '6280000000000',
+            'is_active' => true,
+        ]);
+
+        $component = Livewire::test(PhoneLogin::class)
+            ->fillForm(['phone' => '0800-0000-0000'])
+            ->call('send')
+            ->assertSet('awaitingOtp', true);
+
+        $this->travel(5)->minutes();
+        $this->travel(1)->seconds();
+
+        $component
+            ->set('data.otp', $this->otpCode())
+            ->call('verify')
+            ->assertHasFormErrors(['otp' => 'Kode OTP tidak valid atau sudah kedaluwarsa.'])
+            ->assertNoRedirect();
+
+        $this->assertFalse(Auth::check());
+    }
+
+    public function test_phone_otp_login_rejects_a_reused_code_even_with_a_replayed_challenge(): void
+    {
+        $user = User::create([
+            'name' => 'Budi Outlet Depok',
+            'email' => null,
+            'password' => null,
+            'phone' => '6280000000000',
+            'is_active' => true,
+        ]);
+
+        $component = Livewire::test(PhoneLogin::class)
+            ->fillForm(['phone' => '0800-0000-0000'])
+            ->call('send')
+            ->assertSet('awaitingOtp', true);
+        $challengeId = (string) $component->get('otpChallengeId');
+        $code = $this->otpCode();
+
+        $component->set('data.otp', $code)->call('verify')->assertRedirect('/admin');
+        $this->assertSame($user->id, Auth::id());
+
+        Auth::logout();
+
+        Livewire::test(PhoneLogin::class)
+            ->set('otpChallengeId', $challengeId)
+            ->set('awaitingOtp', true)
+            ->fillForm(['phone' => '6280000000000', 'otp' => $code])
+            ->call('verify')
+            ->assertHasFormErrors(['otp' => 'Kode OTP tidak valid atau sudah kedaluwarsa.'])
+            ->assertNoRedirect();
+
+        $this->assertFalse(Auth::check());
+        $this->assertCount(1, $this->whatsAppGateway->messages);
     }
 
     private function createTestSchema(): void
