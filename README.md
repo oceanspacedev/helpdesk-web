@@ -378,7 +378,7 @@ Jangan commit `.env` atau credential apa pun ke Git. Daftar berikut mengikuti [`
 | `AWS_USE_PATH_STYLE_ENDPOINT` | Tidak | Path-style S3; default `false`. Set `true` plus `AWS_ENDPOINT` untuk MinIO atau S3-compatible |
 | `INERTIA_SSR_ENABLED` | Tidak | SSR Inertia; default `false` |
 | `HELPDESK_MCP_LOCAL_CLIENT_ID` | Tidak | ID klien MCP stdio lokal; unik per mesin klien |
-| `TALENTA_EMPLOYEE_FILE` | Tidak | Override path JSON karyawan; default berkas di root repositori |
+| `TALENTA_EMPLOYEE_FILE` | Tidak | Override path JSON karyawan; default `storage/app/talenta-list-employee.json` (di-ignore Git) |
 
 Proyek ini membaca cache lewat `CACHE_STORE` di `config/cache.php`. Setelah migration, token MCP server-wide dikelola di **Admin → Pengaturan → Pengaturan MCP**. Environment MCP lama tetap didukung sebagai fallback rollout; daftar lengkapnya ada di [`docs/mcp/README.md`](docs/mcp/README.md).
 
@@ -474,6 +474,13 @@ php artisan helpdesk:sync-employees /path/ke/list-employee.json --apply  # simpa
 - Divisi Talenta yang namanya berbeda dari divisi Helpdesk dipetakan di `services.talenta.division_aliases` (default `IT SUPPORT` → `IT`, `HUMAN CAPITAL` → `HR`). Selain itu, ganti nama divisi atau badan usaha di panel agar cocok sebelum `--apply`.
 - Akun yang punya NIK tetapi tidak ada lagi di file dinonaktifkan. `Super Admin` dan `Master Admin` tidak disentuh.
 - Hanya divisi yang punya kategori masalah yang muncul sebagai tujuan laporan.
+
+### Berkas karyawan untuk login OTP WhatsApp
+
+Registrasi akun dari `/phone-login` dan argumen default `helpdesk:sync-employees` membaca berkas ekspor Talenta di `TALENTA_EMPLOYEE_FILE`, default `storage/app/talenta-list-employee.json`.
+
+> [!CAUTION]
+> Berkas ini berisi data pribadi karyawan (email, nomor HP, tanggal lahir, status pernikahan, status pajak). **Jangan pernah meng-commit-nya.** `storage/app` dan `/talenta-list-employee.json` sudah di-ignore Git. Salin berkas langsung ke server (misalnya lewat `scp`), bukan lewat repositori.
 
 ## Scheduler SLA
 
