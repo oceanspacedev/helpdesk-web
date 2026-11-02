@@ -48,7 +48,7 @@ onUnmounted(() => {
 
 <template>
     <div
-        class="fi-theme-switcher rounded-lg bg-white p-0.5 ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-white/10"
+        class="inline-flex items-center gap-0.5 rounded-lg bg-white p-0.5 ring-1 ring-gray-950/10 dark:bg-white/5 dark:ring-white/10"
         role="radiogroup"
         aria-label="Tema"
     >
@@ -56,15 +56,19 @@ onUnmounted(() => {
             v-for="option in options"
             :key="option.id"
             type="button"
-            class="fi-theme-switcher-btn"
-            :class="{ 'fi-active': theme === option.id }"
+            role="radio"
+            class="flex size-7 items-center justify-center rounded-md outline-hidden transition duration-75 focus-visible:ring-2 focus-visible:ring-primary-500"
+            :class="
+                theme === option.id
+                    ? 'bg-gray-100 text-gray-950 dark:bg-white/10 dark:text-white'
+                    : 'text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300'
+            "
             :aria-label="option.label"
-            :aria-pressed="theme === option.id"
+            :aria-checked="theme === option.id"
+            :title="option.label"
             @click="apply(option.id)"
         >
-            <span class="fi-icon">
-                <Icon :name="option.icon" />
-            </span>
+            <Icon :name="option.icon" class="size-4" />
         </button>
     </div>
 </template>

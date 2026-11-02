@@ -9,7 +9,6 @@
 @import "../../vendor/filament/support/resources/css/components/section.css" layer(components);
 @import "../../vendor/filament/support/resources/css/components/link.css" layer(components);
 @import "../../vendor/filament/support/resources/css/components/loading-indicator.css" layer(components);
-@import "../../vendor/filament/filament/resources/css/components/theme-switcher.css" layer(components);
 @import "../../vendor/filament/forms/resources/css/components/field.css" layer(components);
 @import "../../vendor/filament/forms/resources/css/components/textarea.css" layer(components);
 @import "../../vendor/kungfufafa/mekaya-theme/resources/css/components/buttons.css" layer(utilities);
@@ -185,7 +184,7 @@
     }
 
     .fi-simple-layout-header {
-        @apply absolute end-0 top-0 flex h-16 items-center gap-x-4 pe-4 md:pe-6 lg:pe-8;
+        @apply absolute end-0 top-0 z-10 flex h-16 items-center gap-x-2 pe-4 md:pe-6 lg:pe-8;
     }
 
     .fi-simple-main-ctn {

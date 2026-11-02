@@ -22,7 +22,9 @@ class UnitResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-briefcase';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Master Data';
+    protected static string|\UnitEnum|null $navigationGroup = 'Organisasi';
+
+    protected static ?int $navigationSort = 3;
 
     public static function form(Schema $form): Schema
     {

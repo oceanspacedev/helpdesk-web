@@ -30,7 +30,7 @@ Source type: Reconstructed from routes and Filament resources.
 - Observed: Filament discovers all resources in `app/Filament/Resources`.
 - Observed: Ticket navigation icon is `heroicon-o-ticket` with sort order 3.
 - Observed: Admin Unit and Staff Unit open on `Tiket Masuk` (destination unit); `Tiket Keluar` contains tickets personally created by the current user. Global administrators use `Semua Tiket`, and general users see only `Tiket Keluar`.
-- Observed: User, Unit, and Business Entity resources belong to navigation group `Master Data`.
+- Observed: User, Business Entity, and Unit resources belong to navigation group `Organisasi` (sort 1–3), matching gais-web. Unit SLA stays in `Master Data`.
 - Observed: Problem Category and Ticket Status resources are not explicitly grouped in the observed code, although they behave as master/reference data.
 - Observed: Dashboard and widgets are configured through `AdminPanelProvider`.
 - Observed: the `Pengaturan` group contains the Super Admin-only MCP settings page; server-wide values are stored in one encrypted singleton database row.

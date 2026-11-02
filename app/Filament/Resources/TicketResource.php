@@ -162,15 +162,13 @@ class TicketResource extends Resource
                         ->required(),
 
                     Forms\Components\Select::make('business_entities_id')
-                        ->label('Badan Usaha Pelapor')
+                        ->label('Badan Usaha yang Dilaporkan')
                         ->options(BusinessEntity::all()
                             ->pluck('name', 'id'))
                         ->searchable()
                         ->placeholder('Pilih badan usaha')
-                        ->helperText('Terisi otomatis dari data karyawan pelapor.')
-                        // Pelapor yang sudah punya profil karyawan tidak perlu memilih.
-                        ->hidden(fn (string $operation): bool => $operation === 'create'
-                            && filled(auth()->user()?->business_entity_id))
+                        ->helperText('Badan usaha tempat kendala terjadi. Ganti bila bukan badan usaha kontrak pelapor.')
+                        ->default(fn (): ?int => auth()->user()?->business_entity_id)
                         ->required(fn (string $operation): bool => $operation === 'create'),
 
                     Forms\Components\Select::make('ticket_statuses_id')
@@ -465,13 +463,13 @@ class TicketResource extends Resource
      */
     public static function senderLine(Ticket $record): string
     {
-        $record->loadMissing(['owner', 'reporterUnit', 'businessEntity']);
+        $record->loadMissing(['owner', 'reporterUnit', 'reporterBusinessEntity']);
 
         return collect([
             $record->owner?->name,
             $record->reporter_job_title,
             $record->reporterUnit?->name,
-            $record->businessEntity?->name,
+            $record->reporterBusinessEntity?->name,
         ])->map(fn (?string $part): string => trim((string) $part))
             ->filter()
             ->implode(' · ') ?: '-';

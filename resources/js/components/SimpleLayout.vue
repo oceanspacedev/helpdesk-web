@@ -5,6 +5,7 @@ import ThemeSwitcher from './ThemeSwitcher.vue';
 <template>
     <div class="fi-simple-layout">
         <div class="fi-simple-layout-header">
+            <slot name="header" />
             <ThemeSwitcher />
         </div>
         <div class="fi-simple-main-ctn">
