@@ -18,7 +18,11 @@ yarn-error.log
 /.idea
 /.vscode
 .DS_Store
+*.swp
 .omo/
+
+# Ekspor Talenta berisi data pribadi karyawan; simpan di storage/app.
+/talenta-list-employee.json
 
 .worktrees
 

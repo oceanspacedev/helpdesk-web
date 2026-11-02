@@ -167,4 +167,11 @@ class EmployeeServiceTest extends TestCase
         $this->assertNull($fromDeletedCollision->email);
         $this->assertSame(4, User::withTrashed()->count());
     }
+
+    public function test_default_employee_file_is_kept_out_of_the_repository(): void
+    {
+        $this->assertSame(storage_path('app/talenta-list-employee.json'), config('services.talenta.employee_file'));
+        $this->assertStringContainsString('*', File::get(storage_path('app/.gitignore')));
+        $this->assertMatchesRegularExpression('#^/talenta-list-employee\.json$#m', File::get(base_path('.gitignore')));
+    }
 }

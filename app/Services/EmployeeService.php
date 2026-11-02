@@ -18,7 +18,7 @@ class EmployeeService
 
     public function __construct()
     {
-        $path = config('services.talenta.employee_file', base_path('talenta-list-employee.json'));
+        $path = config('services.talenta.employee_file', storage_path('app/talenta-list-employee.json'));
 
         if (! File::exists($path)) {
             Log::warning('File data karyawan Talenta tidak ditemukan. Auto-registrasi lewat direktori karyawan nonaktif.', [
