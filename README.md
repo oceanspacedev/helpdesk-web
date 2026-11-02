@@ -50,14 +50,15 @@ Helpdesk menyatukan pengajuan tiket oleh pelapor dan penanganan tiket oleh staf 
 - Panel staf Filament di `/admin`: tiket, unit, kategori masalah, status, entitas bisnis, pengguna, SLA unit, dan pengaturan MCP.
 - Prioritas tiket, komentar, lampiran, dan riwayat tiket.
 - Role `Super Admin`, `Admin Unit`, `Staff Unit`, `Master Admin`, dan `User`.
-- Login panel dengan email/kata sandi, OTP WhatsApp di `/phone-login`, dan Socialite Google untuk akun yang sudah ada.
+- Login panel dengan email/kata sandi, OTP WhatsApp di `/phone-login`, dan kode OTP atau magic link email di `/email-login`.
 - Peringatan SLA terjadwal (`sla:check-warnings` setiap 15 menit).
 - Integrasi MCP opsional di `/mcp/helpdesk` (intake) dan `/mcp/helpdesk/staff` (perintah alur staf).
 
 ### Di luar scope implementasi saat ini
 
 - Aplikasi mobile terpisah; pelapor memakai form Inertia di repositori ini, staf memakai panel Filament.
-- Registrasi mandiri di panel, reset password panel, dan pembuatan akun baru lewat Socialite. Ketiganya dinonaktifkan; akun staf dibuat oleh administrator.
+- Registrasi mandiri di panel dan reset password panel. Keduanya dinonaktifkan; akun staf dibuat oleh administrator atau dari data Talenta.
+- Login Google (Socialite). Sudah dicabut dan diganti login email lewat kode OTP atau magic link.
 - Produk REST API domain. `routes/api.php` hanya mengekspos `GET /api/user` untuk user terautentikasi Sanctum.
 - Pipeline CI/CD, image container, atau orkestrasi Compose di repositori ini.
 
@@ -77,7 +78,7 @@ Ketersediaan modul pada setiap surface saat ini:
 | Pengguna dan role | Tidak | Ya | Tidak | Permission Filament Shield |
 | Pengaturan MCP | Tidak | Super Admin | — | `/admin/pengaturan-mcp` |
 | Login OTP WhatsApp | Tidak | `/phone-login` | — | Membutuhkan `WAG_URL` dan `WAG_TOKEN` |
-| Login Google | Tidak | `/auth/google` | — | Hanya akun Helpdesk yang sudah ada |
+| Login email (kode OTP / magic link) | Tidak | `/email-login` | — | Membutuhkan mailer yang benar-benar mengirim (`MAIL_MAILER` bukan `log`/`array`) |
 
 > [!NOTE]
 > MCP adalah jalur integrasi opsional/legacy. Pengajuan tiket utama tetap form publik. Kontrak alat, token, gateway, dan cutover production ada di [`docs/mcp/README.md`](docs/mcp/README.md).
@@ -102,7 +103,7 @@ Hak akses panel ditentukan permission Filament Shield pada masing-masing role, l
 | `User` | Permission pelapor (lihat/buat tiket dan komentar). Role di-seed, tetapi akun contoh `user@cs.com` **tidak** di-assign role ini. |
 | Pelapor form publik | Tidak memakai panel. Akun minimal berbasis nomor telepon; `tickets.owner_id` menghubungkan tiket ke pelapor. |
 
-Hanya user aktif yang dapat masuk panel. `User::canAccessPanel()` menolak akun nonaktif, dan mengizinkan login bila email terverifikasi **atau** sesi OTP WhatsApp (`helpdesk_phone_verified_user_id`) cocok.
+Hanya user aktif yang dapat masuk panel. `User::canAccessPanel()` cukup memeriksa `is_active`, setara dnd-web dan gais-web: login lewat kata sandi, OTP WhatsApp, atau email semuanya membuka panel. Verifikasi email (`email_verified_at` + `email_verified_via`) hanya menentukan apakah user menerima notifikasi email.
 
 `Super Admin` dan `Master Admin` memiliki akses tiket global (`hasGlobalTicketAccess()`). Selain itu, **setiap anggota aktif sebuah divisi adalah penindak** tiket yang masuk ke divisi itu (`user_entities`): ikut di-blast saat tiket baru masuk dan boleh memproses selama belum ada PIC. Divisi asal (`users.unit_id`) selalu ikut menjadi keanggotaan.
 
@@ -190,7 +191,17 @@ Alur transisi staf yang sama dipakai perintah MCP staf (`proses` / `done`) di `/
 
 - Email dan kata sandi di `/admin/login`.
 - OTP WhatsApp di `/phone-login` (membutuhkan gateway `WAG_URL` / `WAG_TOKEN`). Registrasi akun baru dari alur OTP hanya untuk karyawan yang cocok di berkas Talenta; pelapor publik tidak memakai halaman ini.
-- Google OAuth di `/auth/google`. Registrasi Socialite dinonaktifkan; login ditolak bila akun Helpdesk belum ada.
+- Email di `/email-login`: satu email berisi kode 6 digit dan magic link. Hanya untuk akun aktif yang sudah memakai alamat itu; login email tidak membuat akun baru.
+
+Perilaku login email, mengikuti dnd-web dan gais-web:
+
+- Kode dan link berlaku `EMAIL_LOGIN_EXPIRES_IN` detik (default 600), sekali pakai, dan saling menghanguskan: memakai salah satunya mematikan yang lain. Permintaan baru menghanguskan kode dan link sebelumnya, begitu juga mengganti email akun.
+- Kode disimpan sebagai hash bcrypt dan token link sebagai SHA-256 di tabel `email_otps`. Lima kali salah kode menghanguskan record tersebut.
+- Membuka URL magic link tidak langsung login. Token ditukar lewat `wire:init` setelah halaman tampil di browser, agar pemindai link di email tidak menghabiskannya.
+- Respons langkah pertama sama untuk email terdaftar, tidak terdaftar, akun nonaktif, atau akun terhapus, jadi status akun tidak bocor. Email hanya dikirim ke satu-satunya akun aktif pemilik alamat itu.
+- Batas permintaan: kirim kode 3 kali per 5 menit dan 10 kali per jam per email, serta 20 kali per menit per IP; verifikasi kode 15 kali per 5 menit per email dan 20 kali per menit per IP; magic link 20 kali per menit per IP.
+- Login email yang berhasil membuktikan kepemilikan alamat, jadi email ditandai terverifikasi (`email_verified_via = email_link`) bila belum punya sumber verifikasi tepercaya. Akibatnya notifikasi email ikut aktif; akses panel tidak bergantung pada tanda ini.
+- Email dikirim langsung, tidak lewat antrean, agar kegagalan SMTP langsung tampil di halaman login.
 
 Reset password dan halaman profil default Filament dimatikan. Staf mengubah data pribadi lewat My Profile Breezy yang didaftarkan panel.
 
@@ -201,6 +212,7 @@ flowchart TB
     Pelapor[Browser pelapor] --> Form[Inertia Vue / dan /lapor]
     Staf[Browser staf] --> Filament[Filament Livewire /admin]
     Staf --> PhoneLogin["/phone-login OTP"]
+    Staf --> EmailLogin["/email-login OTP / magic link"]
     McpClient[Klien MCP tepercaya] --> Mcp["/mcp/helpdesk"]
     Form --> Identity[PublicReporterIdentityService]
     Form --> Submit[PublicTicketSubmissionService]
@@ -226,8 +238,8 @@ flowchart TB
 | `app/Filament/Resources` | CRUD tiket, unit, kategori, status, user, entitas bisnis, SLA |
 | `app/Filament/Pages` | Dashboard, My Profile, Pengaturan MCP |
 | `app/Filament/Widgets` | Grafik status tiket dan SLA |
-| `app/Filament/Auth` | Halaman login OTP WhatsApp |
-| `app/Http/Controllers` | Form publik dan callback Socialite |
+| `app/Filament/Auth` | Halaman login OTP WhatsApp dan email |
+| `app/Http/Controllers` | Form publik |
 | `app/Mcp` | Server dan alat MCP intake/staf |
 | `app/Models` | Model dan relasi Eloquent |
 | `app/Policies` | Authorization panel |
@@ -235,7 +247,7 @@ flowchart TB
 | `app/Console/Commands` | `sla:check-warnings` |
 | `database/migrations` | Evolusi schema |
 | `database/seeders` | Data awal development |
-| `routes/web.php` | Form publik, phone-login, Socialite |
+| `routes/web.php` | Form publik, phone-login, email-login |
 | `routes/ai.php` | Endpoint MCP HTTP |
 | `routes/console.php` | Jadwal SLA |
 | `routes/api.php` | `GET /api/user` (Sanctum) |
@@ -258,7 +270,7 @@ flowchart TB
 | Frontend build | Vite 8, Tailwind CSS 4, Axios |
 | Database | MySQL (default `.env.example`); SQLite in-memory untuk test |
 | Filesystem | Disk Laravel `local` / `public`; disk `s3` opsional |
-| Auth panel | Filament login, Breezy profile, Socialite Google, OTP WhatsApp |
+| Auth panel | Filament login, Breezy profile, OTP WhatsApp, OTP / magic link email |
 | Authorization | Filament Shield / Spatie Permission |
 | MCP | Laravel MCP (`/mcp/helpdesk`, stdio `helpdesk`) |
 | Notifikasi | Mail + WhatsApp gateway (`WAG_URL`, `WAG_TOKEN`) |
@@ -278,7 +290,7 @@ flowchart TB
 - MySQL 8+ (atau MariaDB yang kompatibel) untuk development sesuai `.env.example`.
 - Extension PHP yang biasa dipakai Laravel/Filament, termasuk `curl`, `fileinfo`, `gd`, `intl`, `mbstring`, `openssl`, `pdo_mysql`, dan `xml`.
 
-Gateway WhatsApp, Google OAuth, S3, dan Redis bersifat opsional untuk menjalankan form publik dan panel dasar. OTP login dan notifikasi WhatsApp membutuhkan `WAG_URL` serta `WAG_TOKEN`.
+Gateway WhatsApp, SMTP, S3, dan Redis bersifat opsional untuk menjalankan form publik dan panel dasar. OTP login dan notifikasi WhatsApp membutuhkan `WAG_URL` serta `WAG_TOKEN`. Login email membutuhkan mailer yang benar-benar mengirim, misalnya SMTP.
 
 ### Clone dan dependency
 
@@ -354,13 +366,13 @@ Jangan commit `.env` atau credential apa pun ke Git. Daftar berikut mengikuti [`
 | `REDIS_HOST` / `REDIS_PASSWORD` / `REDIS_PORT` | Ya | Koneksi Redis untuk Horizon; cache/session/lock bersama di multi-instance |
 | `MAIL_*` | Untuk email | SMTP dan identitas pengirim; `.env.example` menunjuk Mailpit |
 | `MAIL_TIMEOUT` | Tidak | Timeout SMTP dalam detik; default `10` agar hang mail tidak memakan `max_execution_time` |
+| `EMAIL_LOGIN_EXPIRES_IN` | Tidak | Masa berlaku kode dan magic link login email dalam detik; default `600`, minimum `60`. Tombol login Email hanya muncul bila `MAIL_MAILER` bukan `log`/`array` |
 | `WAG_URL` | Untuk WhatsApp | Endpoint gateway WhatsApp (OTP, notifikasi, peringatan SLA, MCP) |
 | `WAG_TOKEN` | Untuk WhatsApp | Bearer credential gateway WhatsApp |
 | `WA_CONNECT_TIMEOUT` | Tidak | Timeout koneksi gateway WhatsApp; default `5` detik |
 | `WA_API_TIMEOUT` | Tidak | Timeout request gateway WhatsApp; default `8` detik |
 | `PHONE_OTP_LOGIN_TTL_MINUTES` | Tidak | Umur tantangan OTP login; default `5` |
 | `WHATSAPP_OTP_TTL_MINUTES` | Tidak | Umur OTP WhatsApp; default `5` |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_CLIENT_REDIRECT` | Untuk Google login | OAuth Socialite |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` / `AWS_BUCKET` | Untuk S3 | Disk `s3` di `config/filesystems.php` |
 | `AWS_USE_PATH_STYLE_ENDPOINT` | Tidak | Path-style S3; default `false`. Set `true` plus `AWS_ENDPOINT` untuk MinIO atau S3-compatible |
 | `INERTIA_SSR_ENABLED` | Tidak | SSR Inertia; default `false` |
@@ -376,6 +388,8 @@ MAIL_MAILER=log
 MAIL_FROM_ADDRESS=dev@example.test
 MAIL_FROM_NAME="${APP_NAME}"
 ```
+
+Dengan `MAIL_MAILER=log`, tombol login Email disembunyikan. Untuk mencoba login email secara lokal, pakai Mailpit sesuai `.env.example` lalu buka kotak masuk Mailpit (biasanya `http://localhost:8025`).
 
 Form publik dan panel dasar tetap berjalan tanpa WhatsApp. Tanpa `WAG_TOKEN`, OTP login, notifikasi WhatsApp, dan intake MCP yang membutuhkan OTP tidak dapat menyelesaikan verifikasi.
 
@@ -395,7 +409,8 @@ Buka:
 
 - Form publik: `http://127.0.0.1:8000/` atau `http://127.0.0.1:8000/lapor`
 - Panel staf: `http://127.0.0.1:8000/admin`
-- Login OTP: `http://127.0.0.1:8000/phone-login`
+- Login OTP WhatsApp: `http://127.0.0.1:8000/phone-login`
+- Login email: `http://127.0.0.1:8000/email-login`
 - Health check: `http://127.0.0.1:8000/up`
 
 Scheduler tidak wajib untuk UI, tetapi harus dijalankan bila sedang mengembangkan peringatan SLA:
@@ -551,7 +566,7 @@ Daftar ini adalah batas perilaku aktual, bukan fitur yang dijanjikan:
 5. **Tidak ada REST API domain.** Jangan mengasumsikan klien mobile/API terpisah; satu-satunya route `routes/api.php` adalah `GET /api/user`.
 6. **Queue default `redis` + Horizon.** Notifikasi tiket mengantri di `notifications`. Tanpa Redis dan `php artisan horizon`, notifikasi tidak terkirim. Tes memakai `QUEUE_CONNECTION=sync` di `phpunit.xml`.
 7. **Multi-instance membutuhkan store bersama.** Komentar di `.env.example` menyatakan Redis diperlukan agar draft MCP, OTP, registrasi, rate limit, dan lock terbagi.
-8. **Registrasi panel, reset password, dan registrasi Socialite dimatikan.** Onboarding staf tetap manual / seeder / Talenta OTP.
+8. **Registrasi panel dan reset password dimatikan; login Google dicabut.** Onboarding staf tetap manual / seeder / Talenta OTP. Tabel lama `socialite_users` masih ada dan tidak dipakai lagi.
 
 ## Troubleshooting
 
@@ -595,10 +610,16 @@ Periksa cookie `helpdesk_reporter_device`, session, dan bahwa `APP_URL` cocok de
 3. Periksa `storage/logs/laravel.log`.
 4. Untuk peringatan SLA, jalankan `php artisan sla:check-warnings` dan pastikan scheduler aktif.
 
+### Kode login email tidak terkirim
+
+1. Pastikan `MAIL_MAILER` bukan `log`/`array` dan `MAIL_FROM_ADDRESS` terisi; tanpa itu tombol Email tidak muncul.
+2. Pastikan email tersebut dipakai tepat satu akun aktif. Email tak dikenal atau akun nonaktif sengaja tidak dikirimi kode, tanpa pesan berbeda.
+3. Periksa `storage/logs/laravel.log` untuk pesan `Gagal mengirim email login.`
+
 ### `/mcp/helpdesk` 405 di browser
 
 Itu disengaja. Endpoint hanya menerima `POST` JSON-RPC dari klien MCP. Lihat [`docs/mcp/README.md`](docs/mcp/README.md).
 
 ### Login panel ditolak
 
-Pastikan user `is_active`, punya email terverifikasi **atau** baru menyelesaikan OTP di `/phone-login`, dan tidak memakai akun pelapor telepon-saja untuk masuk `/admin`.
+Pastikan user `is_active` dan tidak terhapus. Akses panel tidak lagi bergantung pada verifikasi email. Untuk login kata sandi, pastikan akun punya kata sandi; akun tanpa kata sandi masuk lewat `/phone-login` atau `/email-login`.
