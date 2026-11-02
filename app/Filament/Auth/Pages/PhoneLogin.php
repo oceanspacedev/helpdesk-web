@@ -406,12 +406,11 @@ class PhoneLogin extends SimplePage
     {
         Auth::login($user, false);
         session()->regenerate();
-        session()->put('helpdesk_phone_verified_user_id', $user->id);
 
         if ($isNew) {
             Notification::make()
                 ->title('Pendaftaran Sukses!')
-                ->body('Akun Anda berhasil didaftarkan. Gunakan OTP WhatsApp untuk masuk. Email hanya dapat dipakai setelah kepemilikannya diverifikasi secara terpisah.')
+                ->body('Akun Anda berhasil didaftarkan. Berikutnya Anda bisa masuk lewat OTP WhatsApp atau email.')
                 ->success()
                 ->duration(10000)
                 ->send();

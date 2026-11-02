@@ -463,33 +463,17 @@ class EmailOtpLoginTest extends TestCase
         $this->assertNull($user->fresh()->email_verified_at);
     }
 
-    public function test_email_awaiting_legacy_review_cannot_be_used_until_an_administrator_trusts_it(): void
+    public function test_email_awaiting_legacy_review_can_log_in_and_becomes_verified(): void
     {
         $user = $this->createUser([
             'email_verified_at' => now()->subYear(),
             'email_verified_via' => 'legacy_review_required',
         ]);
 
-        Livewire::test(EmailLogin::class)
-            ->fillForm(['email' => 'staf@example.test'])
-            ->call('send')
-            ->assertHasNoFormErrors()
-            ->assertSet('awaitingOtp', true);
+        $this->loginWithCode($this->requestCode('staf@example.test'));
 
-        Mail::assertNothingSent();
-
-        $user->update(['email_verified_via' => 'admin']);
-        $mail = $this->requestCode('staf@example.test');
-
-        // Ditandai ulang setelah kode terkirim: kode lama ikut ditolak.
-        $user->update(['email_verified_via' => 'legacy_review_required']);
-        $this->awaitingCodeFor('staf@example.test')
-            ->set('data.otp', $mail->otp)
-            ->call('verify')
-            ->assertHasFormErrors(['otp']);
-
-        $this->assertFalse(Auth::check());
-        $this->assertSame('legacy_review_required', $user->fresh()->email_verified_via);
+        $this->assertSame($user->id, Auth::id());
+        $this->assertSame('email_link', $user->fresh()->email_verified_via);
     }
 
     public function test_unknown_deleted_or_shared_email_gets_the_same_response_without_a_code(): void

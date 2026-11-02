@@ -60,7 +60,7 @@ The repository implements a Laravel 12 and Filament 4 web helpdesk with ticket m
 - UC-003: Participants add comments to tickets in the ticket relation manager and notifications are sent.
 - UC-004: MCP reporters create tickets through exactly two business paths after their canonical phone resolves safely. An existing eligible Helpdesk account proceeds to ticket creation. If that account is missing, the server creates the prerequisite account—using an exact Talenta match when available or explicit consent plus a freshly typed name otherwise—and continues the same intake to ticket creation. Declining account creation cancels the intake without writes. Conflicting phone claims are rejected.
 - UC-006: Users log in or register with a phone number OTP sent through WhatsApp. New manual or Talenta-backed accounts remain encrypted pending data until OTP succeeds, preventing active credentials from being created for an unverified number.
-- UC-007: Active Helpdesk users sign in with a single-use code or magic link sent to their account email; the flow never creates accounts and skips emails awaiting legacy review.
+- UC-007: Active Helpdesk users sign in with a single-use code or magic link sent to their account email; the flow never creates accounts.
 - UC-008: Admin users manage master data and users through Filament resources.
 
 ## Data Stores And Entities

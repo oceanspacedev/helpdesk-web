@@ -44,7 +44,7 @@ class EmailOtpService
     }
 
     /**
-     * Akun pemilik email ini yang boleh login lewat email. Email yang dipakai lebih dari satu user tidak bisa dipakai.
+     * Akun aktif pemilik email ini. Email yang dipakai lebih dari satu user tidak bisa dipakai login.
      */
     public function findUser(string $email): ?User
     {
@@ -55,17 +55,7 @@ class EmailOtpService
 
         $user = $matches->count() === 1 ? $matches->first() : null;
 
-        return $user && self::canLoginByEmail($user) ? $user : null;
-    }
-
-    /**
-     * Akun nonaktif ditolak. Email berstatus legacy_review_required berasal dari alur lama yang tidak membuktikan
-     * kepemilikan, jadi pemilik kotak masuknya belum tentu pemilik akun; tunggu tinjauan administrator.
-     */
-    public static function canLoginByEmail(User $user): bool
-    {
-        return $user->is_active
-            && $user->email_verified_via !== 'legacy_review_required';
+        return $user?->is_active ? $user : null;
     }
 
     /**
@@ -175,7 +165,7 @@ class EmailOtpService
                 ->lockForUpdate()
                 ->first();
 
-            if (! $user || ! $record || ! self::canLoginByEmail($user) || ! $this->isUsable($record)
+            if (! $user || ! $record || ! $user->is_active || ! $this->isUsable($record)
                 || self::normalizeEmail($user->email) !== $record->email) {
                 return null;
             }
@@ -198,7 +188,7 @@ class EmailOtpService
     }
 
     /**
-     * Kode atau link yang sampai ke kotak masuk membuktikan kepemilikan email, sama seperti tautan verifikasi.
+     * Kode atau link yang sampai ke kotak masuk membuktikan kepemilikan email, sehingga notifikasi email ikut aktif.
      */
     private function markEmailVerified(User $user): void
     {
