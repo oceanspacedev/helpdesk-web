@@ -101,7 +101,7 @@ Hak akses panel ditentukan permission Filament Shield pada masing-masing role, l
 | `User` | Permission pelapor (lihat/buat tiket dan komentar). Role di-seed, tetapi akun contoh `user@cs.com` **tidak** di-assign role ini. |
 | Pelapor form publik | Tidak memakai panel. Akun minimal berbasis nomor telepon; `tickets.owner_id` menghubungkan tiket ke pelapor. |
 
-Hanya user aktif yang dapat masuk panel. `User::canAccessPanel()` menolak akun nonaktif, dan mengizinkan login bila email terverifikasi **atau** sesi OTP WhatsApp (`helpdesk_phone_verified_user_id`) cocok.
+Hanya user aktif yang dapat masuk panel. `User::canAccessPanel()` cukup memeriksa `is_active`, setara dnd-web dan gais-web: login lewat kata sandi, OTP WhatsApp, atau email semuanya membuka panel. Verifikasi email (`email_verified_at` + `email_verified_via`) hanya menentukan apakah user menerima notifikasi email.
 
 `Super Admin` dan `Master Admin` memiliki akses tiket global (`hasGlobalTicketAccess()`). `Admin Unit` dan `Staff Unit` hanya memproses tiket pada unit yang ditugaskan (`user_entities` / `unit_id`).
 
@@ -197,9 +197,8 @@ Perilaku login email, mengikuti dnd-web dan gais-web:
 - Kode disimpan sebagai hash bcrypt dan token link sebagai SHA-256 di tabel `email_otps`. Lima kali salah kode menghanguskan record tersebut.
 - Membuka URL magic link tidak langsung login. Token ditukar lewat `wire:init` setelah halaman tampil di browser, agar pemindai link di email tidak menghabiskannya.
 - Respons langkah pertama sama untuk email terdaftar, tidak terdaftar, akun nonaktif, atau akun terhapus, jadi status akun tidak bocor. Email hanya dikirim ke satu-satunya akun aktif pemilik alamat itu.
-- Akun dengan `email_verified_via = legacy_review_required` tidak dikirimi kode sampai administrator meninjau emailnya, karena alur lama tidak membuktikan kepemilikan alamat tersebut.
 - Batas permintaan: kirim kode 3 kali per 5 menit dan 10 kali per jam per email, serta 20 kali per menit per IP; verifikasi kode 15 kali per 5 menit per email dan 20 kali per menit per IP; magic link 20 kali per menit per IP.
-- Login email yang berhasil membuktikan kepemilikan alamat, jadi email ditandai terverifikasi (`email_verified_via = email_link`) bila belum punya sumber verifikasi tepercaya.
+- Login email yang berhasil membuktikan kepemilikan alamat, jadi email ditandai terverifikasi (`email_verified_via = email_link`) bila belum punya sumber verifikasi tepercaya. Akibatnya notifikasi email ikut aktif; akses panel tidak bergantung pada tanda ini.
 - Email dikirim langsung, tidak lewat antrean, agar kegagalan SMTP langsung tampil di halaman login.
 
 Reset password dan halaman profil default Filament dimatikan. Staf mengubah data pribadi lewat My Profile Breezy yang didaftarkan panel.
@@ -596,4 +595,4 @@ Itu disengaja. Endpoint hanya menerima `POST` JSON-RPC dari klien MCP. Lihat [`d
 
 ### Login panel ditolak
 
-Pastikan user `is_active`, punya email terverifikasi (login lewat `/email-login` sekaligus memverifikasinya) **atau** baru menyelesaikan OTP di `/phone-login`, dan tidak memakai akun pelapor telepon-saja untuk masuk `/admin`.
+Pastikan user `is_active` dan tidak terhapus. Akses panel tidak lagi bergantung pada verifikasi email. Untuk login kata sandi, pastikan akun punya kata sandi; akun tanpa kata sandi masuk lewat `/phone-login` atau `/email-login`.

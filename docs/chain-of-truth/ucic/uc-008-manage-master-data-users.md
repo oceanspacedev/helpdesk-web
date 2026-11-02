@@ -5,7 +5,7 @@ Status: Reviewed
 ## Contract
 
 - Interfaces: Filament resources for users, units, problem categories, ticket statuses, and business entities.
-- Authentication: Active Filament user with trusted verified email authentication or a matching current phone-OTP session.
+- Authentication: Active Filament user signed in by password, WhatsApp OTP, or email login.
 - Authorization: Spatie permissions and policy methods generated or configured through Filament Shield.
 - Data operations: List, create, edit, view, delete, restore, force-delete depending on each resource.
 - Side effects: Master data changes affect ticket forms and WhatsApp form options.

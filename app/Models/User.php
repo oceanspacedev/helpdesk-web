@@ -103,14 +103,6 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
         });
     }
 
-    /**
-     * Email yang belum diverifikasi bukan credential login yang tepercaya.
-     */
-    public function getAuthPassword()
-    {
-        return $this->canUseVerifiedEmail() ? parent::getAuthPassword() : '';
-    }
-
     public function canUseVerifiedEmail(): bool
     {
         return filled($this->email)
@@ -307,15 +299,7 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        if (! $this->is_active) {
-            return false;
-        }
-
-        if ($this->canUseVerifiedEmail()) {
-            return true;
-        }
-
-        return (int) session()->get('helpdesk_phone_verified_user_id') === (int) $this->id;
+        return (bool) $this->is_active;
     }
 
     public function isSuperAdmin(): bool

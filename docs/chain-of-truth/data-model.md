@@ -26,7 +26,7 @@ Source type: Reconstructed from migrations, models, and seeders.
 - ENT-002 Ticket is soft-deletable.
 - A soft-deleted ticket remains viewable to authorized mailbox participants for recovery/audit, but report editing, workflow transitions, and comment mutations are read-only until restoration.
 - ENT-003 Unit, ENT-004 ProblemCategory, ENT-006 TicketStatus, ENT-007 BusinessEntity are soft-deletable in models or migrations.
-- ENT-001 User is soft-deletable and must be active plus authenticated through trusted verified email or the current session's matching phone-OTP proof to access Filament.
+- ENT-001 User is soft-deletable and must be active and authenticated (password, WhatsApp OTP, or email login) to access Filament.
 - ENT-008 Comment is soft-deletable.
 - ENT-002 status changes create ENT-009 TicketHistory.
 - ENT-002 uses one record for both mailbox views: `owner_id` places it in the sender's Ticket Keluar, while `unit_id` places it in the destination unit's Ticket Masuk. No duplicated inbox/outbox rows are stored.
@@ -39,7 +39,7 @@ Source type: Reconstructed from migrations, models, and seeders.
 - Ticket description is required and max length 65535 in form.
 - Ticket supporting attachments are JSON and nullable.
 - User phone is canonicalized on every model save and protected by a database unique constraint on `phone_normalized`; the constraint migration stops until legacy duplicates are repaired.
-- Email is usable for password authentication and mail notifications only when `email_verified_at` and trusted `email_verified_via` provenance are both present. Legacy timestamps are marked `legacy_review_required`.
+- Email receives mail notifications only when `email_verified_at` and trusted `email_verified_via` provenance are both present. Legacy timestamps are marked `legacy_review_required`. Password login does not depend on verification.
 - Comment table uses `tiket_id`, preserving current schema spelling.
 - The MCP settings UI accepts intake TTL from 10 to 1,440 minutes, request limits from 60 to 600 per token per minute, and trusted assertion leeway from 30 to 3,600 seconds. `HELPDESK_MCP_LOCAL_CLIENT_ID` is intentionally client-local and is not stored in ENT-012.
 
