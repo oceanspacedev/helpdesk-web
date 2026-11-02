@@ -30,14 +30,18 @@ final class HelpdeskWhatsAppMessage
 
     public static function forStaff(Ticket $ticket): string
     {
-        $ticket->loadMissing(['owner', 'reporterUnit']);
+        $ticket->loadMissing(['owner', 'reporterUnit', 'reporterBusinessEntity']);
         $number = self::ticketNumber($ticket);
         $owner = $ticket->owner;
-        // Bagian "Dari": nama, jabatan, dan divisi asal pelapor.
+        // Bagian "Dari": nama, jabatan, dan divisi asal pelapor. Badan usaha
+        // kontraknya hanya ditulis bila berbeda dari badan usaha yang dilaporkan.
         $sender = implode(' · ', array_filter([
             trim((string) ($owner?->name ?? '')),
             trim((string) ($ticket->reporter_job_title ?? '')),
             trim((string) ($ticket->reporterUnit?->name ?? '')),
+            $ticket->reporter_business_entity_id !== $ticket->business_entities_id
+                ? trim((string) ($ticket->reporterBusinessEntity?->name ?? ''))
+                : '',
         ]));
         $waLink = self::waMe($owner, $number);
 

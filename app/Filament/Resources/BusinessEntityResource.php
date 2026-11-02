@@ -3,14 +3,13 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\BusinessEntityResource\Pages;
-use App\Filament\Resources\BusinessEntityResource\RelationManagers;
 use App\Models\BusinessEntity;
-use Filament\Forms;
 use Filament\Actions;
-use Filament\Schemas\Schema;
+use Filament\Forms;
 use Filament\Resources\Resource;
-use Filament\Tables\Table;
+use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
@@ -18,9 +17,11 @@ class BusinessEntityResource extends Resource
 {
     protected static ?string $model = BusinessEntity::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-stack';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Master Data';
+    protected static string|\UnitEnum|null $navigationGroup = 'Organisasi';
+
+    protected static ?int $navigationSort = 2;
 
     public static function form(Schema $form): Schema
     {
@@ -64,8 +65,7 @@ class BusinessEntityResource extends Resource
         return parent::getEloquentQuery()
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
-            ])
-        ;
+            ]);
     }
 
     public static function getPluralModelLabel(): string

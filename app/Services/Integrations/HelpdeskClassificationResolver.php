@@ -37,9 +37,10 @@ class HelpdeskClassificationResolver
             ['business_entities_id', 'business_entity_id'],
             ['business_entity', 'business_entity_name']
         );
-        // Pelapor dengan profil karyawan tidak perlu ditanya badan usahanya.
-        $businessEntity = ($owner?->business_entity_id ? $owner->businessEntity : null)
-            ?? $this->resolveBusinessEntity($ticketData);
+        // Badan usaha yang disebut pelapor menang. Bila tidak disebut, badan
+        // usaha kontrak pelapor dipakai agar ia tidak perlu ditanya.
+        $businessEntity = $this->resolveBusinessEntity($ticketData)
+            ?? ($owner?->business_entity_id ? $owner->businessEntity : null);
         if (! $businessEntity) {
             $issues[] = $this->fieldIssue('business_entities_id', $entityProvided);
         }

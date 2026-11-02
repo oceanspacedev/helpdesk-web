@@ -9,8 +9,8 @@ namespace App\Models;
 use App\Notifications\NewTicketNotification;
 use App\Notifications\TicketStatusChangedNotification;
 use App\Notifications\TicketSubmittedNotification;
-use App\Support\HelpdeskNotifier;
 use App\Services\Integrations\HelpdeskOperationalClassifier;
+use App\Support\HelpdeskNotifier;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -30,6 +30,7 @@ use Illuminate\Support\Facades\Schema;
  * @property int $owner_id
  * @property null|int $reporter_unit_id
  * @property null|string $reporter_job_title
+ * @property null|int $reporter_business_entity_id
  * @property int $problem_category_id
  * @property string $title
  * @property string $description
@@ -43,6 +44,8 @@ use Illuminate\Support\Facades\Schema;
  * @property Priority $priority
  * @property Unit $unit
  * @property null|Unit $reporterUnit
+ * @property null|BusinessEntity $businessEntity
+ * @property null|BusinessEntity $reporterBusinessEntity
  * @property null|User $user
  * @property ProblemCategory $problem_category
  * @property TicketStatus $ticket_status
@@ -59,6 +62,7 @@ class Ticket extends Model
         'unit_id' => 'int',
         'owner_id' => 'int',
         'reporter_unit_id' => 'int',
+        'reporter_business_entity_id' => 'int',
         'problem_category_id' => 'int',
         'ticket_statuses_id' => 'int',
         'responsible_id' => 'int',
@@ -76,6 +80,7 @@ class Ticket extends Model
         'unit_id',
         'reporter_unit_id',
         'reporter_job_title',
+        'reporter_business_entity_id',
         'owner_id',
         'problem_category_id',
         'title',
@@ -200,13 +205,24 @@ class Ticket extends Model
     }
 
     /**
-     * Get the businessEntity that owns the Ticket.
+     * Badan usaha yang dilaporkan. Bisa berbeda dari badan usaha kontrak
+     * pelapor karena karyawan holding menangani banyak badan usaha.
      *
      * @return BelongsTo
      */
     public function businessEntity()
     {
         return $this->belongsTo(BusinessEntity::class, 'business_entities_id');
+    }
+
+    /**
+     * Badan usaha kontrak pelapor saat tiket dibuat (bagian "Dari").
+     *
+     * @return BelongsTo
+     */
+    public function reporterBusinessEntity()
+    {
+        return $this->belongsTo(BusinessEntity::class, 'reporter_business_entity_id');
     }
 
     /**
@@ -272,7 +288,12 @@ class Ticket extends Model
             if ($ticket->reporter_job_title === null && filled($owner->job_title)) {
                 $ticket->reporter_job_title = $owner->job_title;
             }
-            if ($owner->business_entity_id) {
+            if ($ticket->reporter_business_entity_id === null && $owner->business_entity_id) {
+                $ticket->reporter_business_entity_id = $owner->business_entity_id;
+            }
+            // Badan usaha yang dilaporkan dipilih pelapor; badan usaha kontrak
+            // hanya menjadi isian awal bila tidak ada yang dipilih.
+            if ($ticket->business_entities_id === null && $owner->business_entity_id) {
                 $ticket->business_entities_id = $owner->business_entity_id;
             }
         });

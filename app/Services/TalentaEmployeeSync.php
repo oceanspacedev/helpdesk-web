@@ -29,6 +29,37 @@ class TalentaEmployeeSync
     private array $units = [];
 
     /**
+     * Daftar karyawan dari ekspor JSON Talenta: { "data": { "data": [...] } }.
+     *
+     * @return list<array<string, mixed>>|null null bila strukturnya tidak sesuai
+     */
+    public static function employeesFromJson(string $content): ?array
+    {
+        $employees = json_decode($content, true)['data']['data'] ?? null;
+
+        return is_array($employees) ? array_values($employees) : null;
+    }
+
+    /**
+     * Ringkasan hasil sinkron untuk command dan panel.
+     *
+     * @return array<string, int>
+     */
+    public static function summary(array $report, int $employeeCount): array
+    {
+        return [
+            'Karyawan di file' => $employeeCount,
+            'Badan usaha baru' => count($report['entities_created']),
+            'Divisi baru' => count($report['divisions_created']),
+            'Akun baru' => count($report['users_created']),
+            'Akun diperbarui' => count($report['users_updated']),
+            'Akun sudah sesuai' => $report['users_unchanged'],
+            'Dilewati' => count($report['users_skipped']),
+            'Dinonaktifkan (keluar)' => count($report['users_deactivated']),
+        ];
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $employees
      * @return array{
      *     entities_created: list<string>,

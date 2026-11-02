@@ -130,11 +130,10 @@ class PublicTicketSubmissionService
                         ->where('unit_id', $unit->id)
                         ->firstOrFail();
                     $priority = Priority::query()->findOrFail((int) $data['priority_id']);
-                    // Badan usaha adalah bagian "Dari" dan diambil dari profil karyawan.
-                    $businessEntityId = $freshReporter->business_entity_id
-                        ?: (filled($data['business_entities_id'] ?? null)
-                            ? BusinessEntity::query()->findOrFail((int) $data['business_entities_id'])->id
-                            : null);
+                    // Badan usaha yang dilaporkan bisa berbeda dari badan usaha kontrak pelapor.
+                    $businessEntityId = filled($data['business_entities_id'] ?? null)
+                        ? BusinessEntity::query()->findOrFail((int) $data['business_entities_id'])->id
+                        : $freshReporter->business_entity_id;
                 } catch (ModelNotFoundException) {
                     throw ValidationException::withMessages([
                         'ticket' => 'Pilihan divisi, kategori, prioritas, atau badan usaha sudah tidak tersedia. Muat ulang halaman.',

@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Bagian "Dari" pada tiket: divisi asal dan jabatan pelapor saat melapor.
-     * Badan usaha pelapor memakai kolom tickets.business_entities_id.
+     * Badan usaha pelapor ditambahkan terpisah (reporter_business_entity_id).
      */
     public function up(): void
     {

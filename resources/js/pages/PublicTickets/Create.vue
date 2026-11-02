@@ -40,6 +40,7 @@ const identityForm = useForm({
 const ticketForm = useForm({
     submission_token: props.submissionToken,
     website: '',
+    business_entities_id: props.old.business_entities_id ?? '',
     unit_id: props.old.unit_id ?? '',
     problem_category_id: props.old.problem_category_id ?? '',
     priority_id: props.old.priority_id ?? props.defaultPriorityId ?? '',
@@ -149,6 +150,16 @@ function changeReporter() {
     <Head :title="reporter ? 'Kirim laporan' : 'Buat laporan'" />
 
     <SimpleLayout>
+    <template #header>
+        <a
+            :href="urls.login"
+            class="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-2.5 text-sm font-medium text-gray-700 ring-1 ring-gray-950/10 transition duration-75 outline-hidden hover:bg-gray-50 hover:text-gray-950 focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-white/5 dark:text-gray-200 dark:ring-white/10 dark:hover:bg-white/10 dark:hover:text-white"
+            title="Masuk ke panel petugas helpdesk"
+        >
+            <Icon name="arrow-right-end-on-rectangle" class="size-4" />
+            Masuk
+        </a>
+    </template>
     <div class="relative isolate flex min-h-dvh flex-col p-4 pt-16">
         <div
             class="flex flex-1 flex-col items-center"
@@ -204,6 +215,23 @@ function changeReporter() {
 
                     <Section heading="Kirim ke" icon="paper-airplane">
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            <Field
+                                id="business_entities_id"
+                                label="Badan Usaha yang Dilaporkan"
+                                required
+                                :error="ticketForm.errors.business_entities_id"
+                                hint="Badan usaha tempat kendala terjadi. Ganti bila bukan badan usaha kontrak Anda."
+                            >
+                                <SelectInput
+                                    id="business_entities_id"
+                                    v-model="ticketForm.business_entities_id"
+                                    required
+                                    placeholder="Pilih badan usaha"
+                                    :options="options.business_entities"
+                                    :invalid="Boolean(ticketForm.errors.business_entities_id)"
+                                />
+                            </Field>
+
                             <Field
                                 id="unit_id"
                                 label="Unit / Divisi Tujuan"
@@ -331,9 +359,14 @@ function changeReporter() {
                         </p>
                     </Section>
 
-                    <Button type="submit" block :processing="ticketForm.processing">
-                        {{ ticketForm.processing ? 'Mengirim…' : 'Kirim laporan' }}
-                    </Button>
+                    <!-- Formulirnya panjang, jadi tombol kirim menempel di bawah layar agar selalu terjangkau. -->
+                    <div
+                        class="sticky bottom-0 z-10 -mx-4 bg-linear-to-t from-gray-50 from-70% to-gray-50/0 px-4 pt-6 pb-[max(1rem,env(safe-area-inset-bottom))] dark:from-gray-950 dark:to-gray-950/0"
+                    >
+                        <Button type="submit" block :processing="ticketForm.processing">
+                            {{ ticketForm.processing ? 'Mengirim…' : 'Kirim laporan' }}
+                        </Button>
+                    </div>
                 </form>
             </template>
 
@@ -407,9 +440,6 @@ function changeReporter() {
                 </div>
             </Card>
         </div>
-        </div>
-        <div class="flex justify-center py-4">
-            <TextLink :href="urls.login" color="gray">Masuk/Login</TextLink>
         </div>
     </div>
     </SimpleLayout>
