@@ -148,7 +148,7 @@ WHERE id = :reviewed_admin_id
   AND email_verified_via = 'legacy_review_required';
 ```
 
-An old Socialite link remains blocked while its user is `legacy_review_required`, inactive, or soft-deleted. Review those accounts through the same administrator-controlled process.
+Google (Socialite) login has been removed. Email login (`/email-login`) sends nothing to a `legacy_review_required`, inactive, or soft-deleted account, so review those accounts through the same administrator-controlled process.
 
 Purge every pre-cutover server-side session while traffic and workers remain stopped; clearing remember tokens alone does not invalidate an existing session. Use the configured session driver and target only its Helpdesk-owned data:
 

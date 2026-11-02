@@ -706,6 +706,67 @@ class PhoneOtpLoginTest extends TestCase
         $this->assertFalse(Auth::check());
     }
 
+    public function test_phone_otp_login_rejects_an_expired_code(): void
+    {
+        User::create([
+            'name' => 'Budi Outlet Depok',
+            'email' => null,
+            'password' => null,
+            'phone' => '6280000000000',
+            'is_active' => true,
+        ]);
+
+        $component = Livewire::test(PhoneLogin::class)
+            ->fillForm(['phone' => '0800-0000-0000'])
+            ->call('send')
+            ->assertSet('awaitingOtp', true);
+
+        $this->travel(5)->minutes();
+        $this->travel(1)->seconds();
+
+        $component
+            ->set('data.otp', $this->otpCode())
+            ->call('verify')
+            ->assertHasFormErrors(['otp' => 'Kode OTP tidak valid atau sudah kedaluwarsa.'])
+            ->assertNoRedirect();
+
+        $this->assertFalse(Auth::check());
+    }
+
+    public function test_phone_otp_login_rejects_a_reused_code_even_with_a_replayed_challenge(): void
+    {
+        $user = User::create([
+            'name' => 'Budi Outlet Depok',
+            'email' => null,
+            'password' => null,
+            'phone' => '6280000000000',
+            'is_active' => true,
+        ]);
+
+        $component = Livewire::test(PhoneLogin::class)
+            ->fillForm(['phone' => '0800-0000-0000'])
+            ->call('send')
+            ->assertSet('awaitingOtp', true);
+        $challengeId = (string) $component->get('otpChallengeId');
+        $code = $this->otpCode();
+
+        $component->set('data.otp', $code)->call('verify')->assertRedirect('/admin');
+        $this->assertSame($user->id, Auth::id());
+
+        Auth::logout();
+
+        Livewire::test(PhoneLogin::class)
+            ->set('otpChallengeId', $challengeId)
+            ->set('awaitingOtp', true)
+            ->fillForm(['phone' => '6280000000000', 'otp' => $code])
+            ->call('verify')
+            ->assertHasFormErrors(['otp' => 'Kode OTP tidak valid atau sudah kedaluwarsa.'])
+            ->assertNoRedirect();
+
+        $this->assertFalse(Auth::check());
+        $this->assertCount(1, $this->whatsAppGateway->messages);
+    }
+
     private function createTestSchema(): void
     {
         foreach (['activity_log', 'users'] as $table) {
