@@ -42,8 +42,8 @@ WAG_URL=https://whatsapp-gateway.example.com
 WAG_TOKEN=REPLACE_WITH_THE_WHATSAPP_GATEWAY_TOKEN
 WHATSAPP_OTP_TTL_MINUTES=5
 
-# Optional when the release-bundled file is used. Otherwise use one stable,
-# readable file path on every node.
+# Optional when storage/app/talenta-list-employee.json is used. Otherwise use
+# one stable, readable file path on every node. Never commit this file.
 # TALENTA_EMPLOYEE_FILE=/srv/helpdesk/shared/talenta-list-employee.json
 ```
 
