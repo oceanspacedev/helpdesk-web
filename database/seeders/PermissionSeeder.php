@@ -13,7 +13,7 @@ class PermissionSeeder extends Seeder
      */
     public function run(): void
     {
-        if (! Artisan::has('shield:generate')) {
+        if (! array_key_exists('shield:generate', Artisan::all())) {
             Log::warning('Command shield:generate tidak tersedia. Filament Shield belum terinstall?');
 
             return;

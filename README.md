@@ -83,7 +83,7 @@ Ketersediaan modul pada setiap surface saat ini:
 > [!NOTE]
 > MCP adalah jalur integrasi opsional/legacy. Pengajuan tiket utama tetap form publik. Kontrak alat, token, gateway, dan cutover production ada di [`docs/mcp/README.md`](docs/mcp/README.md).
 
-<img src="screenshot/create-ticket.png" width="100%" alt="Form pengajuan tiket publik" />
+<img src="screenshot/public-form.png" width="100%" alt="Form laporan publik di /lapor setelah nomor WhatsApp pelapor tersimpan" />
 
 ## Role dan hak akses
 
@@ -120,7 +120,7 @@ Kredensial berikut hanya dibuat oleh `php artisan db:seed` / `migrate --seed`. J
 
 Role `Master Admin` di-seed tanpa akun contoh. Unit seed: `BUSDEV` dan `IT`.
 
-<img src="screenshot/super-admin.png" width="100%" alt="Pratinjau panel Super Admin" />
+<img src="screenshot/admin-dashboard.png" width="100%" alt="Dasbor panel staf sebagai Super Admin: pencapaian SLA, tiket overdue, ringkasan master data, dan grafik status tiket" />
 
 ## Cara kerja aplikasi
 
@@ -186,6 +186,10 @@ Data nama dan nomor tidak disalin ke tabel tiket. Pencocokan identitas pada migr
 4. Policy membatasi siapa yang boleh melihat, mengubah, dan memproses tiket: pemilik dapat mengubah tiket miliknya selama masih `Open`; staf memproses tiket unitnya; Super Admin / Master Admin lintas unit.
 
 Alur transisi staf yang sama dipakai perintah MCP staf (`proses` / `done`) di `/mcp/helpdesk/staff`.
+
+<img src="screenshot/admin-tickets.png" width="100%" alt="Daftar tiket di panel: tab Semua Tiket dan Tiket Keluar, pengirim, unit tujuan, penanggung jawab, status, dan status SLA" />
+
+<img src="screenshot/admin-ticket-detail.png" width="100%" alt="Detail tiket: aksi Ubah, Ubah kategori, Pindah unit, Selesai, Batalkan, data pelapor, SLA, dan komentar" />
 
 ### 3. Login staf
 
@@ -254,11 +258,224 @@ flowchart TB
 | `resources/js/pages/PublicTickets` | Halaman Inertia form publik |
 | `tests` | Unit dan feature test |
 | `docs/mcp/README.md` | Kontrak dan operasional MCP |
-| `screenshot/` | Gambar alur dan skema untuk README ini |
+| `screenshot/` | Screenshot UI untuk README ini (data demo fiktif, bukan data production) |
 
-<img src="screenshot/database-design.png" width="100%" alt="Desain basis data" />
+### Desain basis data
 
-<img src="screenshot/uml.png" width="100%" alt="Diagram UML" />
+Tabel domain utama. Tabel framework dan paket (permission, notifikasi, antrean, sesi), tabel MCP (`helpdesk_mcp_settings`, `mcp_ticket_creation_requests`, `helpdesk_identity_assertion_uses`), dan tabel lama `socialite_users` tidak digambar.
+
+```mermaid
+erDiagram
+    business_entities ||--o{ users : "kontrak (Talenta)"
+    units ||--o{ users : "divisi asal"
+    users ||--o{ user_entities : "divisi yang ditangani"
+    units ||--o{ user_entities : "entity_type = Unit"
+    units ||--o{ problem_categories : punya
+    units ||--o{ unit_slas : "target SLA"
+    priorities ||--o{ unit_slas : per
+    units ||--o{ tickets : "divisi tujuan"
+    units |o--o{ tickets : "divisi pelapor"
+    problem_categories ||--o{ tickets : kategori
+    priorities ||--o{ tickets : prioritas
+    ticket_statuses ||--o{ tickets : status
+    business_entities |o--o{ tickets : "dilaporkan"
+    business_entities |o--o{ tickets : "kontrak pelapor"
+    users ||--o{ tickets : "pelapor (owner)"
+    users |o--o{ tickets : "PIC (responsible)"
+    tickets ||--o{ comments : ""
+    users ||--o{ comments : menulis
+    tickets ||--o{ ticket_histories : riwayat
+    ticket_statuses ||--o{ ticket_histories : ""
+    users ||--o{ ticket_histories : mengubah
+    users ||--o{ helpdesk_reporter_bindings : "ikatan perangkat"
+    users ||--o{ email_otps : "login email"
+
+    users {
+        bigint id PK
+        string name
+        string email "nullable, unik"
+        string email_verified_via
+        string phone
+        string phone_normalized "identitas pelapor"
+        string identity "NIK Talenta"
+        bigint unit_id FK
+        bigint business_entity_id FK
+        string job_title
+        string job_level
+        timestamp talenta_synced_at
+        boolean is_active
+    }
+    units {
+        bigint id PK
+        string name
+    }
+    business_entities {
+        bigint id PK
+        string name
+    }
+    user_entities {
+        bigint id PK
+        bigint user_id FK
+        string entity_type
+        bigint entity_id FK
+    }
+    problem_categories {
+        bigint id PK
+        bigint unit_id FK
+        string name
+    }
+    priorities {
+        bigint id PK
+        string name
+    }
+    ticket_statuses {
+        bigint id PK
+        string name "Open, In Progress, Cancel, Closed"
+    }
+    unit_slas {
+        bigint id PK
+        bigint unit_id FK
+        bigint priority_id FK
+        int target_hours
+    }
+    tickets {
+        bigint id PK
+        bigint unit_id FK
+        bigint problem_category_id FK
+        bigint priority_id FK
+        bigint ticket_statuses_id FK
+        bigint owner_id FK
+        bigint responsible_id FK "nullable"
+        bigint business_entities_id FK
+        bigint reporter_business_entity_id FK
+        bigint reporter_unit_id FK
+        string reporter_job_title
+        string title
+        text description
+        json supporting_attachments
+        timestamp approved_at
+        timestamp solved_at
+        datetime sla_due_at
+        boolean is_sla_met
+        datetime sla_warning_sent_at
+    }
+    comments {
+        bigint id PK
+        bigint tiket_id FK
+        bigint user_id FK
+        text comment
+        string attachments
+    }
+    ticket_histories {
+        bigint id PK
+        bigint ticket_id FK
+        bigint ticket_statuses_id FK
+        bigint user_id FK
+    }
+    helpdesk_reporter_bindings {
+        bigint id PK
+        bigint user_id FK
+        string client_key
+        string channel
+        string verified_phone_hash
+        timestamp last_seen_at
+        timestamp revoked_at
+    }
+    email_otps {
+        bigint id PK
+        bigint user_id FK
+        string email
+        string otp_hash "bcrypt"
+        string token_hash "SHA-256"
+        timestamp expires_at
+        tinyint attempt_count
+    }
+```
+
+### Diagram kelas model
+
+Relasi Eloquent di `app/Models` beserta method domain yang dipakai policy dan workflow.
+
+```mermaid
+classDiagram
+    direction LR
+    class User {
+        +unit() BelongsTo~Unit~
+        +businessEntity() BelongsTo~BusinessEntity~
+        +units() MorphToMany~Unit~
+        +tickets() HasMany~Ticket~
+        +ticektResponsibility() HasMany~Ticket~
+        +comments() HasMany~Comment~
+        +hasGlobalTicketAccess() bool
+        +canProcessTicketsForUnit(unitId) bool
+        +isActiveTicketProcessorForUnit(unitId) bool
+        +canAdministerUnit(unitId) bool
+        +canAccessPanel(panel) bool
+    }
+    class Ticket {
+        +unit() BelongsTo~Unit~
+        +reporterUnit() BelongsTo~Unit~
+        +problemCategory() BelongsTo~ProblemCategory~
+        +priority() BelongsTo~Priority~
+        +ticketStatus() BelongsTo~TicketStatus~
+        +owner() BelongsTo~User~
+        +responsible() BelongsTo~User~
+        +businessEntity() BelongsTo~BusinessEntity~
+        +reporterBusinessEntity() BelongsTo~BusinessEntity~
+        +comments() HasMany~Comment~
+        +ticketHistories() HasMany~TicketHistory~
+        +eligibleResponsible() User
+        +scopeVisibleTo(user)
+        +scopeIncomingFor(user)
+        +scopeOutgoingFor(user)
+    }
+    class Unit {
+        +problemCategories() HasMany~ProblemCategory~
+        +slas() HasMany~UnitSla~
+        +tickets() HasMany~Ticket~
+        +users() MorphToMany~User~
+    }
+    class TicketStatus {
+        +OPEN = 1
+        +IN_PROGRESS = 2
+        +CANCEL = 3
+        +CLOSED = 4
+    }
+    class Priority {
+        +CRITICAL = 1
+        +HIGHT = 2
+        +MEDIUM = 3
+        +LOW = 4
+        +ENHANCEMENT = 5
+    }
+    class ProblemCategory
+    class UnitSla
+    class BusinessEntity
+    class Comment
+    class TicketHistory
+    class HelpdeskReporterBinding {
+        +scopeActive()
+    }
+    class EmailOtp
+
+    User "1" --> "*" Ticket : owner / responsible
+    User "*" --> "*" Unit : units() via user_entities
+    User "*" --> "1" Unit : unit() divisi asal
+    User "*" --> "0..1" BusinessEntity : kontrak
+    Ticket "*" --> "1" Unit : tujuan
+    Ticket "*" --> "1" ProblemCategory
+    Ticket "*" --> "1" Priority
+    Ticket "*" --> "1" TicketStatus
+    Ticket "*" --> "0..1" BusinessEntity : dilaporkan / kontrak pelapor
+    Ticket "1" *-- "*" Comment
+    Ticket "1" *-- "*" TicketHistory
+    TicketHistory "*" --> "1" TicketStatus
+    Unit "1" *-- "*" ProblemCategory
+    Unit "1" *-- "*" UnitSla
+    UnitSla "*" --> "1" Priority
+    HelpdeskReporterBinding "*" --> "1" User
+    EmailOtp "*" --> "1" User
+```
 
 ## Tech stack
 
