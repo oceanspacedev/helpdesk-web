@@ -24,9 +24,12 @@ class SlaLevelChart extends ApexChartWidget
 
     protected static bool $deferLoading = true;
 
-    protected static ?int $sort = 5;
+    protected static ?int $sort = 4;
 
-    protected int|string|array $columnSpan = 'full';
+    protected int|string|array $columnSpan = [
+        'default' => 'full',
+        'lg' => 1,
+    ];
 
     /**
      * Chart options (series, labels, types, size, animations...)
@@ -123,9 +126,13 @@ class SlaLevelChart extends ApexChartWidget
             'xaxis' => [
                 'categories' => $categories,
                 'labels' => [
+                    'trim' => true,
+                    'maxHeight' => 90,
+                    'hideOverlappingLabels' => false,
                     'style' => [
                         'colors' => '#9ca3af',
                         'fontWeight' => 500,
+                        'fontSize' => '11px',
                     ],
                 ],
             ],

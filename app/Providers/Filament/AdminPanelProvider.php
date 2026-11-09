@@ -6,6 +6,7 @@ use App\Filament\Livewire\PersonalInfo;
 use App\Filament\Livewire\UpdatePassword;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\MyProfile;
+use App\Filament\Widgets\AccountWidget;
 use App\Support\ObservabilityAccess;
 use Apriansyahrs\MekayaTheme\MekayaPlugin;
 use Awcodes\Overlook\OverlookPlugin;
@@ -20,7 +21,6 @@ use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Width;
 use Filament\View\PanelsRenderHook;
-use Filament\Widgets;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -64,7 +64,7 @@ class AdminPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->navigationItems(ObservabilityAccess::filamentNavigationItems())
             ->widgets([
-                Widgets\AccountWidget::class,
+                AccountWidget::class,
                 OverlookWidget::class,
             ])
             ->middleware([

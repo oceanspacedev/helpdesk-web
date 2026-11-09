@@ -25,13 +25,13 @@ class SlaPerformanceChart extends ApexChartWidget
 
     protected static bool $deferLoading = true;
 
-    protected static ?int $sort = 4;
+    protected static ?int $sort = 5;
 
-    protected int|string|array $columnSpan = [
-        'default' => 'full',
-        'md' => 1,
-        'lg' => 1,
-    ];
+    /**
+     * Lebar penuh: untuk admin global sumbu X berisi semua unit, sehingga
+     * setengah lebar membuat labelnya bertumpuk.
+     */
+    protected int|string|array $columnSpan = 'full';
 
     /**
      * Chart options (series, labels, types, size, animations...)
@@ -139,7 +139,7 @@ class SlaPerformanceChart extends ApexChartWidget
         return [
             'chart' => [
                 'type' => 'bar',
-                'height' => 300,
+                'height' => 340,
             ],
             'series' => [
                 [
@@ -150,9 +150,15 @@ class SlaPerformanceChart extends ApexChartWidget
             'xaxis' => [
                 'categories' => $categories,
                 'labels' => [
+                    'rotate' => -45,
+                    'rotateAlways' => count($categories) > 6,
+                    'trim' => true,
+                    'maxHeight' => 110,
+                    'hideOverlappingLabels' => false,
                     'style' => [
                         'colors' => '#9ca3af',
                         'fontWeight' => 600,
+                        'fontSize' => '11px',
                     ],
                 ],
             ],
@@ -171,6 +177,10 @@ class SlaPerformanceChart extends ApexChartWidget
                         'y' => 95,
                         'borderColor' => '#10b981',
                         'label' => [
+                            // Di kiri agar tidak menimpa ikon menu grafik di kanan atas.
+                            'position' => 'left',
+                            'textAnchor' => 'start',
+                            'offsetX' => 8,
                             'borderColor' => '#10b981',
                             'style' => [
                                 'color' => '#fff',

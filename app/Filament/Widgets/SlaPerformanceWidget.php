@@ -16,6 +16,15 @@ class SlaPerformanceWidget extends BaseWidget
 
     protected int|string|array $columnSpan = 'full';
 
+    /**
+     * Dua kartu statistik berbagi lebar penuh; default Filament memakai tiga
+     * slot sehingga menyisakan ruang kosong di kanan.
+     */
+    protected int|array|null $columns = [
+        'default' => 1,
+        'sm' => 2,
+    ];
+
     protected function getStats(): array
     {
         $user = auth()->user();
