@@ -66,6 +66,7 @@ class ProblemCategoryResource extends Resource
                 Tables\Filters\SelectFilter::make('unit_id')
                     ->label(__('Work Unit'))
                     ->options(fn (): array => static::manageableUnitOptions())
+                    ->searchable()
                     ->hidden(fn (): bool => ! auth()->user()?->hasGlobalTicketAccess()),
                 Tables\Filters\TrashedFilter::make(),
             ])
