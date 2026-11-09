@@ -18,7 +18,9 @@ class BusinessEntityResource extends Resource
 {
     protected static ?string $model = BusinessEntity::class;
 
-    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-building-office-2';
+
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-building-office-2';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Organisasi';
 

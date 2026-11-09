@@ -26,6 +26,8 @@ class UnitResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-briefcase';
 
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-briefcase';
+
     protected static string|\UnitEnum|null $navigationGroup = 'Organisasi';
 
     protected static ?int $navigationSort = 3;

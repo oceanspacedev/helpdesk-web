@@ -11,6 +11,10 @@ class Dashboard extends BasePage
 {
     use HasFiltersForm;
 
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-home';
+
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-home';
+
     /**
      * Satu kolom di layar sempit, dua kolom mulai lebar lg agar grafik
      * status tiket dan distribusi SLA bisa berdampingan.

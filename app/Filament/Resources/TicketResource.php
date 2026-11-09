@@ -33,6 +33,8 @@ class TicketResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-ticket';
 
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-ticket';
+
     protected static ?int $navigationSort = 3;
 
     protected static ?string $recordTitleAttribute = 'title';

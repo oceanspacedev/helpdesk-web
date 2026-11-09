@@ -21,7 +21,9 @@ class ProblemCategoryResource extends Resource
 {
     protected static ?string $model = ProblemCategory::class;
 
-    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-link';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-tag';
+
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-tag';
 
     protected static ?int $navigationSort = 5;
 
