@@ -11,7 +11,6 @@ use Filament\Actions\Action as NotificationAction;
 use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\Layout\Split;
 use Filament\Tables\Columns\Layout\Stack;
@@ -27,6 +26,10 @@ class CommentsRelationManager extends RelationManager
 
     protected static ?string $title = 'Komentar';
 
+    protected static ?string $modelLabel = 'komentar';
+
+    protected static ?string $pluralModelLabel = 'komentar';
+
     public function isReadOnly(): bool
     {
         return isset($this->ownerRecord) && $this->ownerRecord->trashed();
@@ -40,18 +43,27 @@ class CommentsRelationManager extends RelationManager
     public function form(Schema $form): Schema
     {
         return $form
+            ->columns(1)
             ->schema([
-                Section::make()->schema([
-                    Forms\Components\RichEditor::make('comment')
-                        ->required(),
-                    Forms\Components\FileUpload::make('attachments')
-                        ->disk('public')
-                        ->directory('comment-attachments/'.date('m-y'))
-                        ->downloadable()
-                        ->rules([
-                            SafeUploadedFile::rule(20 * 1024 * 1024, 20 * 1024 * 1024),
-                        ]),
-                ]),
+                Forms\Components\RichEditor::make('comment')
+                    ->label('Komentar')
+                    ->placeholder('Tulis tanggapan, update progres, atau pertanyaan untuk pelapor...')
+                    ->toolbarButtons([
+                        ['bold', 'italic', 'underline', 'link'],
+                        ['bulletList', 'orderedList', 'attachFiles'],
+                        ['undo', 'redo'],
+                    ])
+                    ->extraInputAttributes(['style' => 'min-height: 12rem;'])
+                    ->required(),
+                Forms\Components\FileUpload::make('attachments')
+                    ->label('Lampiran')
+                    ->helperText('Opsional. Satu file, maksimal 20 MB.')
+                    ->disk('public')
+                    ->directory('comment-attachments/'.date('m-y'))
+                    ->downloadable()
+                    ->rules([
+                        SafeUploadedFile::rule(20 * 1024 * 1024, 20 * 1024 * 1024),
+                    ]),
             ]);
     }
 
@@ -78,6 +90,14 @@ class CommentsRelationManager extends RelationManager
             ->filters([])
             ->headerActions([
                 Actions\CreateAction::make()
+                    ->label('Tambah Komentar')
+                    ->icon('heroicon-o-chat-bubble-left-ellipsis')
+                    ->slideOver()
+                    ->modalWidth('md')
+                    ->modalHeading('Tambah Komentar')
+                    ->modalDescription('Komentar terlihat oleh pelapor dan petugas tiket ini.')
+                    ->modalSubmitActionLabel('Kirim')
+                    ->createAnother(false)
                     ->authorize(fn (): bool => ! $this->isReadOnly()
                         && (bool) auth()->user()?->can('create', Comment::class)
                         && (bool) auth()->user()?->can('view', $this->getOwnerRecord()))
@@ -86,7 +106,6 @@ class CommentsRelationManager extends RelationManager
 
                         return $data;
                     })
-                    ->label('Tambah Komentar')
                     ->after(function (Livewire $livewire) {
                         $ticket = $livewire->ownerRecord;
 
@@ -121,6 +140,8 @@ class CommentsRelationManager extends RelationManager
             ])
             ->actions([
                 NotificationAction::make('attachment')
+                    ->label('Lampiran')
+                    ->icon('heroicon-o-paper-clip')
                     ->action(function (Comment $record) {
                         $download = $record->downloadStoredAttachment();
                         if ($download === null) {
@@ -137,6 +158,10 @@ class CommentsRelationManager extends RelationManager
                     ->hidden(fn (?Comment $record): bool => $record === null || blank($record->attachments))
                     ->authorize(fn (Comment $record): bool => (bool) auth()->user()?->can('view', $record)),
                 Actions\EditAction::make()
+                    ->slideOver()
+                    ->modalWidth('md')
+                    ->modalHeading('Ubah Komentar')
+                    ->modalSubmitActionLabel('Simpan')
                     ->authorize(fn (Comment $record): bool => ! $this->isReadOnly()
                         && (bool) auth()->user()?->can('update', $record)),
                 Actions\DeleteAction::make()

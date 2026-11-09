@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\TalentaEmployee;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
@@ -38,6 +39,34 @@ class TalentaEmployeeSync
         $employees = json_decode($content, true)['data']['data'] ?? null;
 
         return is_array($employees) ? array_values($employees) : null;
+    }
+
+    /**
+     * Ganti file direktori karyawan yang dibaca login OTP dan auto-registrasi
+     * (services.talenta.employee_file). Ditulis ke file sementara di folder
+     * yang sama lalu di-rename, jadi pembaca tidak pernah melihat file setengah jadi.
+     * EmployeeService memakai cache berbasis isi file, jadi file baru langsung terpakai.
+     *
+     * @return string path file yang ditulis
+     */
+    public static function storeEmployeeFile(string $content): string
+    {
+        $path = (string) config('services.talenta.employee_file', storage_path('app/talenta-list-employee.json'));
+        File::ensureDirectoryExists(dirname($path));
+
+        $temporary = $path.'.'.Str::random(12).'.tmp';
+        try {
+            if (File::put($temporary, $content, true) === false || ! @rename($temporary, $path)) {
+                throw new \RuntimeException("File data karyawan Talenta tidak dapat ditulis: {$path}");
+            }
+            @chmod($path, 0640);
+        } finally {
+            if (File::exists($temporary)) {
+                File::delete($temporary);
+            }
+        }
+
+        return $path;
     }
 
     /**
