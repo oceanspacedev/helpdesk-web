@@ -10,7 +10,7 @@ Source type: Reconstructed from migrations, models, and seeders.
 | ENT-001 | User | `users` | `id`, `unit_id`, `name`, nullable unique `email`, `email_verified_at`, `email_verified_via`, nullable `password`, `identity`, `phone`, unique `phone_normalized`, `is_active` | Has roles, tickets as owner, comments, email login records, morph units through `user_entities` |
 | ENT-002 | Ticket | `tickets` | `priority_id`, destination `unit_id`, sender `owner_id`, `problem_category_id`, `title`, `description`, `supporting_attachments`, `ticket_statuses_id`, processing agent `responsible_id`, reported `business_entities_id`, sender snapshot `reporter_unit_id` / `reporter_job_title` / `reporter_business_entity_id`, dates | Belongs to priority, destination unit, sender/owner, responsible agent, category, status, reported business entity, sender's contract business entity; has comments and histories |
 | ENT-003 | Unit | `units` | `name` | Has categories, tickets; morph-to-many users |
-| ENT-004 | ProblemCategory | `problem_categories` | `unit_id`, `name`, optional default PIC `default_responsible_id` | Belongs to unit and optional default responsible user; has tickets |
+| ENT-004 | ProblemCategory | `problem_categories` | `unit_id`, `name` | Belongs to unit; has tickets; many-to-many default PICs through `problem_category_responsibles` |
 | ENT-005 | Priority | `priorities` | `name` | Has tickets |
 | ENT-006 | TicketStatus | `ticket_statuses` | `name` | Has tickets |
 | ENT-007 | BusinessEntity | `business_entities` | `name` | Has tickets |
@@ -20,6 +20,7 @@ Source type: Reconstructed from migrations, models, and seeders.
 | ENT-011 | UserEntity | `user_entities` | `user_id`, `entity_id`, `entity_type` | Polymorphic bridge for user-to-entity relations |
 | ENT-012 | HelpdeskMcpSetting | `helpdesk_mcp_settings` | singleton `id=1`, encrypted token list, intake TTL, request limit, encrypted identity pepper/assertion secret, assertion leeway | Server-wide configuration consumed by HTTP MCP authentication, intake state, throttling, and trusted identity verification |
 | ENT-013 | EmailOtp | `email_otps` | `user_id`, normalized `email`, `purpose`, bcrypt `otp_hash`, unique SHA-256 `token_hash`, `expires_at`, `verified_at`, `attempt_count` | Belongs to user; one record per email login request holds both the code and the magic link |
+| ENT-014 | ProblemCategoryResponsible | `problem_category_responsibles` | `problem_category_id`, `user_id`, unique pair | Pivot of default PICs per problem category; migration `2026_11_09_000002` moved the former single `problem_categories.default_responsible_id` here |
 
 ## Lifecycle Rules
 

@@ -35,12 +35,12 @@ class ProblemCategoryResource extends Resource
                     ->searchable()
                     ->required()
                     ->live()
-                    ->afterStateUpdated(fn (Set $set) => $set('default_responsible_id', null)),
+                    ->afterStateUpdated(fn (Set $set) => $set('default_responsibles', [])),
                 Forms\Components\TextInput::make('name')
                     ->translateLabel()
                     ->required()
                     ->maxLength(255),
-                static::defaultResponsibleSelect(),
+                static::defaultResponsiblesSelect(),
             ]);
     }
 
@@ -54,8 +54,11 @@ class ProblemCategoryResource extends Resource
                 Tables\Columns\TextColumn::make('unit.name')
                     ->searchable()
                     ->label(__('Work Unit')),
-                Tables\Columns\TextColumn::make('defaultResponsible.name')
+                Tables\Columns\TextColumn::make('defaultResponsibles.name')
                     ->label(__('Default PIC'))
+                    ->listWithLineBreaks()
+                    ->limitList(3)
+                    ->expandableLimitedList()
                     ->placeholder('Semua anggota divisi')
                     ->toggleable(),
             ])
@@ -97,7 +100,7 @@ class ProblemCategoryResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
-            ->with(['unit', 'defaultResponsible'])
+            ->with(['unit', 'defaultResponsibles'])
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ]);
@@ -131,21 +134,27 @@ class ProblemCategoryResource extends Resource
     }
 
     /**
-     * PIC default kategori. Pilihannya mengikuti divisi yang dipilih di form
-     * (atau divisi pemilik relasi saat dibuka dari halaman Unit).
+     * PIC default kategori (boleh lebih dari satu). Pilihannya mengikuti
+     * divisi yang dipilih di form; pilihan di luar divisi itu ditolak saat
+     * validasi karena daftar opsinya dimuat penuh (preload).
      */
-    public static function defaultResponsibleSelect(?int $fixedUnitId = null): Forms\Components\Select
+    public static function defaultResponsiblesSelect(): Forms\Components\Select
     {
-        return Forms\Components\Select::make('default_responsible_id')
+        return Forms\Components\Select::make('default_responsibles')
             ->label(__('Default PIC'))
-            ->options(fn (Get $get): array => ProblemCategory::defaultResponsibleOptions(
-                $fixedUnitId ?? (int) $get('unit_id'),
-            ))
+            ->relationship(
+                name: 'defaultResponsibles',
+                titleAttribute: 'name',
+                modifyQueryUsing: fn (Builder $query, Get $get): Builder => ProblemCategory::constrainDefaultResponsibleCandidates(
+                    $query,
+                    (int) $get('unit_id'),
+                ),
+            )
+            ->multiple()
             ->searchable()
             ->preload()
-            ->nullable()
             ->placeholder('Semua anggota divisi')
-            ->helperText('Bila diisi, tiket baru kategori ini langsung ditugaskan ke orang ini dan notifikasi tiket baru hanya dikirim kepadanya. Kosongkan agar notifikasi dikirim ke semua anggota divisi.');
+            ->helperText('Bila diisi, tiket baru kategori ini langsung ditugaskan ke PIC yang tiket aktifnya paling sedikit, dan notifikasi tiket baru hanya dikirim ke para PIC. Kosongkan agar notifikasi dikirim ke semua anggota divisi.');
     }
 
     public static function getPluralModelLabel(): string

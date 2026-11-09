@@ -300,9 +300,10 @@ class Ticket extends Model
 
         // Event listener untuk event 'saving'
         static::saving(function ($ticket) {
-            // PIC default kategori (diatur admin) menang; bila kosong, jatuh ke
-            // pemetaan lama dokumen BUSDEV ke akun OD. Kategori tanpa PIC tetap
-            // masuk antrean divisi dan dinotifikasi ke semua anggotanya.
+            // PIC default kategori (diatur admin) menang: tiket jatuh ke PIC yang
+            // tiket aktifnya paling sedikit. Bila kosong, pakai pemetaan lama
+            // dokumen BUSDEV ke akun OD. Kategori tanpa PIC tetap masuk antrean
+            // divisi dan dinotifikasi ke semua anggotanya.
             if (! self::$isSeeding && $ticket->isDirty('problem_category_id')) {
                 try {
                     $ticket->responsible_id = self::defaultResponsibleIdForCategory($ticket);
@@ -380,20 +381,10 @@ class Ticket extends Model
             }
 
             $staffIds = [];
-            $responsible = $ticket->eligibleResponsible();
 
-            if ($responsible) {
-                HelpdeskNotifier::send($responsible, new NewTicketNotification($ticket));
-                $staffIds[] = (int) $responsible->id;
-            } else {
-                $receivers = User::query()
-                    ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
-                    ->get();
-
-                foreach ($receivers as $receiver) {
-                    HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
-                    $staffIds[] = (int) $receiver->id;
-                }
+            foreach ($ticket->newTicketRecipients() as $receiver) {
+                HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
+                $staffIds[] = (int) $receiver->id;
             }
 
             $owner = User::query()->find($ticket->owner_id);
@@ -405,17 +396,8 @@ class Ticket extends Model
         // Event listener untuk event 'updated'
         static::updated(function ($ticket) {
             if (! self::$isSeeding && $ticket->wasChanged('unit_id')) {
-                $responsible = $ticket->eligibleResponsible();
-                if ($responsible) {
-                    HelpdeskNotifier::send($responsible, new NewTicketNotification($ticket));
-                } else {
-                    $receivers = User::query()
-                        ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
-                        ->get();
-
-                    foreach ($receivers as $receiver) {
-                        HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
-                    }
+                foreach ($ticket->newTicketRecipients() as $receiver) {
+                    HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
                 }
             }
 
@@ -438,17 +420,48 @@ class Ticket extends Model
         });
     }
 
+    /**
+     * Penerima notifikasi tiket baru. Para PIC default kategori yang masih
+     * eligible menang; bila tidak ada, penanggung jawab tiket (mis. hasil
+     * pemetaan lama BUSDEV); bila tidak ada juga, seluruh anggota aktif
+     * divisi tujuan ditambah admin global.
+     *
+     * @return Collection<int, User>
+     */
+    public function newTicketRecipients(): Collection
+    {
+        $unitId = (int) $this->unit_id;
+
+        $category = $this->problem_category_id
+            ? ProblemCategory::query()->with('defaultResponsibles')->find($this->problem_category_id)
+            : null;
+
+        $pics = $category?->eligibleDefaultResponsibles($unitId) ?? new Collection;
+        if ($pics->isNotEmpty()) {
+            return $pics;
+        }
+
+        $responsible = $this->eligibleResponsible();
+        if ($responsible) {
+            return new Collection([$responsible]);
+        }
+
+        return User::query()
+            ->ticketProcessorsForUnit($unitId, includeGlobal: true)
+            ->get();
+    }
+
     private static function defaultResponsibleIdForCategory(self $ticket): ?int
     {
         $category = ProblemCategory::query()
             ->whereKey($ticket->problem_category_id)
-            ->first(['id', 'unit_id', 'name', 'default_responsible_id']);
+            ->first(['id', 'unit_id', 'name']);
 
         if (! $category) {
             return null;
         }
 
-        $configured = $category->eligibleDefaultResponsible((int) $ticket->unit_id);
+        $configured = $category->pickDefaultResponsible((int) $ticket->unit_id);
         if ($configured) {
             return (int) $configured->getKey();
         }

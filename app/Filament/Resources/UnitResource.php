@@ -51,11 +51,11 @@ class UnitResource extends Resource
                 Infolists\Components\TextEntry::make('problem_categories')
                     ->label('Kategori tiket')
                     ->state(fn (Unit $record): array => $record->problemCategories()
-                        ->with('defaultResponsible')
+                        ->with('defaultResponsibles')
                         ->orderBy('name')
                         ->get()
-                        ->map(fn (ProblemCategory $category): string => $category->defaultResponsible
-                            ? "{$category->name} · PIC: {$category->defaultResponsible->name}"
+                        ->map(fn (ProblemCategory $category): string => $category->defaultResponsibles->isNotEmpty()
+                            ? "{$category->name} · PIC: ".$category->defaultResponsibles->pluck('name')->implode(', ')
                             : $category->name)
                         ->all())
                     ->listWithLineBreaks()
