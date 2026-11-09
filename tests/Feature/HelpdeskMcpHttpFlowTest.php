@@ -209,7 +209,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
         $this->assertSame('Medium', $ticket->priority?->name);
         $this->assertSame('Belum disebutkan', $ticket->businessEntity?->name);
         $this->assertNull($ticket->responsible_id);
-        $this->assertStringStartsWith('<p>Odoo tidak bisa login</p>', $ticket->description);
+        $this->assertStringStartsWith('<p>odoo tidak bisa login</p>', $ticket->description);
         $this->assertStringContainsString('Dilaporkan via Helpdesk MCP', $ticket->description);
         $this->assertStringContainsString('<strong>Kanal:</strong> WhatsApp', $ticket->description);
         $this->assertStringNotContainsString('Urgensi:', $ticket->description);
@@ -254,7 +254,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             'message' => '1',
         ]);
         $this->assertSame('issue', $ignoredChoice['step']);
-        $this->assertStringContainsString('bukan nomor pilihan', $ignoredChoice['user_reply']);
+        $this->assertStringContainsString('bukan ringkasan atau nomor pilihan', $ignoredChoice['user_reply']);
 
         $summary = $this->intake([
             'intake_id' => $intakeId,
@@ -1113,7 +1113,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
 
         $this->assertSame('confirm', $resumedDraft['step']);
         $this->assertSame($started['intake_id'], $resumedDraft['intake_id']);
-        $this->assertStringContainsString('router gudang mati total', $resumedDraft['user_reply']);
+        $this->assertStringContainsString('Router gudang mati total', $resumedDraft['user_reply']);
         $this->assertStringContainsString('Reporter Boundary Baru', $resumedDraft['user_reply']);
         $this->assertSame(0, Ticket::count());
         $this->assertSame(1, User::query()->where('phone_normalized', $phone)->count());
@@ -1721,7 +1721,7 @@ class HelpdeskMcpHttpFlowTest extends TestCase
             ]);
             $this->assertSame('ticket_created', $done['status']);
 
-            $ticket = Ticket::query()->where('title', "kendala khusus user {$label}")->firstOrFail();
+            $ticket = Ticket::query()->where('title', "Kendala khusus user {$label}")->firstOrFail();
             $this->assertSame($phone, $ticket->owner->phone);
             $this->assertSame("User {$label}", $ticket->owner->name);
         }
