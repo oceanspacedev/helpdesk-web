@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Rules\SafeUploadSize;
 use Illuminate\Validation\ValidationException;
 use League\Flysystem\UnableToRetrieveMetadata;
 use Throwable;
@@ -47,58 +48,18 @@ final class SafeUploadedFile
     }
 
     /**
-     * @return \Closure(string, mixed, \Closure): void
+     * Size limits for a Filament FileUpload (or any Laravel validator).
+     *
+     * Returns a rule object instead of a closure: Filament would otherwise try
+     * to inject the closure's `$attribute` parameter and crash the form.
      */
     public static function rule(
         int $maxTotalBytes,
         int $maxPerFileBytes,
         int $maxFiles = 0,
         string $missingMessage = self::MISSING_MESSAGE,
-    ): \Closure {
-        return function (string $attribute, mixed $value, \Closure $fail) use (
-            $maxTotalBytes,
-            $maxPerFileBytes,
-            $maxFiles,
-            $missingMessage,
-        ): void {
-            if ($value === null || $value === [] || $value === '') {
-                return;
-            }
-
-            $files = is_array($value) ? $value : [$value];
-            if ($maxFiles > 0 && count($files) > $maxFiles) {
-                $fail('Lampiran maksimal '.$maxFiles.' file.');
-
-                return;
-            }
-
-            $totalBytes = 0;
-
-            foreach ($files as $file) {
-                if (is_string($file) && $file !== '') {
-                    continue;
-                }
-
-                $size = self::size($file);
-                if ($size === null) {
-                    $fail($missingMessage);
-
-                    return;
-                }
-
-                if ($maxPerFileBytes > 0 && $size > $maxPerFileBytes) {
-                    $fail('Ukuran setiap lampiran maksimal '.self::megabytes($maxPerFileBytes).' MB.');
-
-                    return;
-                }
-
-                $totalBytes += $size;
-            }
-
-            if ($maxTotalBytes > 0 && $totalBytes > $maxTotalBytes) {
-                $fail('Total ukuran seluruh lampiran maksimal '.self::megabytes($maxTotalBytes).' MB.');
-            }
-        };
+    ): SafeUploadSize {
+        return new SafeUploadSize($maxTotalBytes, $maxPerFileBytes, $maxFiles, $missingMessage);
     }
 
     public static function wrapValidation(callable $callback): mixed
@@ -115,10 +76,5 @@ final class SafeUploadedFile
                 'data.attachments' => self::MISSING_MESSAGE,
             ]);
         }
-    }
-
-    private static function megabytes(int $bytes): int
-    {
-        return (int) max(1, round($bytes / (1024 * 1024)));
     }
 }
