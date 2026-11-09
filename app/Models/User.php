@@ -113,6 +113,12 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
         });
     }
 
+    /**
+     * Email dari Talenta dipercaya tanpa verifikasi ulang: Talenta mewajibkan
+     * email karyawan yang aktif.
+     */
+    public const EMAIL_VERIFIED_VIA_TALENTA = 'talenta';
+
     public function canUseVerifiedEmail(): bool
     {
         return filled($this->email)
@@ -121,7 +127,15 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
                 'admin',
                 'email_link',
                 'socialite',
+                self::EMAIL_VERIFIED_VIA_TALENTA,
             ], true);
+    }
+
+    public function hasTalentaEmail(): bool
+    {
+        return filled($this->email)
+            && $this->email_verified_at !== null
+            && $this->email_verified_via === self::EMAIL_VERIFIED_VIA_TALENTA;
     }
 
     /**

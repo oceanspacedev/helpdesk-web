@@ -37,6 +37,7 @@ class UserResource extends Resource
         // Kontrak kerja (nama, badan usaha, divisi asal, jabatan, level) mengikuti
         // Talenta dan ditimpa setiap sinkron, jadi dikunci untuk user dari Talenta.
         $fromTalenta = fn (?User $record): bool => static::isSyncedFromTalenta($record);
+        $talentaEmail = fn (?User $record): bool => (bool) $record?->hasTalentaEmail();
 
         return $form
             ->columns(['default' => 1, 'lg' => 3])
@@ -101,7 +102,11 @@ class UserResource extends Resource
                             Forms\Components\TextInput::make('email')
                                 ->label('Email')
                                 ->email()
-                                ->maxLength(255),
+                                ->maxLength(255)
+                                ->disabled($talentaEmail)
+                                ->helperText(fn (?User $record): ?string => $record?->hasTalentaEmail()
+                                    ? 'Mengikuti Talenta.'
+                                    : null),
                             Forms\Components\TextInput::make('password')
                                 ->label('Password')
                                 ->password()
@@ -138,14 +143,25 @@ class UserResource extends Resource
                                 ->helperText('Divisi asal selalu ikut ditangani.'),
                         ]),
                     Section::make('Verifikasi Email')
-                        ->description('Notifikasi email baru dikirim setelah waktu dan sumber verifikasi diisi. Login tidak bergantung pada data ini.')
+                        ->description(fn (?User $record): string => $record?->hasTalentaEmail()
+                            ? 'Email dari Talenta otomatis tepercaya karena Talenta mewajibkan email aktif. Notifikasi email sudah aktif.'
+                            : 'Notifikasi email baru dikirim setelah waktu dan sumber verifikasi diisi. Login tidak bergantung pada data ini.')
                         ->schema([
                             Forms\Components\DateTimePicker::make('email_verified_at')
-                                ->label('Diverifikasi pada'),
+                                ->label('Diverifikasi pada')
+                                ->disabled($talentaEmail),
                             Forms\Components\Select::make('email_verified_via')
                                 ->label('Sumber verifikasi')
                                 ->options(static::emailVerificationSources())
-                                ->helperText('Pilih "Diverifikasi administrator" hanya setelah kepemilikan email diperiksa.'),
+                                // Sumber Talenta hanya diisi oleh sinkron Talenta. Untuk akun
+                                // yang sudah bersumber Talenta field ini dikunci, tetapi nilainya
+                                // tetap harus lolos validasi.
+                                ->disableOptionWhen(fn (string $value, ?User $record): bool => $value === User::EMAIL_VERIFIED_VIA_TALENTA
+                                    && ! $record?->hasTalentaEmail())
+                                ->disabled($talentaEmail)
+                                ->helperText(fn (?User $record): ?string => $record?->hasTalentaEmail()
+                                    ? null
+                                    : 'Pilih "Diverifikasi administrator" hanya setelah kepemilikan email diperiksa.'),
                         ]),
                 ])->columnSpan(['lg' => 1]),
             ]);
@@ -366,6 +382,7 @@ class UserResource extends Resource
     {
         return [
             'admin' => 'Diverifikasi administrator',
+            User::EMAIL_VERIFIED_VIA_TALENTA => 'Talenta',
             'email_link' => 'Tautan verifikasi email',
             'socialite' => 'Penyedia Socialite',
             'legacy_review_required' => 'Data lama — perlu ditinjau',

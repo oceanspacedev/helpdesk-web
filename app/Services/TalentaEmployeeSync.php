@@ -217,16 +217,18 @@ class TalentaEmployeeSync
     }
 
     /**
-     * @param  array{nik: string, name: string, branch: string, organization: string, job: ?string, level: ?string}  $row
+     * @param  array{nik: string, name: string, email: ?string, branch: string, organization: string, job: ?string, level: ?string}  $row
      */
     private function applyRow(User $user, array $row, ?BusinessEntity $entity, ?Unit $unit, $now): bool
     {
         $previousUnitId = $user->unit_id ? (int) $user->unit_id : null;
         $wasSynced = $user->talenta_synced_at !== null;
+        $talentaEmail = $this->emailAvailableFor($user, $row['email'] ?? null);
 
         $user->forceFill(array_filter([
             'name' => $row['name'],
             'identity' => $row['nik'],
+            'email' => $talentaEmail,
             'business_entity_id' => $entity?->id,
             'unit_id' => $unit?->id,
             'job_title' => $row['job'],
@@ -235,6 +237,17 @@ class TalentaEmployeeSync
         $changed = $user->isDirty();
         $user->talenta_synced_at = $now;
         $user->save();
+
+        // Talenta mewajibkan email aktif, jadi alamatnya dipercaya tanpa
+        // verifikasi ulang. Disimpan terpisah karena hook saving User
+        // menghapus verifikasi setiap kali alamat email berganti.
+        if ($talentaEmail !== null && ! $user->hasTalentaEmail()) {
+            $user->forceFill([
+                'email_verified_at' => $now,
+                'email_verified_via' => User::EMAIL_VERIFIED_VIA_TALENTA,
+            ])->save();
+            $changed = true;
+        }
 
         if ($unit) {
             // Divisi lama dilepas hanya bila dulu juga diisi dari Talenta, agar
@@ -294,6 +307,23 @@ class TalentaEmployeeSync
             $phoneOwners->get($row['phones'][0], 0) > 1 => 'Nomor HP-nya dipakai lebih dari satu karyawan di Talenta.',
             default => null,
         };
+    }
+
+    /**
+     * Email Talenta untuk akun ini, kecuali alamatnya sudah dipakai akun lain
+     * (email unik); dalam kasus itu email akun dibiarkan apa adanya.
+     */
+    private function emailAvailableFor(User $user, ?string $email): ?string
+    {
+        if ($email === null || $email === '') {
+            return null;
+        }
+
+        return User::query()
+            ->withTrashed()
+            ->where('email', $email)
+            ->whereKeyNot($user->getKey())
+            ->exists() ? null : $email;
     }
 
     private function availableEmail(?string $email): ?string

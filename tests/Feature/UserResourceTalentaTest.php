@@ -281,6 +281,44 @@ class UserResourceTalentaTest extends TestCase
         $this->assertSame('danger', $status->getColor($status->getState()));
     }
 
+    public function test_talenta_email_and_its_verification_are_locked_in_the_form(): void
+    {
+        $employee = User::create([
+            'name' => 'RINA TALENTA',
+            'identity' => '2024.01.01.60',
+            'email' => 'rina@example.test',
+            'phone' => '6281200000060',
+            'is_active' => true,
+        ]);
+        $employee->forceFill([
+            'email_verified_at' => now(),
+            'email_verified_via' => User::EMAIL_VERIFIED_VIA_TALENTA,
+        ])->save();
+        $manual = User::create(['name' => 'Vendor', 'email' => 'vendor@example.test', 'phone' => '6281200000061', 'is_active' => true]);
+
+        $this->actingAs($this->admin('Master Admin'));
+
+        Livewire::test(EditUser::class, ['record' => $employee->getRouteKey()])
+            ->assertFormFieldDisabled('email')
+            ->assertFormFieldDisabled('email_verified_at')
+            ->assertFormFieldDisabled('email_verified_via')
+            ->fillForm(['email' => 'lain@example.test', 'phone' => '6281200000062'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $employee->refresh();
+        $this->assertSame('rina@example.test', $employee->email, 'email Talenta tidak bisa diganti dari form');
+        $this->assertTrue($employee->hasTalentaEmail());
+        $this->assertSame('6281200000062', $employee->phone);
+
+        // Admin tidak bisa memilih sumber Talenta secara manual.
+        Livewire::test(EditUser::class, ['record' => $manual->getRouteKey()])
+            ->assertFormFieldEnabled('email')
+            ->fillForm(['email_verified_at' => now()->toDateTimeString(), 'email_verified_via' => User::EMAIL_VERIFIED_VIA_TALENTA])
+            ->call('save')
+            ->assertHasFormErrors(['email_verified_via']);
+    }
+
     private function admin(string $role): User
     {
         $user = User::create([
