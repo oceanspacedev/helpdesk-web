@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\ProblemCategoryResource;
+use App\Filament\Resources\ProblemCategoryResource\Pages\CreateProblemCategory;
 use App\Filament\Resources\ProblemCategoryResource\Pages\ViewProblemCategory;
 use App\Filament\Resources\ProblemCategoryResource\RelationManagers\TicketsRelationManager;
 use App\Filament\Resources\TicketResource\Pages\EditTicket;
@@ -899,6 +900,173 @@ class TicketMailboxAccessTest extends TestCase
             'ownerRecord' => $ticket,
             'pageClass' => ViewTicket::class,
         ])->assertActionDoesNotExist('create');
+    }
+
+    public function test_category_default_pic_receives_new_ticket_instead_of_the_whole_division(): void
+    {
+        Notification::fake();
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $pic = $this->unitUser('Staff Unit', $destination, 'IT Network PIC');
+        $colleague = $this->unitUser('Staff Unit', $destination, 'IT Other Staff');
+        $member = $this->unitUser('User', $destination, 'IT Member');
+        $reporter = $this->unitUser('User', $origin, 'Finance Network Reporter');
+        $category = ProblemCategory::create([
+            'unit_id' => $destination->id,
+            'name' => 'Jaringan & Internet',
+            'default_responsible_id' => $pic->id,
+        ]);
+
+        $this->actingAs($reporter);
+        $ticket = Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $destination->id,
+            'owner_id' => $reporter->id,
+            'problem_category_id' => $category->id,
+            'title' => 'Internet kantor putus',
+            'description' => 'Internet kantor putus sejak pagi.',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+
+        $this->assertSame($pic->id, (int) $ticket->fresh()->responsible_id);
+        Notification::assertSentTo($pic, NewTicketNotification::class);
+        Notification::assertNotSentTo([$colleague, $member, $reporter], NewTicketNotification::class);
+        Notification::assertSentTo($reporter, TicketSubmittedNotification::class);
+    }
+
+    public function test_inactive_or_relocated_category_pic_falls_back_to_the_division_queue(): void
+    {
+        Notification::fake();
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $other = Unit::create(['name' => 'Human Capital']);
+        $inactivePic = $this->unitUser('Staff Unit', $destination, 'IT Resigned PIC');
+        $inactivePic->update(['is_active' => false]);
+        $movedPic = $this->unitUser('Staff Unit', $other, 'Former IT PIC');
+        $staff = $this->unitUser('Staff Unit', $destination, 'IT Queue Staff');
+        $reporter = $this->unitUser('User', $origin, 'Finance Fallback Reporter');
+        $inactiveCategory = ProblemCategory::create([
+            'unit_id' => $destination->id,
+            'name' => 'Email',
+            'default_responsible_id' => $inactivePic->id,
+        ]);
+        $movedCategory = ProblemCategory::create([
+            'unit_id' => $destination->id,
+            'name' => 'CCTV',
+            'default_responsible_id' => $movedPic->id,
+        ]);
+
+        $this->actingAs($reporter);
+        foreach ([$inactiveCategory, $movedCategory] as $category) {
+            $ticket = Ticket::create([
+                'priority_id' => $this->priority->id,
+                'unit_id' => $destination->id,
+                'owner_id' => $reporter->id,
+                'problem_category_id' => $category->id,
+                'title' => 'Tiket '.$category->name,
+                'description' => 'Tiket '.$category->name,
+                'ticket_statuses_id' => TicketStatus::OPEN,
+            ]);
+
+            $this->assertNull($ticket->fresh()->responsible_id, $category->name);
+        }
+
+        Notification::assertSentToTimes($staff, NewTicketNotification::class, 2);
+        Notification::assertNotSentTo([$inactivePic, $movedPic], NewTicketNotification::class);
+    }
+
+    public function test_category_default_pic_overrides_legacy_busdev_mapping(): void
+    {
+        Notification::fake();
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $odLead = $this->unitUser('Staff Unit', $busdev, 'Organization Development');
+        $sopPic = $this->unitUser('Staff Unit', $busdev, 'SOP Specialist');
+        $sender = $this->unitUser('Admin Unit', $it, 'IT Reporter');
+        $sop = ProblemCategory::create([
+            'unit_id' => $busdev->id,
+            'name' => 'Standard Operating Procedure (SOP)',
+            'default_responsible_id' => $sopPic->id,
+        ]);
+
+        $this->actingAs($sender);
+        $ticket = Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $busdev->id,
+            'owner_id' => $sender->id,
+            'problem_category_id' => $sop->id,
+            'title' => 'Minta update SOP',
+            'description' => 'Minta update SOP',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+
+        $this->assertSame($sopPic->id, (int) $ticket->fresh()->responsible_id);
+        Notification::assertSentTo($sopPic, NewTicketNotification::class);
+        Notification::assertNotSentTo($odLead, NewTicketNotification::class);
+    }
+
+    public function test_default_pic_migration_backfills_legacy_busdev_categories(): void
+    {
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $odLead = $this->unitUser('Staff Unit', $busdev, 'Organization Development');
+        $odStaff = $this->unitUser('Staff Unit', $busdev, 'Organization Development Staff');
+        $sop = ProblemCategory::create(['unit_id' => $busdev->id, 'name' => 'Standard Operating Procedure (SOP)']);
+        $jd = ProblemCategory::create(['unit_id' => $busdev->id, 'name' => 'Job Description (JD)']);
+        $odoo = ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Odoo Program']);
+        $strayScript = ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Script']);
+        $manual = $this->unitUser('Staff Unit', $busdev, 'Manual SE PIC');
+        $se = ProblemCategory::create([
+            'unit_id' => $busdev->id,
+            'name' => 'Surat Edaran (SE)',
+            'default_responsible_id' => $manual->id,
+        ]);
+
+        $migration = require database_path('migrations/2026_11_09_000001_add_default_responsible_to_problem_categories_table.php');
+        $migration->up();
+
+        $this->assertSame($odLead->id, (int) $sop->fresh()->default_responsible_id);
+        $this->assertSame($odStaff->id, (int) $jd->fresh()->default_responsible_id);
+        $this->assertNull($odoo->fresh()->default_responsible_id);
+        $this->assertNull($strayScript->fresh()->default_responsible_id, 'OD lead is not an IT processor');
+        $this->assertSame($manual->id, (int) $se->fresh()->default_responsible_id, 'manual choice is kept');
+    }
+
+    public function test_category_default_pic_must_belong_to_the_destination_unit(): void
+    {
+        $it = Unit::create(['name' => 'IT']);
+        $finance = Unit::create(['name' => 'Finance']);
+        $admin = $this->unitUser('Admin Unit', $it, 'IT Category Admin');
+        $itStaff = $this->unitUser('Staff Unit', $it, 'IT Category PIC');
+        $financeStaff = $this->unitUser('Staff Unit', $finance, 'Finance Outsider');
+
+        $this->assertSame(
+            [$admin->id => $admin->name, $itStaff->id => $itStaff->name],
+            ProblemCategory::defaultResponsibleOptions($it->id),
+        );
+
+        $this->actingAs($admin);
+
+        Livewire::test(CreateProblemCategory::class)
+            ->fillForm([
+                'unit_id' => $it->id,
+                'name' => 'Akses VPN',
+                'default_responsible_id' => $financeStaff->id,
+            ])
+            ->call('create')
+            ->assertHasFormErrors(['default_responsible_id']);
+
+        Livewire::test(CreateProblemCategory::class)
+            ->fillForm([
+                'unit_id' => $it->id,
+                'name' => 'Akses VPN',
+                'default_responsible_id' => $itStaff->id,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $category = ProblemCategory::query()->where('name', 'Akses VPN')->firstOrFail();
+        $this->assertSame($itStaff->id, (int) $category->default_responsible_id);
     }
 
     private function createMailboxAuthorizationSchema(): void

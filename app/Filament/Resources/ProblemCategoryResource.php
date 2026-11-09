@@ -9,6 +9,8 @@ use App\Models\Unit;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -31,11 +33,14 @@ class ProblemCategoryResource extends Resource
                     ->label(__('Work Unit'))
                     ->options(fn (): array => static::manageableUnitOptions())
                     ->searchable()
-                    ->required(),
+                    ->required()
+                    ->live()
+                    ->afterStateUpdated(fn (Set $set) => $set('default_responsible_id', null)),
                 Forms\Components\TextInput::make('name')
                     ->translateLabel()
                     ->required()
                     ->maxLength(255),
+                static::defaultResponsibleSelect(),
             ]);
     }
 
@@ -49,6 +54,10 @@ class ProblemCategoryResource extends Resource
                 Tables\Columns\TextColumn::make('unit.name')
                     ->searchable()
                     ->label(__('Work Unit')),
+                Tables\Columns\TextColumn::make('defaultResponsible.name')
+                    ->label(__('Default PIC'))
+                    ->placeholder('Semua anggota divisi')
+                    ->toggleable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('unit_id')
@@ -88,7 +97,7 @@ class ProblemCategoryResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
-            ->with(['unit'])
+            ->with(['unit', 'defaultResponsible'])
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ]);
@@ -119,6 +128,24 @@ class ProblemCategoryResource extends Resource
             ->orderBy('name')
             ->pluck('name', 'id')
             ->all();
+    }
+
+    /**
+     * PIC default kategori. Pilihannya mengikuti divisi yang dipilih di form
+     * (atau divisi pemilik relasi saat dibuka dari halaman Unit).
+     */
+    public static function defaultResponsibleSelect(?int $fixedUnitId = null): Forms\Components\Select
+    {
+        return Forms\Components\Select::make('default_responsible_id')
+            ->label(__('Default PIC'))
+            ->options(fn (Get $get): array => ProblemCategory::defaultResponsibleOptions(
+                $fixedUnitId ?? (int) $get('unit_id'),
+            ))
+            ->searchable()
+            ->preload()
+            ->nullable()
+            ->placeholder('Semua anggota divisi')
+            ->helperText('Bila diisi, tiket baru kategori ini langsung ditugaskan ke orang ini dan notifikasi tiket baru hanya dikirim kepadanya. Kosongkan agar notifikasi dikirim ke semua anggota divisi.');
     }
 
     public static function getPluralModelLabel(): string

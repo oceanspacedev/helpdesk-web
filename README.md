@@ -282,6 +282,7 @@ erDiagram
     business_entities |o--o{ tickets : "kontrak pelapor"
     users ||--o{ tickets : "pelapor (owner)"
     users |o--o{ tickets : "PIC (responsible)"
+    users |o--o{ problem_categories : "PIC default"
     tickets ||--o{ comments : ""
     users ||--o{ comments : menulis
     tickets ||--o{ ticket_histories : riwayat
@@ -323,6 +324,7 @@ erDiagram
         bigint id PK
         bigint unit_id FK
         string name
+        bigint default_responsible_id FK "nullable, PIC default"
     }
     priorities {
         bigint id PK
@@ -448,7 +450,10 @@ classDiagram
         +LOW = 4
         +ENHANCEMENT = 5
     }
-    class ProblemCategory
+    class ProblemCategory {
+        +defaultResponsible() BelongsTo~User~
+        +eligibleDefaultResponsible() User
+    }
     class UnitSla
     class BusinessEntity
     class Comment

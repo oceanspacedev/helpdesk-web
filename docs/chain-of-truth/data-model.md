@@ -10,7 +10,7 @@ Source type: Reconstructed from migrations, models, and seeders.
 | ENT-001 | User | `users` | `id`, `unit_id`, `name`, nullable unique `email`, `email_verified_at`, `email_verified_via`, nullable `password`, `identity`, `phone`, unique `phone_normalized`, `is_active` | Has roles, tickets as owner, comments, email login records, morph units through `user_entities` |
 | ENT-002 | Ticket | `tickets` | `priority_id`, destination `unit_id`, sender `owner_id`, `problem_category_id`, `title`, `description`, `supporting_attachments`, `ticket_statuses_id`, processing agent `responsible_id`, reported `business_entities_id`, sender snapshot `reporter_unit_id` / `reporter_job_title` / `reporter_business_entity_id`, dates | Belongs to priority, destination unit, sender/owner, responsible agent, category, status, reported business entity, sender's contract business entity; has comments and histories |
 | ENT-003 | Unit | `units` | `name` | Has categories, tickets; morph-to-many users |
-| ENT-004 | ProblemCategory | `problem_categories` | `unit_id`, `name` | Belongs to unit; has tickets |
+| ENT-004 | ProblemCategory | `problem_categories` | `unit_id`, `name`, optional default PIC `default_responsible_id` | Belongs to unit and optional default responsible user; has tickets |
 | ENT-005 | Priority | `priorities` | `name` | Has tickets |
 | ENT-006 | TicketStatus | `ticket_statuses` | `name` | Has tickets |
 | ENT-007 | BusinessEntity | `business_entities` | `name` | Has tickets |

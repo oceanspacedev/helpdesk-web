@@ -144,6 +144,7 @@ trait CreatesHelpdeskIntegrationSchema
             $table->id();
             $table->unsignedBigInteger('unit_id');
             $table->string('name');
+            $table->unsignedBigInteger('default_responsible_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

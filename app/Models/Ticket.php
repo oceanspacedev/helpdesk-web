@@ -300,8 +300,9 @@ class Ticket extends Model
 
         // Event listener untuk event 'saving'
         static::saving(function ($ticket) {
-            // Auto-assign only named BUSDEV document types to the OD accounts.
-            // Odoo, printer, CCTV, and holding tickets stay on the unit queue.
+            // PIC default kategori (diatur admin) menang; bila kosong, jatuh ke
+            // pemetaan lama dokumen BUSDEV ke akun OD. Kategori tanpa PIC tetap
+            // masuk antrean divisi dan dinotifikasi ke semua anggotanya.
             if (! self::$isSeeding && $ticket->isDirty('problem_category_id')) {
                 try {
                     $ticket->responsible_id = self::defaultResponsibleIdForCategory($ticket);
@@ -439,10 +440,20 @@ class Ticket extends Model
 
     private static function defaultResponsibleIdForCategory(self $ticket): ?int
     {
-        $categoryName = trim((string) ProblemCategory::query()
+        $category = ProblemCategory::query()
             ->whereKey($ticket->problem_category_id)
-            ->value('name'));
-        $assigneeName = HelpdeskOperationalClassifier::defaultAssigneeName($categoryName);
+            ->first(['id', 'unit_id', 'name', 'default_responsible_id']);
+
+        if (! $category) {
+            return null;
+        }
+
+        $configured = $category->eligibleDefaultResponsible((int) $ticket->unit_id);
+        if ($configured) {
+            return (int) $configured->getKey();
+        }
+
+        $assigneeName = HelpdeskOperationalClassifier::defaultAssigneeName(trim((string) $category->name));
         if ($assigneeName === null) {
             return null;
         }
