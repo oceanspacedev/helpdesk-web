@@ -12,6 +12,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Support\HtmlString;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Throwable;
 
 class ListUsers extends ListRecords
 {
@@ -44,7 +45,7 @@ class ListUsers extends ListRecords
                         ->storeFiles(false),
                     Toggle::make('apply')
                         ->label('Simpan perubahan')
-                        ->helperText('Matikan untuk melihat preview dulu. Akun yang tidak ada lagi di file akan dinonaktifkan.')
+                        ->helperText('Matikan untuk melihat preview dulu. Saat disimpan, file ini juga menggantikan direktori karyawan untuk login OTP dan auto-registrasi. Akun yang tidak ada lagi di file akan dinonaktifkan.')
                         ->default(false),
                 ])
                 ->modalHeading('Import User dari JSON Talenta')
@@ -69,6 +70,21 @@ class ListUsers extends ListRecords
 
                     $apply = (bool) ($data['apply'] ?? false);
                     $report = app(TalentaEmployeeSync::class)->run($employees, $apply);
+
+                    if ($apply) {
+                        try {
+                            TalentaEmployeeSync::storeEmployeeFile($content);
+                        } catch (Throwable $exception) {
+                            report($exception);
+
+                            Notification::make()
+                                ->title('File direktori karyawan gagal diganti.')
+                                ->body('Sinkron akun tetap tersimpan, tetapi login OTP masih memakai file lama. Periksa izin tulis folder storage.')
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                        }
+                    }
 
                     Notification::make()
                         ->title($apply ? 'Sinkron Talenta disimpan.' : 'Preview sinkron Talenta — belum ada yang disimpan.')

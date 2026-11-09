@@ -7,9 +7,11 @@ use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Models\BusinessEntity;
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\EmployeeService;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
@@ -25,6 +27,8 @@ class UserResourceTalentaTest extends TestCase
     private BusinessEntity $media;
 
     private Unit $it;
+
+    private string $employeeFile;
 
     protected function setUp(): void
     {
@@ -67,6 +71,9 @@ class UserResourceTalentaTest extends TestCase
         }
         $this->seed(RoleSeeder::class);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->employeeFile = sys_get_temp_dir().'/talenta-test-'.uniqid('', true).'/talenta-list-employee.json';
+        config()->set('services.talenta.employee_file', $this->employeeFile);
 
         Notification::fake();
         $this->media = BusinessEntity::create(['name' => 'PT Media Selular Indonesia']);
@@ -152,6 +159,7 @@ class UserResourceTalentaTest extends TestCase
             ->assertNotified('Preview sinkron Talenta — belum ada yang disimpan.');
 
         $this->assertFalse(User::query()->where('identity', '2024.01.01.40')->exists());
+        $this->assertFileDoesNotExist($this->employeeFile);
 
         Livewire::test(ListUsers::class)
             ->callAction('importTalenta', data: [
@@ -165,6 +173,35 @@ class UserResourceTalentaTest extends TestCase
         $this->assertSame($this->media->id, $andi->business_entity_id);
         $this->assertSame($this->it->id, $andi->unit_id);
         $this->assertSame('STAFF IT', $andi->job_title);
+
+        // File yang sama menggantikan direktori karyawan untuk login OTP dan auto-registrasi.
+        $this->assertStringEqualsFile($this->employeeFile, $json);
+        $this->assertSame([], glob($this->employeeFile.'.*.tmp'));
+        $this->assertCount(1, app(EmployeeService::class)->findAllByPhone('081200000040'));
+    }
+
+    public function test_applying_a_new_talenta_export_replaces_the_previous_employee_file(): void
+    {
+        File::ensureDirectoryExists(dirname($this->employeeFile));
+        file_put_contents($this->employeeFile, $this->talentaJson([
+            $this->employee('2024.01.01.41', 'LAMA', '081200000041', 'PT Media Selular Indonesia', 'IT', 'STAFF IT'),
+        ]));
+        $this->actingAs($this->admin('Master Admin'));
+        $json = $this->talentaJson([
+            $this->employee('2024.01.01.42', 'BARU', '081200000042', 'PT Media Selular Indonesia', 'IT', 'STAFF IT'),
+        ]);
+
+        Livewire::test(ListUsers::class)
+            ->callAction('importTalenta', data: [
+                'file' => UploadedFile::fake()->createWithContent('talenta.json', $json),
+                'apply' => true,
+            ])
+            ->assertHasNoActionErrors();
+
+        $this->assertStringEqualsFile($this->employeeFile, $json);
+        $directory = app(EmployeeService::class);
+        $this->assertSame([], $directory->findAllByPhone('081200000041'));
+        $this->assertCount(1, $directory->findAllByPhone('081200000042'));
     }
 
     public function test_invalid_talenta_file_is_rejected_without_changes(): void
@@ -179,6 +216,7 @@ class UserResourceTalentaTest extends TestCase
             ->assertNotified('File JSON Talenta tidak dapat dibaca.');
 
         $this->assertSame(1, User::query()->count());
+        $this->assertFileDoesNotExist($this->employeeFile);
     }
 
     public function test_unit_admin_cannot_import_talenta(): void
@@ -189,6 +227,15 @@ class UserResourceTalentaTest extends TestCase
         $this->actingAs($unitAdmin);
 
         Livewire::test(ListUsers::class)->assertActionHidden('importTalenta');
+    }
+
+    protected function tearDown(): void
+    {
+        if (isset($this->employeeFile)) {
+            File::deleteDirectory(dirname($this->employeeFile));
+        }
+
+        parent::tearDown();
     }
 
     private function admin(string $role): User

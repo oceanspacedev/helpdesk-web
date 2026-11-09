@@ -696,8 +696,10 @@ php artisan helpdesk:sync-employees /path/ke/list-employee.json --apply  # simpa
 
 Registrasi akun dari `/phone-login` dan argumen default `helpdesk:sync-employees` membaca berkas ekspor Talenta di `TALENTA_EMPLOYEE_FILE`, default `storage/app/talenta-list-employee.json`.
 
+Cara termudah memperbaruinya tanpa terminal: buka **Users → Import JSON (Talenta)**, upload ekspor terbaru, aktifkan **Simpan perubahan**, lalu klik **Proses**. Selain menyinkronkan akun, berkas yang di-upload langsung menggantikan berkas di atas. Mode preview tidak mengubah berkas. Tombol ini hanya tampil untuk admin global.
+
 > [!CAUTION]
-> Berkas ini berisi data pribadi karyawan (email, nomor HP, tanggal lahir, status pernikahan, status pajak). **Jangan pernah meng-commit-nya.** `storage/app` dan `/talenta-list-employee.json` sudah di-ignore Git. Salin berkas langsung ke server (misalnya lewat `scp`), bukan lewat repositori.
+> Berkas ini berisi data pribadi karyawan (email, nomor HP, tanggal lahir, status pernikahan, status pajak). **Jangan pernah meng-commit-nya.** `storage/app` dan `/talenta-list-employee.json` sudah di-ignore Git. Perbarui berkas lewat tombol import di panel atau salin langsung ke server (misalnya lewat `scp`), bukan lewat repositori.
 
 ## Scheduler SLA
 
