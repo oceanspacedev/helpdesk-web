@@ -2,13 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\UserResource;
+use App\Filament\Resources\UserResource\Pages\CreateUser;
 use App\Filament\Resources\UserResource\Pages\EditUser;
 use App\Filament\Resources\UserResource\Pages\ListUsers;
+use App\Filament\Resources\UserResource\Pages\ViewUser;
 use App\Models\BusinessEntity;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\EmployeeService;
 use Database\Seeders\RoleSeeder;
+use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
@@ -236,6 +240,45 @@ class UserResourceTalentaTest extends TestCase
         }
 
         parent::tearDown();
+    }
+
+    public function test_user_pages_use_a_main_and_sidebar_layout_without_noise_fields(): void
+    {
+        $employee = User::create([
+            'name' => 'RINA TALENTA',
+            'identity' => '2024.01.01.50',
+            'business_entity_id' => $this->media->id,
+            'unit_id' => $this->it->id,
+            'phone' => '6281200000050',
+            'is_active' => false,
+        ]);
+        $employee->ensurePrimaryUnitMembership();
+
+        $this->actingAs($this->admin('Master Admin'));
+
+        // ID Karyawan selalu kosong saat membuat user, jadi tidak ditampilkan.
+        Livewire::test(CreateUser::class)
+            ->assertFormFieldHidden('identity')
+            ->assertFormFieldVisible('name')
+            ->assertFormFieldVisible('password');
+
+        $edit = Livewire::test(EditUser::class, ['record' => $employee->getRouteKey()])
+            ->assertFormFieldVisible('identity')
+            ->assertFormFieldDisabled('business_entity_id');
+
+        // Select yang dikunci tidak boleh menampilkan tombol hapus.
+        $form = $edit->instance()->getSchema('form');
+        $this->assertFalse($form->getComponent('business_entity_id')->canSelectPlaceholder());
+        $this->assertFalse($form->getComponent('unit_id')->canSelectPlaceholder());
+
+        $view = Livewire::test(ViewUser::class, ['record' => $employee->getRouteKey()])
+            ->assertActionExists('impersonate')
+            ->assertSee('Masuk sebagai user');
+
+        $infolist = UserResource::infolist(FilamentSchema::make($view->instance())->record($employee->fresh()));
+        $status = $infolist->getComponent(fn ($component): bool => method_exists($component, 'getName') && $component->getName() === 'is_active', withHidden: true);
+        $this->assertSame('Nonaktif', $status->formatState($status->getState()));
+        $this->assertSame('danger', $status->getColor($status->getState()));
     }
 
     private function admin(string $role): User
