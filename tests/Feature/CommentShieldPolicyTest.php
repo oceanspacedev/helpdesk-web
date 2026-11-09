@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\TicketResource\Pages\ViewTicket;
 use App\Filament\Resources\TicketResource\RelationManagers\CommentsRelationManager;
 use App\Models\Comment;
 use App\Models\Priority;
@@ -11,10 +12,14 @@ use App\Models\TicketStatus;
 use App\Models\Unit;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
+use Filament\Actions\Testing\TestAction;
+use Filament\Facades\Filament;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -103,6 +108,58 @@ class CommentShieldPolicyTest extends TestCase
     {
         $relationManager = new CommentsRelationManager;
         $this->assertFalse($relationManager->isReadOnly());
+    }
+
+    public function test_pelapor_can_add_a_comment_with_an_attachment_through_the_relation_manager(): void
+    {
+        Storage::fake('public');
+        Storage::fake('local');
+
+        $user = User::create([
+            'name' => 'Pelapor Unggah',
+            'email' => 'pelapor-unggah@example.com',
+        ]);
+        $user->assignRole('User');
+
+        $unit = Unit::create(['name' => 'IT Helpdesk']);
+        $priority = Priority::create(['name' => 'Low']);
+        $status = TicketStatus::create(['name' => 'Open']);
+        $category = ProblemCategory::create(['name' => 'Hardware', 'unit_id' => $unit->id]);
+        $ticket = Ticket::create([
+            'unit_id' => $unit->id,
+            'owner_id' => $user->id,
+            'problem_category_id' => $category->id,
+            'priority_id' => $priority->id,
+            'ticket_statuses_id' => $status->id,
+            'title' => 'Komputer Rusak',
+            'description' => 'Test Ticket',
+        ]);
+
+        // The schema seeds only Comment permissions; viewing the ticket is a
+        // precondition of the "Tambah Komentar" action.
+        Permission::firstOrCreate(['name' => 'View:Ticket', 'guard_name' => 'web']);
+        $user->givePermissionTo('View:Ticket');
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Filament::bootCurrentPanel();
+        $this->actingAs($user);
+
+        Livewire::test(CommentsRelationManager::class, [
+            'ownerRecord' => $ticket,
+            'pageClass' => ViewTicket::class,
+        ])
+            ->callAction(TestAction::make('create')->table(), data: [
+                'comment' => '<p>Bukti terlampir.</p>',
+                'attachments' => [UploadedFile::fake()->create('bukti.pdf', 100, 'application/pdf')],
+            ])
+            ->assertHasNoFormErrors();
+
+        $comment = Comment::query()->where('tiket_id', $ticket->id)->first();
+
+        $this->assertNotNull($comment);
+        $this->assertSame($user->id, (int) $comment->user_id);
+        $this->assertStringStartsWith('comment-attachments/', (string) $comment->attachments);
+        Storage::disk('public')->assertExists($comment->attachments);
     }
 
     public function test_pelapor_user_can_create_and_view_comment(): void
