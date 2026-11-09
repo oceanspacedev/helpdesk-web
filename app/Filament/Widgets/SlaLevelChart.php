@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\Priority;
 use App\Models\Ticket;
+use App\Support\DashboardPeriod;
 use Carbon\Carbon;
 use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Leandrocfe\FilamentApexCharts\Widgets\ApexChartWidget;
@@ -51,12 +52,7 @@ class SlaLevelChart extends ApexChartWidget
         $month = $this->filters['month'] ?? null;
         $year = $this->filters['year'] ?? null;
 
-        if ($year && $year !== 'all') {
-            $baseScope->whereYear('tickets.created_at', $year);
-        }
-        if ($month && $month !== 'all') {
-            $baseScope->whereMonth('tickets.created_at', $month);
-        }
+        DashboardPeriod::apply($baseScope, $month, $year);
 
         // 1. Achieved: is_sla_met = true
         $achievedCounts = (clone $baseScope)->where('is_sla_met', true)

@@ -5,6 +5,7 @@ namespace App\Filament\Widgets;
 use App\Models\Priority;
 use App\Models\Ticket;
 use App\Models\Unit;
+use App\Support\DashboardPeriod;
 use Carbon\Carbon;
 use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Leandrocfe\FilamentApexCharts\Widgets\ApexChartWidget;
@@ -49,16 +50,7 @@ class SlaPerformanceChart extends ApexChartWidget
         $month = $this->filters['month'] ?? null;
         $year = $this->filters['year'] ?? null;
 
-        $applyFilters = function ($query) use ($month, $year) {
-            if ($year && $year !== 'all') {
-                $query->whereYear('tickets.created_at', $year);
-            }
-            if ($month && $month !== 'all') {
-                $query->whereMonth('tickets.created_at', $month);
-            }
-
-            return $query;
-        };
+        $applyFilters = fn ($query) => DashboardPeriod::apply($query, $month, $year);
 
         if ($isGlobalAdmin) {
             $units = Unit::all();

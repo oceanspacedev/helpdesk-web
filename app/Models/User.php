@@ -7,6 +7,7 @@
 namespace App\Models;
 
 use App\Support\PhoneNumber;
+use App\Support\SchemaPresence;
 use BezhanSalleh\FilamentShield\Traits\HasPanelShield;
 use Carbon\Carbon;
 use Filament\Models\Contracts\FilamentUser;
@@ -22,7 +23,6 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
@@ -156,7 +156,7 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
      */
     public function ensurePrimaryUnitMembership(): void
     {
-        if (! $this->unit_id || ! Schema::hasTable('user_entities')) {
+        if (! $this->unit_id || ! SchemaPresence::has('user_entities')) {
             return;
         }
 
@@ -185,10 +185,10 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
      */
     public function assignedUnitIds(): array
     {
-        if (Schema::hasTable('user_entities')) {
-            $unitIds = $this->relationLoaded('units')
-                ? $this->units->modelKeys()
-                : $this->units()->pluck('units.id')->all();
+        if (SchemaPresence::has('user_entities')) {
+            // Relasi dimuat sekali lalu dipakai ulang: policy tabel memanggil
+            // ini untuk setiap baris dengan instance user yang sama.
+            $unitIds = $this->loadMissing('units')->units->modelKeys();
         } elseif ($this->unit_id) {
             $unitIds = [];
             $unitIds[] = (int) $this->unit_id;
@@ -253,14 +253,14 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
 
     public function scopeAssignedToAnyUnit(Builder $query): Builder
     {
-        return Schema::hasTable('user_entities')
+        return SchemaPresence::has('user_entities')
             ? $query->whereHas('units')
             : $query->whereNotNull('users.unit_id');
     }
 
     public function scopeAssignedToUnit(Builder $query, int $unitId): Builder
     {
-        if (Schema::hasTable('user_entities')) {
+        if (SchemaPresence::has('user_entities')) {
             return $query->whereHas(
                 'units',
                 fn (Builder $units): Builder => $units->whereKey($unitId),

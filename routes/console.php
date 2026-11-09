@@ -1,5 +1,6 @@
 <?php
 
+use BezhanSalleh\FilamentExceptions\Models\Exception as FilamentException;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -19,5 +20,16 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('sla:check-warnings')->everyFifteenMinutes();
+// Peringatan SLA mengirim WhatsApp sinkron sebelum menandai tiket, jadi dua
+// run yang tumpang tindih bisa mengirim dobel.
+Schedule::command('sla:check-warnings')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// filament-exceptions menyimpan trace lengkap (puluhan KB per baris) dan
+// hanya menyediakan retensi lewat model prunable, bukan jadwal.
+Schedule::command('model:prune', ['--model' => [FilamentException::class]])
+    ->daily()
+    ->onOneServer();
 Schedule::command('horizon:snapshot')->everyFiveMinutes();

@@ -11,6 +11,7 @@ use App\Notifications\TicketStatusChangedNotification;
 use App\Notifications\TicketSubmittedNotification;
 use App\Services\Integrations\HelpdeskOperationalClassifier;
 use App\Support\HelpdeskNotifier;
+use App\Support\SchemaPresence;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -19,7 +20,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Class Ticket.
@@ -349,7 +349,7 @@ class Ticket extends Model
 
             // Hitung SLA Due At jika tiket sudah di-approve dan unit tersebut memiliki aturan UnitSla
             if ($ticket->approved_at && ($ticket->isDirty('approved_at') || $ticket->isDirty('priority_id') || $ticket->isDirty('unit_id'))) {
-                if (Schema::hasTable('unit_slas')) {
+                if (SchemaPresence::has('unit_slas')) {
                     $sla = UnitSla::where('unit_id', $ticket->unit_id)
                         ->where('priority_id', $ticket->priority_id)
                         ->first();

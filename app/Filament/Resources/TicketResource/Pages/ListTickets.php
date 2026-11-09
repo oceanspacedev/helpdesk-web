@@ -5,6 +5,7 @@ namespace App\Filament\Resources\TicketResource\Pages;
 use App\Filament\Resources\TicketResource;
 use App\Models\Ticket;
 use App\Models\TicketStatus;
+use App\Support\DashboardPeriod;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Resources\Pages\ListRecords;
@@ -114,10 +115,7 @@ class ListTickets extends ListRecords
                     $export = ExcelExport::make()
                         ->fromTable()
                         ->withFilename('export_ticket_'.$year.'_'.str_pad($month, 2, '0', STR_PAD_LEFT))
-                        ->modifyQueryUsing(function ($query) use ($month, $year) {
-                            return $query->whereYear('tickets.created_at', $year)
-                                ->whereMonth('tickets.created_at', $month);
-                        })
+                        ->modifyQueryUsing(fn ($query) => DashboardPeriod::apply($query, $month, $year))
                         ->withColumns([
                             Column::make('priority.name')->heading('Level Tiket'),
                             Column::make('unit.name')->heading('Divisi'),

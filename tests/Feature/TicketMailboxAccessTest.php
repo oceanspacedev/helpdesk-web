@@ -41,7 +41,9 @@ use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Schemas\Schema as FilamentSchema;
 use Filament\Support\Enums\Width;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
@@ -1350,6 +1352,98 @@ class TicketMailboxAccessTest extends TestCase
 
         $this->seed(RoleSeeder::class);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    public function test_ticket_list_policy_checks_reuse_unit_memberships_instead_of_requerying_per_row(): void
+    {
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $staff = $this->unitUser('Staff Unit', $destination, 'IT Listing Staff');
+        $reporter = $this->unitUser('User', $origin, 'Finance Listing Reporter');
+        $category = ProblemCategory::create(['unit_id' => $destination->id, 'name' => 'Jaringan']);
+
+        $this->actingAs($reporter);
+        foreach (range(1, 8) as $i) {
+            Ticket::create([
+                'priority_id' => $this->priority->id,
+                'unit_id' => $destination->id,
+                'owner_id' => $reporter->id,
+                'problem_category_id' => $category->id,
+                'title' => "Tiket $i",
+                'description' => "Tiket $i",
+                'ticket_statuses_id' => TicketStatus::OPEN,
+            ]);
+        }
+
+        $viewer = User::query()->findOrFail($staff->id);
+        $this->actingAs($viewer);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $tickets = Ticket::query()->visibleTo($viewer)->latest()->limit(8)->get();
+        $this->assertCount(8, $tickets);
+
+        foreach ($tickets as $ticket) {
+            $this->assertTrue(Gate::forUser($viewer)->allows('view', $ticket));
+            Gate::forUser($viewer)->allows('update', $ticket);
+            Gate::forUser($viewer)->allows('process', $ticket);
+        }
+
+        $queries = collect(DB::getQueryLog())->pluck('query');
+        DB::disableQueryLog();
+
+        $this->assertLessThanOrEqual(
+            1,
+            $queries->filter(fn (string $sql): bool => str_contains($sql, 'information_schema') || str_contains($sql, 'sqlite_master'))->count(),
+            'keberadaan tabel user_entities paling banyak dicek sekali per request',
+        );
+        $this->assertSame(
+            1,
+            $queries->filter(fn (string $sql): bool => str_contains($sql, 'user_entities') && str_contains($sql, 'from "units"'))->count(),
+            'keanggotaan divisi dimuat sekali lalu dipakai ulang untuk setiap baris',
+        );
+    }
+
+    public function test_performance_index_migration_dedupes_memberships_and_adds_indexes(): void
+    {
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $staff = $this->unitUser('Staff Unit', $it, 'IT Duplicate Member');
+        // Skema produksi tidak punya unique di pivot ini; tiru kondisinya agar
+        // dua attach bersamaan menghasilkan baris ganda seperti di MySQL.
+        Schema::table('user_entities', function (Blueprint $table): void {
+            $table->dropUnique(['user_id', 'entity_id', 'entity_type']);
+        });
+        $staff->units()->attach($it->id);
+        $staff->units()->attach($busdev->id);
+        $this->assertSame(3, DB::table('user_entities')->where('user_id', $staff->id)->count());
+
+        $migration = require database_path('migrations/2026_11_09_000003_add_performance_indexes_and_membership_unique.php');
+        $migration->up();
+
+        $this->assertSame(2, DB::table('user_entities')->where('user_id', $staff->id)->count());
+        $this->assertEqualsCanonicalizing([$it->id, $busdev->id], $staff->fresh()->assignedUnitIds());
+        $this->assertTrue(Schema::hasIndex('user_entities', 'user_entities_user_entity_unique'));
+        $this->assertTrue(Schema::hasIndex('tickets', 'tickets_unit_status_created_index'));
+        $this->assertTrue(Schema::hasIndex('tickets', 'tickets_owner_created_index'));
+        $this->assertTrue(Schema::hasIndex('tickets', 'tickets_responsible_status_index'));
+        $this->assertTrue(Schema::hasIndex('ticket_histories', 'ticket_histories_ticket_created_index'));
+        $this->assertTrue(Schema::hasIndex('users', 'users_identity_index'));
+        $this->assertFalse(Schema::hasIndex('tickets', 'tickets_sla_due_at_index'), 'kolom SLA tidak ada di skema test, indeksnya dilewati');
+
+        try {
+            $staff->units()->attach($it->id);
+            $this->fail('duplikat keanggotaan seharusnya ditolak oleh unique index');
+        } catch (QueryException) {
+            $this->addToAssertionCount(1);
+        }
+
+        // Migrasi bisa diulang tanpa error dan bisa di-rollback.
+        $migration->up();
+        $migration->down();
+        $this->assertFalse(Schema::hasIndex('user_entities', 'user_entities_user_entity_unique'));
+        $this->assertFalse(Schema::hasIndex('tickets', 'tickets_unit_status_created_index'));
     }
 
     private function unitUser(string $role, Unit $unit, string $name): User

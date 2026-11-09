@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Models\TicketStatus;
+use App\Support\DashboardPeriod;
 use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Leandrocfe\FilamentApexCharts\Widgets\ApexChartWidget;
 
@@ -44,14 +45,7 @@ class TicketStatusesChart extends ApexChartWidget
 
         $ticketStatusesQuery = TicketStatus::select('id', 'name')
             ->withCount(['tickets' => function ($query) use ($user, $month, $year) {
-                $query->visibleTo($user);
-
-                if ($year && $year !== 'all') {
-                    $query->whereYear('tickets.created_at', $year);
-                }
-                if ($month && $month !== 'all') {
-                    $query->whereMonth('tickets.created_at', $month);
-                }
+                DashboardPeriod::apply($query->visibleTo($user), $month, $year);
             }]);
 
         $ticketStatuses = $ticketStatusesQuery->get();
