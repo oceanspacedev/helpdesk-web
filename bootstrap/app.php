@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\VerifyHelpdeskMcpToken;
 use App\Http\Middleware\VerifyHelpdeskStaffMcpToken;
+use App\Support\SafeUploadedFile;
 use BezhanSalleh\FilamentExceptions\FilamentExceptions;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -9,6 +10,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use League\Flysystem\UnableToRetrieveMetadata;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -39,6 +41,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectUsersTo('/admin');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Browser asli tidak pernah mengubah properti #[Locked]; payload seperti ini
+        // datang dari pemindai. Livewire sudah membalas 419, jadi tidak perlu dicatat.
+        $exceptions->dontReport(CannotUpdateLockedPropertyException::class);
+
         $exceptions->dontReportWhen(function (Throwable $e): bool {
             return $e instanceof UnableToRetrieveMetadata
                 && str_contains($e->getMessage(), 'livewire-tmp');
@@ -56,8 +62,8 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             throw ValidationException::withMessages([
-                'data.supporting_attachments' => \App\Support\SafeUploadedFile::MISSING_MESSAGE,
-                'data.attachments' => \App\Support\SafeUploadedFile::MISSING_MESSAGE,
+                'data.supporting_attachments' => SafeUploadedFile::MISSING_MESSAGE,
+                'data.attachments' => SafeUploadedFile::MISSING_MESSAGE,
             ]);
         });
 
