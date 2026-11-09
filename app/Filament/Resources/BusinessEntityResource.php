@@ -8,6 +8,7 @@ use Filament\Actions;
 use Filament\Forms;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -43,8 +44,12 @@ class BusinessEntityResource extends Resource
                 Tables\Filters\TrashedFilter::make(),
             ])
             ->actions([
-                Actions\EditAction::make(),
+                Actions\EditAction::make()
+                    ->slideOver()
+                    ->modalWidth(Width::Medium),
                 Actions\DeleteAction::make(),
+                Actions\RestoreAction::make(),
+                Actions\ForceDeleteAction::make(),
             ])
             ->bulkActions([
                 Actions\DeleteBulkAction::make(),

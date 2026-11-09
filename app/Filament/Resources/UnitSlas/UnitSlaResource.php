@@ -4,41 +4,49 @@ namespace App\Filament\Resources\UnitSlas;
 
 use App\Filament\Resources\UnitSlas\Pages\ManageUnitSlas;
 use App\Models\UnitSla;
-use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
-use Filament\Support\Icons\Heroicon;
+use Filament\Support\Enums\Width;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\Rules\Unique;
 
 class UnitSlaResource extends Resource
 {
     protected static ?string $model = UnitSla::class;
 
     protected static ?string $modelLabel = 'SLA';
+
     protected static ?string $pluralModelLabel = 'Target SLA';
+
     protected static ?string $navigationLabel = 'SLA';
-    protected static string | \UnitEnum | null $navigationGroup = 'Master Data';
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-clock';
+
+    protected static string|\UnitEnum|null $navigationGroup = 'Master Data';
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-clock';
 
     public static function form(Schema $schema): Schema
     {
         return $schema
             ->components([
-                \Filament\Forms\Components\Select::make('unit_id')
+                Select::make('unit_id')
                     ->relationship('unit', 'name')
                     ->required()
                     ->translateLabel(),
-                \Filament\Forms\Components\Select::make('priority_id')
+                Select::make('priority_id')
                     ->relationship('priority', 'name')
                     ->required()
                     ->unique(
                         table: 'unit_slas',
                         column: 'priority_id',
-                        modifyRuleUsing: function (\Illuminate\Validation\Rules\Unique $rule, callable $get) {
+                        modifyRuleUsing: function (Unique $rule, callable $get) {
                             return $rule->where('unit_id', $get('unit_id'));
                         },
                         ignoreRecord: true
@@ -47,7 +55,7 @@ class UnitSlaResource extends Resource
                         'unique' => __('Aturan SLA untuk kombinasi Unit dan Prioritas ini sudah ada.'),
                     ])
                     ->translateLabel(),
-                \Filament\Forms\Components\TextInput::make('target_hours')
+                TextInput::make('target_hours')
                     ->numeric()
                     ->required()
                     ->suffix(__('Hours'))
@@ -59,15 +67,15 @@ class UnitSlaResource extends Resource
     {
         return $table
             ->columns([
-                \Filament\Tables\Columns\TextColumn::make('unit.name')
+                TextColumn::make('unit.name')
                     ->translateLabel()
                     ->searchable()
                     ->sortable(),
-                \Filament\Tables\Columns\TextColumn::make('priority.name')
+                TextColumn::make('priority.name')
                     ->translateLabel()
                     ->searchable()
                     ->sortable(),
-                \Filament\Tables\Columns\TextColumn::make('target_hours')
+                TextColumn::make('target_hours')
                     ->suffix(' Jam')
                     ->translateLabel()
                     ->sortable(),
@@ -76,7 +84,9 @@ class UnitSlaResource extends Resource
                 //
             ])
             ->recordActions([
-                EditAction::make(),
+                EditAction::make()
+                    ->slideOver()
+                    ->modalWidth(Width::Medium),
                 DeleteAction::make(),
             ])
             ->toolbarActions([
@@ -86,7 +96,7 @@ class UnitSlaResource extends Resource
             ]);
     }
 
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->with(['unit', 'priority']);

@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\BusinessEntityResource;
+use App\Filament\Resources\BusinessEntityResource\Pages\ManageBusinessEntities;
 use App\Filament\Resources\ProblemCategoryResource;
 use App\Filament\Resources\ProblemCategoryResource\Pages\CreateProblemCategory;
 use App\Filament\Resources\ProblemCategoryResource\Pages\ViewProblemCategory;
@@ -11,22 +13,22 @@ use App\Filament\Resources\TicketResource\Pages\ListTickets;
 use App\Filament\Resources\TicketResource\Pages\ViewTicket;
 use App\Filament\Resources\TicketResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\TicketStatusResource;
-use App\Filament\Resources\TicketStatusResource\Pages\ViewTicketStatus;
-use App\Filament\Resources\TicketStatusResource\RelationManagers\TicketsRelationManager as TicketStatusTicketsRelationManager;
+use App\Filament\Resources\TicketStatusResource\Pages\ManageTicketStatuses;
 use App\Filament\Resources\UnitResource;
-use App\Filament\Resources\UnitResource\Pages\ViewUnit;
-use App\Filament\Resources\UnitResource\RelationManagers\TicketsRelationManager as UnitTicketsRelationManager;
-use App\Filament\Resources\UnitResource\RelationManagers\UsersRelationManager;
+use App\Filament\Resources\UnitResource\Pages\ManageUnits;
+use App\Filament\Resources\UnitSlas\Pages\ManageUnitSlas;
 use App\Filament\Resources\UnitSlas\UnitSlaResource;
 use App\Filament\Resources\UserResource;
 use App\Filament\Resources\UserResource\Pages\ViewUser;
 use App\Filament\Resources\UserResource\RelationManagers\TicketsRelationManager as UserTicketsRelationManager;
+use App\Models\BusinessEntity;
 use App\Models\Comment;
 use App\Models\Priority;
 use App\Models\ProblemCategory;
 use App\Models\Ticket;
 use App\Models\TicketStatus;
 use App\Models\Unit;
+use App\Models\UnitSla;
 use App\Models\User;
 use App\Notifications\CommentNotification;
 use App\Notifications\NewTicketNotification;
@@ -34,6 +36,10 @@ use App\Notifications\TicketStatusChangedNotification;
 use App\Notifications\TicketSubmittedNotification;
 use App\Policies\TicketPolicy;
 use Database\Seeders\RoleSeeder;
+use Filament\Actions\Action;
+use Filament\Actions\Testing\TestAction;
+use Filament\Schemas\Schema as FilamentSchema;
+use Filament\Support\Enums\Width;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
@@ -369,8 +375,6 @@ class TicketMailboxAccessTest extends TestCase
             UserResource::getEloquentQuery()->pluck('id')->all(),
         );
         $this->assertNotContains($legacyStaff->id, UserResource::getEloquentQuery()->pluck('id')->all());
-        $this->assertTrue(UsersRelationManager::canViewForRecord($currentUnit, ViewUnit::class));
-        $this->assertFalse(UsersRelationManager::canViewForRecord($legacyUnit, ViewUnit::class));
     }
 
     public function test_unit_sla_master_data_follows_shield_view_any(): void
@@ -455,12 +459,7 @@ class TicketMailboxAccessTest extends TestCase
             (int) TicketStatusResource::getEloquentQuery()->findOrFail($status->id)->tickets_count,
         );
 
-        Livewire::test(TicketStatusTicketsRelationManager::class, [
-            'ownerRecord' => $status,
-            'pageClass' => ViewTicketStatus::class,
-        ])
-            ->assertCanSeeTableRecords([$ownedTicket, $reporterToFinance])
-            ->assertCanNotSeeTableRecords([$otherTicket]);
+        $this->assertSame(2, TicketStatusResource::visibleTicketsCount($status));
 
         $this->actingAs($otherSender);
 
@@ -472,44 +471,27 @@ class TicketMailboxAccessTest extends TestCase
             ->assertCanNotSeeTableRecords([$ownedTicket]);
     }
 
-    public function test_unit_and_user_ticket_relations_are_registered_and_honor_mailbox_visibility(): void
+    public function test_user_ticket_relation_is_registered_and_honors_mailbox_visibility(): void
     {
         $finance = Unit::create(['name' => 'Finance']);
         $it = Unit::create(['name' => 'IT']);
         $hr = Unit::create(['name' => 'HR']);
         $financeSender = $this->unitUser('Admin Unit', $finance, 'Finance Sender');
         $hrSender = $this->unitUser('Admin Unit', $hr, 'HR Sender');
-        $itProcessor = $this->unitUser('Staff Unit', $it, 'IT Processor');
-        $financeTicket = $this->ticket($financeSender, $it, 'Finance to IT');
+        $this->ticket($financeSender, $it, 'Finance to IT');
         $hrTicket = $this->ticket($hrSender, $it, 'HR to IT');
 
-        $this->assertContains(UnitTicketsRelationManager::class, UnitResource::getRelations());
         $this->assertContains(UserTicketsRelationManager::class, UserResource::getRelations());
 
         $this->actingAs($financeSender);
 
-        $this->assertTrue(UnitTicketsRelationManager::canViewForRecord($it, ViewUnit::class));
         $this->assertTrue(UserTicketsRelationManager::canViewForRecord($financeSender, ViewUser::class));
-
-        Livewire::test(UnitTicketsRelationManager::class, [
-            'ownerRecord' => $it,
-            'pageClass' => ViewUnit::class,
-        ])
-            ->assertCanSeeTableRecords([$financeTicket])
-            ->assertCanNotSeeTableRecords([$hrTicket]);
 
         Livewire::test(UserTicketsRelationManager::class, [
             'ownerRecord' => $hrSender,
             'pageClass' => ViewUser::class,
         ])
             ->assertCanNotSeeTableRecords([$hrTicket]);
-
-        $this->actingAs($itProcessor);
-
-        Livewire::test(UnitTicketsRelationManager::class, [
-            'ownerRecord' => $it,
-            'pageClass' => ViewUnit::class,
-        ])->assertCanSeeTableRecords([$financeTicket, $hrTicket]);
 
         $userWithoutTicketPermission = User::create([
             'name' => 'No Ticket Permission',
@@ -518,8 +500,54 @@ class TicketMailboxAccessTest extends TestCase
         ]);
         $this->actingAs($userWithoutTicketPermission);
 
-        $this->assertFalse(UnitTicketsRelationManager::canViewForRecord($it, ViewUnit::class));
         $this->assertFalse(UserTicketsRelationManager::canViewForRecord($financeSender, ViewUser::class));
+    }
+
+    public function test_units_are_managed_from_a_single_page_with_slide_over_modals(): void
+    {
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $pic = $this->unitUser('Staff Unit', $it, 'IT Network PIC');
+        $this->unitUser('User', $it, 'IT Member');
+        ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Jaringan', 'default_responsible_id' => $pic->id]);
+        ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Email']);
+        $superAdmin = $this->user('Super Admin', 'Unit Manager');
+
+        $this->assertSame(['index'], array_keys(UnitResource::getPages()));
+        $this->assertSame([], UnitResource::getRelations());
+        $this->assertDirectoryDoesNotExist(app_path('Filament/Resources/UnitResource/RelationManagers'));
+
+        $this->actingAs($superAdmin);
+
+        $page = Livewire::test(ManageUnits::class)
+            ->assertCanSeeTableRecords([$it, $busdev])
+            ->assertTableColumnStateSet('problem_categories_count', 2, $it)
+            ->assertTableColumnStateSet('users_count', 2, $it)
+            ->assertTableColumnStateSet('tickets_count', 0, $it);
+
+        $this->assertActionsOpenAsMediumSlideOvers($page, [
+            'create' => TestAction::make('create'),
+            'view' => TestAction::make('view')->table($it),
+            'edit' => TestAction::make('edit')->table($it),
+        ]);
+
+        // Modal v4 dirender sebagai partial, jadi isi infolist dievaluasi langsung.
+        $infolist = UnitResource::infolist(FilamentSchema::make($page->instance())->record($it->fresh()));
+        $states = collect($infolist->getComponents())
+            ->mapWithKeys(fn ($component) => [$component->getName() => $component->getState()]);
+        $this->assertSame('IT', $states['name']);
+        $this->assertSame(['Email', 'Jaringan · PIC: IT Network PIC'], $states['problem_categories']);
+        $this->assertSame(['IT Member', 'IT Network PIC'], $states['members']);
+        $this->assertSame(0, $states['tickets_total']);
+
+        $page
+            ->callAction(TestAction::make('create'), data: ['name' => 'Legal'])
+            ->assertHasNoActionErrors()
+            ->callAction(TestAction::make('edit')->table($it), data: ['name' => 'IT & Infrastruktur'])
+            ->assertHasNoActionErrors();
+
+        $this->assertTrue(Unit::query()->where('name', 'Legal')->exists());
+        $this->assertSame('IT & Infrastruktur', $it->fresh()->name);
     }
 
     public function test_legacy_staf_unit_role_is_merged_without_losing_memberships_or_permissions(): void
@@ -1067,6 +1095,82 @@ class TicketMailboxAccessTest extends TestCase
 
         $category = ProblemCategory::query()->where('name', 'Akses VPN')->firstOrFail();
         $this->assertSame($itStaff->id, (int) $category->default_responsible_id);
+    }
+
+    public function test_master_data_pages_open_their_actions_as_slide_over_modals(): void
+    {
+        if (! Schema::hasTable('unit_slas')) {
+            Schema::create('unit_slas', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('unit_id');
+                $table->unsignedBigInteger('priority_id');
+                $table->integer('target_hours');
+                $table->timestamps();
+            });
+        }
+
+        $unit = Unit::create(['name' => 'IT']);
+        $sla = UnitSla::create(['unit_id' => $unit->id, 'priority_id' => $this->priority->id, 'target_hours' => 24]);
+        $entity = BusinessEntity::create(['name' => 'Complete Selular']);
+        $open = TicketStatus::query()->findOrFail(TicketStatus::OPEN);
+        $this->actingAs($this->user('Super Admin', 'Master Data Admin'));
+
+        // Status tiket: dulu punya halaman Create/Edit/View dan relation manager.
+        $this->assertSame(['index'], array_keys(TicketStatusResource::getPages()));
+        $this->assertSame([], TicketStatusResource::getRelations());
+        $this->assertDirectoryDoesNotExist(app_path('Filament/Resources/TicketStatusResource/RelationManagers'));
+
+        $statuses = Livewire::test(ManageTicketStatuses::class)
+            ->assertCanSeeTableRecords(TicketStatus::all());
+        $this->assertActionsOpenAsMediumSlideOvers($statuses, [
+            'create' => TestAction::make('create'),
+            'view' => TestAction::make('view')->table($open),
+            'edit' => TestAction::make('edit')->table($open),
+        ]);
+        $statuses
+            ->callAction(TestAction::make('edit')->table($open), data: ['name' => 'Terbuka'])
+            ->assertHasNoActionErrors();
+        $this->assertSame('Terbuka', $open->fresh()->name);
+
+        // SLA dan badan usaha sudah satu halaman; aksinya kini slide-over md.
+        $this->assertSame(['index'], array_keys(UnitSlaResource::getPages()));
+        $slas = Livewire::test(ManageUnitSlas::class)
+            ->assertCanSeeTableRecords([$sla]);
+        $this->assertActionsOpenAsMediumSlideOvers($slas, [
+            'create' => TestAction::make('create'),
+            'edit' => TestAction::make('edit')->table($sla),
+        ]);
+        $slas
+            ->callAction(TestAction::make('edit')->table($sla), data: ['target_hours' => 8])
+            ->assertHasNoActionErrors();
+        $this->assertSame(8, (int) $sla->fresh()->target_hours);
+
+        $this->assertSame(['index'], array_keys(BusinessEntityResource::getPages()));
+        $entities = Livewire::test(ManageBusinessEntities::class)
+            ->assertCanSeeTableRecords([$entity]);
+        $this->assertActionsOpenAsMediumSlideOvers($entities, [
+            'create' => TestAction::make('create'),
+            'edit' => TestAction::make('edit')->table($entity),
+        ]);
+        $entities
+            ->callAction(TestAction::make('create'), data: ['name' => 'Complete Mulia'])
+            ->assertHasNoActionErrors();
+        $this->assertTrue(BusinessEntity::query()->where('name', 'Complete Mulia')->exists());
+    }
+
+    /**
+     * @param  array<string, TestAction>  $actions
+     */
+    private function assertActionsOpenAsMediumSlideOvers($page, array $actions): void
+    {
+        foreach ($actions as $name => $testAction) {
+            $page->mountAction($testAction);
+            $action = $page->instance()->getMountedAction();
+            $this->assertInstanceOf(Action::class, $action, $name);
+            $this->assertTrue($action->isModalSlideOver(), "{$name} opens as a slide-over");
+            $this->assertSame(Width::Medium, $action->getModalWidth(), "{$name} uses the md width");
+            $page->unmountAction();
+        }
     }
 
     private function createMailboxAuthorizationSchema(): void
