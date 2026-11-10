@@ -11,14 +11,29 @@ class Dashboard extends BasePage
 {
     use HasFiltersForm;
 
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-home';
+
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-home';
+
+    /**
+     * Satu kolom di layar sempit, dua kolom mulai lebar lg agar grafik
+     * status tiket dan distribusi SLA bisa berdampingan.
+     */
     public function getColumns(): int|array
     {
-        return 1;
+        return [
+            'default' => 1,
+            'lg' => 2,
+        ];
     }
 
     public function filtersForm(Schema $schema): Schema
     {
         return $schema
+            ->columns([
+                'default' => 1,
+                'sm' => 2,
+            ])
             ->components([
                 Select::make('month')
                     ->label(__('Bulan'))
@@ -46,6 +61,7 @@ class Dashboard extends BasePage
                         for ($y = 2024; $y <= $currentYear + 1; $y++) {
                             $years[$y] = $y;
                         }
+
                         return $years;
                     })
                     ->default((int) date('Y')),

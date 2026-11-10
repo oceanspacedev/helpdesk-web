@@ -16,6 +16,8 @@ class TicketsRelationManager extends RelationManager
 {
     protected static string $relationship = 'tickets';
 
+    protected static ?string $title = 'Tiket';
+
     protected static ?string $recordTitleAttribute = 'title';
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool

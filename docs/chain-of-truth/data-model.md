@@ -10,7 +10,7 @@ Source type: Reconstructed from migrations, models, and seeders.
 | ENT-001 | User | `users` | `id`, `unit_id`, `name`, nullable unique `email`, `email_verified_at`, `email_verified_via`, nullable `password`, `identity`, `phone`, unique `phone_normalized`, `is_active` | Has roles, tickets as owner, comments, email login records, morph units through `user_entities` |
 | ENT-002 | Ticket | `tickets` | `priority_id`, destination `unit_id`, sender `owner_id`, `problem_category_id`, `title`, `description`, `supporting_attachments`, `ticket_statuses_id`, processing agent `responsible_id`, reported `business_entities_id`, sender snapshot `reporter_unit_id` / `reporter_job_title` / `reporter_business_entity_id`, dates | Belongs to priority, destination unit, sender/owner, responsible agent, category, status, reported business entity, sender's contract business entity; has comments and histories |
 | ENT-003 | Unit | `units` | `name` | Has categories, tickets; morph-to-many users |
-| ENT-004 | ProblemCategory | `problem_categories` | `unit_id`, `name` | Belongs to unit; has tickets |
+| ENT-004 | ProblemCategory | `problem_categories` | `unit_id`, `name` | Belongs to unit; has tickets; many-to-many default PICs through `problem_category_responsibles` |
 | ENT-005 | Priority | `priorities` | `name` | Has tickets |
 | ENT-006 | TicketStatus | `ticket_statuses` | `name` | Has tickets |
 | ENT-007 | BusinessEntity | `business_entities` | `name` | Has tickets |
@@ -20,6 +20,7 @@ Source type: Reconstructed from migrations, models, and seeders.
 | ENT-011 | UserEntity | `user_entities` | `user_id`, `entity_id`, `entity_type` | Polymorphic bridge for user-to-entity relations |
 | ENT-012 | HelpdeskMcpSetting | `helpdesk_mcp_settings` | singleton `id=1`, encrypted token list, intake TTL, request limit, encrypted identity pepper/assertion secret, assertion leeway | Server-wide configuration consumed by HTTP MCP authentication, intake state, throttling, and trusted identity verification |
 | ENT-013 | EmailOtp | `email_otps` | `user_id`, normalized `email`, `purpose`, bcrypt `otp_hash`, unique SHA-256 `token_hash`, `expires_at`, `verified_at`, `attempt_count` | Belongs to user; one record per email login request holds both the code and the magic link |
+| ENT-014 | ProblemCategoryResponsible | `problem_category_responsibles` | `problem_category_id`, `user_id`, unique pair | Pivot of default PICs per problem category; migration `2026_11_09_000002` moved the former single `problem_categories.default_responsible_id` here |
 
 ## Lifecycle Rules
 
@@ -39,7 +40,7 @@ Source type: Reconstructed from migrations, models, and seeders.
 - Ticket description is required and max length 65535 in form.
 - Ticket supporting attachments are JSON and nullable.
 - User phone is canonicalized on every model save and protected by a database unique constraint on `phone_normalized`; the constraint migration stops until legacy duplicates are repaired.
-- Email receives mail notifications only when `email_verified_at` and trusted `email_verified_via` provenance are both present. Legacy timestamps are marked `legacy_review_required`. Password login does not depend on verification.
+- Email receives mail notifications only when `email_verified_at` and trusted `email_verified_via` provenance (`admin`, `talenta`, `email_link`, `socialite`) are both present. The Talenta sync copies each employee's Talenta email and marks it `talenta` because Talenta requires an active work email. Legacy timestamps are marked `legacy_review_required`. Password login does not depend on verification.
 - Comment table uses `tiket_id`, preserving current schema spelling.
 - The MCP settings UI accepts intake TTL from 10 to 1,440 minutes, request limits from 60 to 600 per token per minute, and trusted assertion leeway from 30 to 3,600 seconds. `HELPDESK_MCP_LOCAL_CLIENT_ID` is intentionally client-local and is not stored in ENT-012.
 

@@ -8,6 +8,7 @@ use Filament\Actions;
 use Filament\Forms;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -17,7 +18,9 @@ class BusinessEntityResource extends Resource
 {
     protected static ?string $model = BusinessEntity::class;
 
-    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-building-office-2';
+
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-building-office-2';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Organisasi';
 
@@ -43,8 +46,12 @@ class BusinessEntityResource extends Resource
                 Tables\Filters\TrashedFilter::make(),
             ])
             ->actions([
-                Actions\EditAction::make(),
+                Actions\EditAction::make()
+                    ->slideOver()
+                    ->modalWidth(Width::Medium),
                 Actions\DeleteAction::make(),
+                Actions\RestoreAction::make(),
+                Actions\ForceDeleteAction::make(),
             ])
             ->bulkActions([
                 Actions\DeleteBulkAction::make(),

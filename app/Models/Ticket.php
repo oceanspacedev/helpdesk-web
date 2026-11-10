@@ -11,6 +11,7 @@ use App\Notifications\TicketStatusChangedNotification;
 use App\Notifications\TicketSubmittedNotification;
 use App\Services\Integrations\HelpdeskOperationalClassifier;
 use App\Support\HelpdeskNotifier;
+use App\Support\SchemaPresence;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -19,7 +20,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Class Ticket.
@@ -300,8 +300,10 @@ class Ticket extends Model
 
         // Event listener untuk event 'saving'
         static::saving(function ($ticket) {
-            // Auto-assign only named BUSDEV document types to the OD accounts.
-            // Odoo, printer, CCTV, and holding tickets stay on the unit queue.
+            // PIC default kategori (diatur admin) menang: tiket jatuh ke PIC yang
+            // tiket aktifnya paling sedikit. Bila kosong, pakai pemetaan lama
+            // dokumen BUSDEV ke akun OD. Kategori tanpa PIC tetap masuk antrean
+            // divisi dan dinotifikasi ke semua anggotanya.
             if (! self::$isSeeding && $ticket->isDirty('problem_category_id')) {
                 try {
                     $ticket->responsible_id = self::defaultResponsibleIdForCategory($ticket);
@@ -347,7 +349,7 @@ class Ticket extends Model
 
             // Hitung SLA Due At jika tiket sudah di-approve dan unit tersebut memiliki aturan UnitSla
             if ($ticket->approved_at && ($ticket->isDirty('approved_at') || $ticket->isDirty('priority_id') || $ticket->isDirty('unit_id'))) {
-                if (Schema::hasTable('unit_slas')) {
+                if (SchemaPresence::has('unit_slas')) {
                     $sla = UnitSla::where('unit_id', $ticket->unit_id)
                         ->where('priority_id', $ticket->priority_id)
                         ->first();
@@ -379,20 +381,10 @@ class Ticket extends Model
             }
 
             $staffIds = [];
-            $responsible = $ticket->eligibleResponsible();
 
-            if ($responsible) {
-                HelpdeskNotifier::send($responsible, new NewTicketNotification($ticket));
-                $staffIds[] = (int) $responsible->id;
-            } else {
-                $receivers = User::query()
-                    ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
-                    ->get();
-
-                foreach ($receivers as $receiver) {
-                    HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
-                    $staffIds[] = (int) $receiver->id;
-                }
+            foreach ($ticket->newTicketRecipients() as $receiver) {
+                HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
+                $staffIds[] = (int) $receiver->id;
             }
 
             $owner = User::query()->find($ticket->owner_id);
@@ -404,17 +396,8 @@ class Ticket extends Model
         // Event listener untuk event 'updated'
         static::updated(function ($ticket) {
             if (! self::$isSeeding && $ticket->wasChanged('unit_id')) {
-                $responsible = $ticket->eligibleResponsible();
-                if ($responsible) {
-                    HelpdeskNotifier::send($responsible, new NewTicketNotification($ticket));
-                } else {
-                    $receivers = User::query()
-                        ->ticketProcessorsForUnit((int) $ticket->unit_id, includeGlobal: true)
-                        ->get();
-
-                    foreach ($receivers as $receiver) {
-                        HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
-                    }
+                foreach ($ticket->newTicketRecipients() as $receiver) {
+                    HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
                 }
             }
 
@@ -437,12 +420,53 @@ class Ticket extends Model
         });
     }
 
+    /**
+     * Penerima notifikasi tiket baru. Para PIC default kategori yang masih
+     * eligible menang; bila tidak ada, penanggung jawab tiket (mis. hasil
+     * pemetaan lama BUSDEV); bila tidak ada juga, seluruh anggota aktif
+     * divisi tujuan ditambah admin global.
+     *
+     * @return Collection<int, User>
+     */
+    public function newTicketRecipients(): Collection
+    {
+        $unitId = (int) $this->unit_id;
+
+        $category = $this->problem_category_id
+            ? ProblemCategory::query()->with('defaultResponsibles')->find($this->problem_category_id)
+            : null;
+
+        $pics = $category?->eligibleDefaultResponsibles($unitId) ?? new Collection;
+        if ($pics->isNotEmpty()) {
+            return $pics;
+        }
+
+        $responsible = $this->eligibleResponsible();
+        if ($responsible) {
+            return new Collection([$responsible]);
+        }
+
+        return User::query()
+            ->ticketProcessorsForUnit($unitId, includeGlobal: true)
+            ->get();
+    }
+
     private static function defaultResponsibleIdForCategory(self $ticket): ?int
     {
-        $categoryName = trim((string) ProblemCategory::query()
+        $category = ProblemCategory::query()
             ->whereKey($ticket->problem_category_id)
-            ->value('name'));
-        $assigneeName = HelpdeskOperationalClassifier::defaultAssigneeName($categoryName);
+            ->first(['id', 'unit_id', 'name']);
+
+        if (! $category) {
+            return null;
+        }
+
+        $configured = $category->pickDefaultResponsible((int) $ticket->unit_id);
+        if ($configured) {
+            return (int) $configured->getKey();
+        }
+
+        $assigneeName = HelpdeskOperationalClassifier::defaultAssigneeName(trim((string) $category->name));
         if ($assigneeName === null) {
             return null;
         }

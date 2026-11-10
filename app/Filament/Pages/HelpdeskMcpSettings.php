@@ -15,8 +15,8 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
-use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Schema;
 use Illuminate\Support\Str;
 use SensitiveParameter;
 
@@ -31,7 +31,9 @@ class HelpdeskMcpSettings extends Page
 
     protected static string|\UnitEnum|null $navigationGroup = 'Pengaturan';
 
-    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-adjustments-horizontal';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-cog-6-tooth';
+
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-cog-6-tooth';
 
     protected static ?int $navigationSort = 100;
 

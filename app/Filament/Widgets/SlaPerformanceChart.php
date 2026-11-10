@@ -5,6 +5,7 @@ namespace App\Filament\Widgets;
 use App\Models\Priority;
 use App\Models\Ticket;
 use App\Models\Unit;
+use App\Support\DashboardPeriod;
 use Carbon\Carbon;
 use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Leandrocfe\FilamentApexCharts\Widgets\ApexChartWidget;
@@ -25,13 +26,13 @@ class SlaPerformanceChart extends ApexChartWidget
 
     protected static bool $deferLoading = true;
 
-    protected static ?int $sort = 4;
+    protected static ?int $sort = 5;
 
-    protected int|string|array $columnSpan = [
-        'default' => 'full',
-        'md' => 1,
-        'lg' => 1,
-    ];
+    /**
+     * Lebar penuh: untuk admin global sumbu X berisi semua unit, sehingga
+     * setengah lebar membuat labelnya bertumpuk.
+     */
+    protected int|string|array $columnSpan = 'full';
 
     /**
      * Chart options (series, labels, types, size, animations...)
@@ -49,16 +50,7 @@ class SlaPerformanceChart extends ApexChartWidget
         $month = $this->filters['month'] ?? null;
         $year = $this->filters['year'] ?? null;
 
-        $applyFilters = function ($query) use ($month, $year) {
-            if ($year && $year !== 'all') {
-                $query->whereYear('tickets.created_at', $year);
-            }
-            if ($month && $month !== 'all') {
-                $query->whereMonth('tickets.created_at', $month);
-            }
-
-            return $query;
-        };
+        $applyFilters = fn ($query) => DashboardPeriod::apply($query, $month, $year);
 
         if ($isGlobalAdmin) {
             $units = Unit::all();
@@ -139,7 +131,7 @@ class SlaPerformanceChart extends ApexChartWidget
         return [
             'chart' => [
                 'type' => 'bar',
-                'height' => 300,
+                'height' => 340,
             ],
             'series' => [
                 [
@@ -150,9 +142,15 @@ class SlaPerformanceChart extends ApexChartWidget
             'xaxis' => [
                 'categories' => $categories,
                 'labels' => [
+                    'rotate' => -45,
+                    'rotateAlways' => count($categories) > 6,
+                    'trim' => true,
+                    'maxHeight' => 110,
+                    'hideOverlappingLabels' => false,
                     'style' => [
                         'colors' => '#9ca3af',
                         'fontWeight' => 600,
+                        'fontSize' => '11px',
                     ],
                 ],
             ],
@@ -171,6 +169,10 @@ class SlaPerformanceChart extends ApexChartWidget
                         'y' => 95,
                         'borderColor' => '#10b981',
                         'label' => [
+                            // Di kiri agar tidak menimpa ikon menu grafik di kanan atas.
+                            'position' => 'left',
+                            'textAnchor' => 'start',
+                            'offsetX' => 8,
                             'borderColor' => '#10b981',
                             'style' => [
                                 'color' => '#fff',

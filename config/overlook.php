@@ -1,11 +1,13 @@
 <?php
 
+use BezhanSalleh\FilamentShield\Resources\Roles\RoleResource;
+
 return [
     'includes' => [
         // App\Filament\Resources\Blog\AuthorResource::class,
     ],
     'excludes' => [
-        BezhanSalleh\FilamentShield\Resources\RoleResource::class,
+        RoleResource::class,
     ],
     'should_convert_count' => true,
     'enable_convert_tooltip' => true,

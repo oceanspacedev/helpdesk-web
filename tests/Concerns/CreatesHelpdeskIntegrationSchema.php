@@ -148,6 +148,14 @@ trait CreatesHelpdeskIntegrationSchema
             $table->softDeletes();
         });
 
+        Schema::create('problem_category_responsibles', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('problem_category_id');
+            $table->unsignedBigInteger('user_id');
+            $table->timestamps();
+            $table->unique(['problem_category_id', 'user_id'], 'problem_category_responsibles_unique');
+        });
+
         Schema::create('tickets', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('priority_id');

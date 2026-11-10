@@ -9,6 +9,8 @@ use App\Models\Unit;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -19,7 +21,9 @@ class ProblemCategoryResource extends Resource
 {
     protected static ?string $model = ProblemCategory::class;
 
-    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-link';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-tag';
+
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-tag';
 
     protected static ?int $navigationSort = 5;
 
@@ -31,11 +35,14 @@ class ProblemCategoryResource extends Resource
                     ->label(__('Work Unit'))
                     ->options(fn (): array => static::manageableUnitOptions())
                     ->searchable()
-                    ->required(),
+                    ->required()
+                    ->live()
+                    ->afterStateUpdated(fn (Set $set) => $set('default_responsibles', [])),
                 Forms\Components\TextInput::make('name')
                     ->translateLabel()
                     ->required()
                     ->maxLength(255),
+                static::defaultResponsiblesSelect(),
             ]);
     }
 
@@ -49,11 +56,19 @@ class ProblemCategoryResource extends Resource
                 Tables\Columns\TextColumn::make('unit.name')
                     ->searchable()
                     ->label(__('Work Unit')),
+                Tables\Columns\TextColumn::make('defaultResponsibles.name')
+                    ->label(__('Default PIC'))
+                    ->listWithLineBreaks()
+                    ->limitList(3)
+                    ->expandableLimitedList()
+                    ->placeholder('Semua anggota divisi')
+                    ->toggleable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('unit_id')
                     ->label(__('Work Unit'))
                     ->options(fn (): array => static::manageableUnitOptions())
+                    ->searchable()
                     ->hidden(fn (): bool => ! auth()->user()?->hasGlobalTicketAccess()),
                 Tables\Filters\TrashedFilter::make(),
             ])
@@ -88,7 +103,7 @@ class ProblemCategoryResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
-            ->with(['unit'])
+            ->with(['unit', 'defaultResponsibles'])
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ]);
@@ -119,6 +134,30 @@ class ProblemCategoryResource extends Resource
             ->orderBy('name')
             ->pluck('name', 'id')
             ->all();
+    }
+
+    /**
+     * PIC default kategori (boleh lebih dari satu). Pilihannya mengikuti
+     * divisi yang dipilih di form; pilihan di luar divisi itu ditolak saat
+     * validasi karena daftar opsinya dimuat penuh (preload).
+     */
+    public static function defaultResponsiblesSelect(): Forms\Components\Select
+    {
+        return Forms\Components\Select::make('default_responsibles')
+            ->label(__('Default PIC'))
+            ->relationship(
+                name: 'defaultResponsibles',
+                titleAttribute: 'name',
+                modifyQueryUsing: fn (Builder $query, Get $get): Builder => ProblemCategory::constrainDefaultResponsibleCandidates(
+                    $query,
+                    (int) $get('unit_id'),
+                ),
+            )
+            ->multiple()
+            ->searchable()
+            ->preload()
+            ->placeholder('Semua anggota divisi')
+            ->helperText('Bila diisi, tiket baru kategori ini langsung ditugaskan ke PIC yang tiket aktifnya paling sedikit, dan notifikasi tiket baru hanya dikirim ke para PIC. Kosongkan agar notifikasi dikirim ke semua anggota divisi.');
     }
 
     public static function getPluralModelLabel(): string

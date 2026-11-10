@@ -33,6 +33,8 @@ class TicketResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-ticket';
 
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-ticket';
+
     protected static ?int $navigationSort = 3;
 
     protected static ?string $recordTitleAttribute = 'title';
@@ -380,6 +382,7 @@ class TicketResource extends Resource
                 Tables\Filters\SelectFilter::make('unit_id')
                     ->label('Unit Tujuan')
                     ->options(Unit::all()->pluck('name', 'id'))
+                    ->searchable()
                     ->hidden(
                         fn () => ! auth()
                             ->user()
@@ -387,13 +390,16 @@ class TicketResource extends Resource
                     ),
                 Tables\Filters\SelectFilter::make('ticket_statuses_id')
                     ->label(__('Status'))
-                    ->options(TicketStatus::pluck('name', 'id')),
+                    ->options(TicketStatus::pluck('name', 'id'))
+                    ->searchable(),
                 Tables\Filters\SelectFilter::make('business_entities_id')
                     ->label(__('Business Entity'))
-                    ->options(BusinessEntity::pluck('name', 'id')),
+                    ->options(BusinessEntity::pluck('name', 'id'))
+                    ->searchable(),
                 Tables\Filters\SelectFilter::make('priority_id')
                     ->label(__('Priority'))
-                    ->options(Priority::pluck('name', 'id')),
+                    ->options(Priority::pluck('name', 'id'))
+                    ->searchable(),
                 Tables\Filters\TrashedFilter::make(),
             ])
             ->actions([

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\BusinessEntityResource\Pages;
 use App\Filament\Resources\BusinessEntityResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ManageRecords;
+use Filament\Support\Enums\Width;
 
 class ManageBusinessEntities extends ManageRecords
 {
@@ -13,7 +14,9 @@ class ManageBusinessEntities extends ManageRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->slideOver()
+                ->modalWidth(Width::Medium),
         ];
     }
 }

@@ -5,16 +5,19 @@ namespace App\Filament\Resources\TicketStatusResource\Pages;
 use App\Filament\Resources\TicketStatusResource;
 use App\Filament\Widgets\TicketStatusesChart;
 use Filament\Actions;
-use Filament\Resources\Pages\ListRecords;
+use Filament\Resources\Pages\ManageRecords;
+use Filament\Support\Enums\Width;
 
-class ListTicketStatuses extends ListRecords
+class ManageTicketStatuses extends ManageRecords
 {
     protected static string $resource = TicketStatusResource::class;
 
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->slideOver()
+                ->modalWidth(Width::Medium),
         ];
     }
 
@@ -25,7 +28,7 @@ class ListTicketStatuses extends ListRecords
         ];
     }
 
-    public function getHeaderWidgetsColumns(): int | array
+    public function getHeaderWidgetsColumns(): int|array
     {
         return 1;
     }

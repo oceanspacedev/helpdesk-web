@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Ticket;
+use App\Support\DashboardPeriod;
 use Carbon\Carbon;
 use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
@@ -15,6 +16,15 @@ class SlaPerformanceWidget extends BaseWidget
     protected static ?int $sort = 1;
 
     protected int|string|array $columnSpan = 'full';
+
+    /**
+     * Dua kartu statistik berbagi lebar penuh; default Filament memakai tiga
+     * slot sehingga menyisakan ruang kosong di kanan.
+     */
+    protected int|array|null $columns = [
+        'default' => 1,
+        'sm' => 2,
+    ];
 
     protected function getStats(): array
     {
@@ -29,12 +39,7 @@ class SlaPerformanceWidget extends BaseWidget
         $month = $this->filters['month'] ?? null;
         $year = $this->filters['year'] ?? null;
 
-        if ($year && $year !== 'all') {
-            $baseQuery->whereYear('tickets.created_at', $year);
-        }
-        if ($month && $month !== 'all') {
-            $baseQuery->whereMonth('tickets.created_at', $month);
-        }
+        DashboardPeriod::apply($baseQuery, $month, $year);
 
         // 1. Tiket Closed tepat waktu
         $metClosed = (clone $baseQuery)->where('ticket_statuses_id', 4)->where('is_sla_met', true)->count();

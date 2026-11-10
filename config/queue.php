@@ -39,7 +39,7 @@ return [
             'table' => 'jobs',
             'queue' => 'default',
             'retry_after' => 90,
-            'after_commit' => false,
+            'after_commit' => true,
         ],
 
         'beanstalkd' => [
@@ -68,7 +68,10 @@ return [
             'queue' => env('REDIS_QUEUE', 'default'),
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 360),
             'block_for' => (int) env('REDIS_QUEUE_BLOCK_FOR', 5),
-            'after_commit' => false,
+            // Notifikasi di-dispatch dari hook model yang sering berjalan di
+            // dalam DB::transaction (MCP, submit publik, workflow). Tunggu
+            // commit agar worker tidak membaca tiket yang belum ada.
+            'after_commit' => true,
         ],
 
     ],

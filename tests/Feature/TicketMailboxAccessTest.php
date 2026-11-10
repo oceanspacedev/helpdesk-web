@@ -2,7 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\BusinessEntityResource;
+use App\Filament\Resources\BusinessEntityResource\Pages\ManageBusinessEntities;
 use App\Filament\Resources\ProblemCategoryResource;
+use App\Filament\Resources\ProblemCategoryResource\Pages\CreateProblemCategory;
+use App\Filament\Resources\ProblemCategoryResource\Pages\EditProblemCategory;
 use App\Filament\Resources\ProblemCategoryResource\Pages\ViewProblemCategory;
 use App\Filament\Resources\ProblemCategoryResource\RelationManagers\TicketsRelationManager;
 use App\Filament\Resources\TicketResource\Pages\EditTicket;
@@ -10,22 +14,22 @@ use App\Filament\Resources\TicketResource\Pages\ListTickets;
 use App\Filament\Resources\TicketResource\Pages\ViewTicket;
 use App\Filament\Resources\TicketResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\TicketStatusResource;
-use App\Filament\Resources\TicketStatusResource\Pages\ViewTicketStatus;
-use App\Filament\Resources\TicketStatusResource\RelationManagers\TicketsRelationManager as TicketStatusTicketsRelationManager;
+use App\Filament\Resources\TicketStatusResource\Pages\ManageTicketStatuses;
 use App\Filament\Resources\UnitResource;
-use App\Filament\Resources\UnitResource\Pages\ViewUnit;
-use App\Filament\Resources\UnitResource\RelationManagers\TicketsRelationManager as UnitTicketsRelationManager;
-use App\Filament\Resources\UnitResource\RelationManagers\UsersRelationManager;
+use App\Filament\Resources\UnitResource\Pages\ManageUnits;
+use App\Filament\Resources\UnitSlas\Pages\ManageUnitSlas;
 use App\Filament\Resources\UnitSlas\UnitSlaResource;
 use App\Filament\Resources\UserResource;
 use App\Filament\Resources\UserResource\Pages\ViewUser;
 use App\Filament\Resources\UserResource\RelationManagers\TicketsRelationManager as UserTicketsRelationManager;
+use App\Models\BusinessEntity;
 use App\Models\Comment;
 use App\Models\Priority;
 use App\Models\ProblemCategory;
 use App\Models\Ticket;
 use App\Models\TicketStatus;
 use App\Models\Unit;
+use App\Models\UnitSla;
 use App\Models\User;
 use App\Notifications\CommentNotification;
 use App\Notifications\NewTicketNotification;
@@ -33,7 +37,13 @@ use App\Notifications\TicketStatusChangedNotification;
 use App\Notifications\TicketSubmittedNotification;
 use App\Policies\TicketPolicy;
 use Database\Seeders\RoleSeeder;
+use Filament\Actions\Action;
+use Filament\Actions\Testing\TestAction;
+use Filament\Schemas\Schema as FilamentSchema;
+use Filament\Support\Enums\Width;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
@@ -368,8 +378,6 @@ class TicketMailboxAccessTest extends TestCase
             UserResource::getEloquentQuery()->pluck('id')->all(),
         );
         $this->assertNotContains($legacyStaff->id, UserResource::getEloquentQuery()->pluck('id')->all());
-        $this->assertTrue(UsersRelationManager::canViewForRecord($currentUnit, ViewUnit::class));
-        $this->assertFalse(UsersRelationManager::canViewForRecord($legacyUnit, ViewUnit::class));
     }
 
     public function test_unit_sla_master_data_follows_shield_view_any(): void
@@ -454,12 +462,7 @@ class TicketMailboxAccessTest extends TestCase
             (int) TicketStatusResource::getEloquentQuery()->findOrFail($status->id)->tickets_count,
         );
 
-        Livewire::test(TicketStatusTicketsRelationManager::class, [
-            'ownerRecord' => $status,
-            'pageClass' => ViewTicketStatus::class,
-        ])
-            ->assertCanSeeTableRecords([$ownedTicket, $reporterToFinance])
-            ->assertCanNotSeeTableRecords([$otherTicket]);
+        $this->assertSame(2, TicketStatusResource::visibleTicketsCount($status));
 
         $this->actingAs($otherSender);
 
@@ -471,44 +474,27 @@ class TicketMailboxAccessTest extends TestCase
             ->assertCanNotSeeTableRecords([$ownedTicket]);
     }
 
-    public function test_unit_and_user_ticket_relations_are_registered_and_honor_mailbox_visibility(): void
+    public function test_user_ticket_relation_is_registered_and_honors_mailbox_visibility(): void
     {
         $finance = Unit::create(['name' => 'Finance']);
         $it = Unit::create(['name' => 'IT']);
         $hr = Unit::create(['name' => 'HR']);
         $financeSender = $this->unitUser('Admin Unit', $finance, 'Finance Sender');
         $hrSender = $this->unitUser('Admin Unit', $hr, 'HR Sender');
-        $itProcessor = $this->unitUser('Staff Unit', $it, 'IT Processor');
-        $financeTicket = $this->ticket($financeSender, $it, 'Finance to IT');
+        $this->ticket($financeSender, $it, 'Finance to IT');
         $hrTicket = $this->ticket($hrSender, $it, 'HR to IT');
 
-        $this->assertContains(UnitTicketsRelationManager::class, UnitResource::getRelations());
         $this->assertContains(UserTicketsRelationManager::class, UserResource::getRelations());
 
         $this->actingAs($financeSender);
 
-        $this->assertTrue(UnitTicketsRelationManager::canViewForRecord($it, ViewUnit::class));
         $this->assertTrue(UserTicketsRelationManager::canViewForRecord($financeSender, ViewUser::class));
-
-        Livewire::test(UnitTicketsRelationManager::class, [
-            'ownerRecord' => $it,
-            'pageClass' => ViewUnit::class,
-        ])
-            ->assertCanSeeTableRecords([$financeTicket])
-            ->assertCanNotSeeTableRecords([$hrTicket]);
 
         Livewire::test(UserTicketsRelationManager::class, [
             'ownerRecord' => $hrSender,
             'pageClass' => ViewUser::class,
         ])
             ->assertCanNotSeeTableRecords([$hrTicket]);
-
-        $this->actingAs($itProcessor);
-
-        Livewire::test(UnitTicketsRelationManager::class, [
-            'ownerRecord' => $it,
-            'pageClass' => ViewUnit::class,
-        ])->assertCanSeeTableRecords([$financeTicket, $hrTicket]);
 
         $userWithoutTicketPermission = User::create([
             'name' => 'No Ticket Permission',
@@ -517,8 +503,56 @@ class TicketMailboxAccessTest extends TestCase
         ]);
         $this->actingAs($userWithoutTicketPermission);
 
-        $this->assertFalse(UnitTicketsRelationManager::canViewForRecord($it, ViewUnit::class));
         $this->assertFalse(UserTicketsRelationManager::canViewForRecord($financeSender, ViewUser::class));
+    }
+
+    public function test_units_are_managed_from_a_single_page_with_slide_over_modals(): void
+    {
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $pic = $this->unitUser('Staff Unit', $it, 'IT Network PIC');
+        $this->unitUser('User', $it, 'IT Member');
+        $secondPic = $this->unitUser('Staff Unit', $it, 'IT Network Backup');
+        ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Jaringan'])
+            ->defaultResponsibles()->attach([$pic->id, $secondPic->id]);
+        ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Email']);
+        $superAdmin = $this->user('Super Admin', 'Unit Manager');
+
+        $this->assertSame(['index'], array_keys(UnitResource::getPages()));
+        $this->assertSame([], UnitResource::getRelations());
+        $this->assertDirectoryDoesNotExist(app_path('Filament/Resources/UnitResource/RelationManagers'));
+
+        $this->actingAs($superAdmin);
+
+        $page = Livewire::test(ManageUnits::class)
+            ->assertCanSeeTableRecords([$it, $busdev])
+            ->assertTableColumnStateSet('problem_categories_count', 2, $it)
+            ->assertTableColumnStateSet('users_count', 3, $it)
+            ->assertTableColumnStateSet('tickets_count', 0, $it);
+
+        $this->assertActionsOpenAsMediumSlideOvers($page, [
+            'create' => TestAction::make('create'),
+            'view' => TestAction::make('view')->table($it),
+            'edit' => TestAction::make('edit')->table($it),
+        ]);
+
+        // Modal v4 dirender sebagai partial, jadi isi infolist dievaluasi langsung.
+        $infolist = UnitResource::infolist(FilamentSchema::make($page->instance())->record($it->fresh()));
+        $states = collect($infolist->getComponents())
+            ->mapWithKeys(fn ($component) => [$component->getName() => $component->getState()]);
+        $this->assertSame('IT', $states['name']);
+        $this->assertSame(['Email', 'Jaringan · PIC: IT Network Backup, IT Network PIC'], $states['problem_categories']);
+        $this->assertSame(['IT Member', 'IT Network Backup', 'IT Network PIC'], $states['members']);
+        $this->assertSame(0, $states['tickets_total']);
+
+        $page
+            ->callAction(TestAction::make('create'), data: ['name' => 'Legal'])
+            ->assertHasNoActionErrors()
+            ->callAction(TestAction::make('edit')->table($it), data: ['name' => 'IT & Infrastruktur'])
+            ->assertHasNoActionErrors();
+
+        $this->assertTrue(Unit::query()->where('name', 'Legal')->exists());
+        $this->assertSame('IT & Infrastruktur', $it->fresh()->name);
     }
 
     public function test_legacy_staf_unit_role_is_merged_without_losing_memberships_or_permissions(): void
@@ -901,6 +935,329 @@ class TicketMailboxAccessTest extends TestCase
         ])->assertActionDoesNotExist('create');
     }
 
+    public function test_category_default_pics_receive_new_ticket_instead_of_the_whole_division(): void
+    {
+        Notification::fake();
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $pic = $this->unitUser('Staff Unit', $destination, 'IT Network PIC');
+        $backupPic = $this->unitUser('Staff Unit', $destination, 'IT Network Backup');
+        $colleague = $this->unitUser('Staff Unit', $destination, 'IT Other Staff');
+        $member = $this->unitUser('User', $destination, 'IT Member');
+        $reporter = $this->unitUser('User', $origin, 'Finance Network Reporter');
+        $category = ProblemCategory::create([
+            'unit_id' => $destination->id,
+            'name' => 'Jaringan & Internet',
+        ]);
+        $category->defaultResponsibles()->attach([$pic->id, $backupPic->id]);
+
+        $this->actingAs($reporter);
+        $ticket = Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $destination->id,
+            'owner_id' => $reporter->id,
+            'problem_category_id' => $category->id,
+            'title' => 'Internet kantor putus',
+            'description' => 'Internet kantor putus sejak pagi.',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+
+        $this->assertSame($backupPic->id, (int) $ticket->fresh()->responsible_id, 'seri beban dipecah berdasarkan nama');
+        Notification::assertSentTo([$pic, $backupPic], NewTicketNotification::class);
+        Notification::assertNotSentTo([$colleague, $member, $reporter], NewTicketNotification::class);
+        Notification::assertSentTo($reporter, TicketSubmittedNotification::class);
+    }
+
+    public function test_new_tickets_go_to_the_category_pic_with_the_fewest_active_tickets(): void
+    {
+        Notification::fake();
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $andi = $this->unitUser('Staff Unit', $destination, 'Andi PIC');
+        $budi = $this->unitUser('Staff Unit', $destination, 'Budi PIC');
+        $colleague = $this->unitUser('Staff Unit', $destination, 'IT Other Staff');
+        $reporter = $this->unitUser('User', $origin, 'Finance Rotation Reporter');
+        $category = ProblemCategory::create(['unit_id' => $destination->id, 'name' => 'Jaringan']);
+        $category->defaultResponsibles()->attach([$budi->id, $andi->id]);
+
+        $this->actingAs($reporter);
+        $create = fn (string $title): Ticket => Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $destination->id,
+            'owner_id' => $reporter->id,
+            'problem_category_id' => $category->id,
+            'title' => $title,
+            'description' => $title,
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+
+        $first = $create('Tiket 1');
+        $second = $create('Tiket 2');
+        $third = $create('Tiket 3');
+
+        $this->assertSame($andi->id, (int) $first->fresh()->responsible_id, 'seri 0-0 dipecah berdasarkan nama');
+        $this->assertSame($budi->id, (int) $second->fresh()->responsible_id, 'Andi sudah punya 1 tiket aktif');
+        $this->assertSame($andi->id, (int) $third->fresh()->responsible_id, 'seri 1-1 kembali ke Andi');
+
+        // Tiket yang ditutup atau dibatalkan tidak dihitung sebagai beban.
+        $first->update(['ticket_statuses_id' => TicketStatus::CLOSED]);
+        $third->update(['ticket_statuses_id' => TicketStatus::CANCEL]);
+        $fourth = $create('Tiket 4');
+
+        $this->assertSame($andi->id, (int) $fourth->fresh()->responsible_id, 'Andi 0 aktif, Budi 1 aktif');
+
+        Notification::assertSentToTimes($andi, NewTicketNotification::class, 4);
+        Notification::assertSentToTimes($budi, NewTicketNotification::class, 4);
+        Notification::assertNotSentTo([$colleague, $reporter], NewTicketNotification::class);
+        Notification::assertSentToTimes($reporter, TicketSubmittedNotification::class, 4);
+    }
+
+    public function test_inactive_or_relocated_category_pic_falls_back_to_the_division_queue(): void
+    {
+        Notification::fake();
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $other = Unit::create(['name' => 'Human Capital']);
+        $inactivePic = $this->unitUser('Staff Unit', $destination, 'IT Resigned PIC');
+        $inactivePic->update(['is_active' => false]);
+        $movedPic = $this->unitUser('Staff Unit', $other, 'Former IT PIC');
+        $staff = $this->unitUser('Staff Unit', $destination, 'IT Queue Staff');
+        $activePic = $this->unitUser('Staff Unit', $destination, 'IT Remaining PIC');
+        $reporter = $this->unitUser('User', $origin, 'Finance Fallback Reporter');
+        $inactiveCategory = ProblemCategory::create(['unit_id' => $destination->id, 'name' => 'Email']);
+        $inactiveCategory->defaultResponsibles()->attach($inactivePic->id);
+        $movedCategory = ProblemCategory::create(['unit_id' => $destination->id, 'name' => 'CCTV']);
+        $movedCategory->defaultResponsibles()->attach($movedPic->id);
+        $mixedCategory = ProblemCategory::create(['unit_id' => $destination->id, 'name' => 'Printer']);
+        $mixedCategory->defaultResponsibles()->attach([$inactivePic->id, $movedPic->id, $activePic->id]);
+
+        $this->actingAs($reporter);
+        foreach ([$inactiveCategory, $movedCategory] as $category) {
+            $ticket = Ticket::create([
+                'priority_id' => $this->priority->id,
+                'unit_id' => $destination->id,
+                'owner_id' => $reporter->id,
+                'problem_category_id' => $category->id,
+                'title' => 'Tiket '.$category->name,
+                'description' => 'Tiket '.$category->name,
+                'ticket_statuses_id' => TicketStatus::OPEN,
+            ]);
+
+            $this->assertNull($ticket->fresh()->responsible_id, $category->name);
+        }
+
+        Notification::assertSentToTimes($staff, NewTicketNotification::class, 2);
+        Notification::assertSentToTimes($activePic, NewTicketNotification::class, 2);
+
+        // Bila masih ada satu PIC yang eligible, hanya dia yang dapat tiket dan notifikasinya.
+        $mixedTicket = Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $destination->id,
+            'owner_id' => $reporter->id,
+            'problem_category_id' => $mixedCategory->id,
+            'title' => 'Printer macet',
+            'description' => 'Printer macet',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+
+        $this->assertSame($activePic->id, (int) $mixedTicket->fresh()->responsible_id);
+        Notification::assertSentToTimes($activePic, NewTicketNotification::class, 3);
+        Notification::assertSentToTimes($staff, NewTicketNotification::class, 2);
+        Notification::assertNotSentTo([$inactivePic, $movedPic], NewTicketNotification::class);
+    }
+
+    public function test_category_default_pic_overrides_legacy_busdev_mapping(): void
+    {
+        Notification::fake();
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $odLead = $this->unitUser('Staff Unit', $busdev, 'Organization Development');
+        $sopPic = $this->unitUser('Staff Unit', $busdev, 'SOP Specialist');
+        $sender = $this->unitUser('Admin Unit', $it, 'IT Reporter');
+        $sop = ProblemCategory::create([
+            'unit_id' => $busdev->id,
+            'name' => 'Standard Operating Procedure (SOP)',
+        ]);
+        $sop->defaultResponsibles()->attach($sopPic->id);
+
+        $this->actingAs($sender);
+        $ticket = Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $busdev->id,
+            'owner_id' => $sender->id,
+            'problem_category_id' => $sop->id,
+            'title' => 'Minta update SOP',
+            'description' => 'Minta update SOP',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+
+        $this->assertSame($sopPic->id, (int) $ticket->fresh()->responsible_id);
+        Notification::assertSentTo($sopPic, NewTicketNotification::class);
+        Notification::assertNotSentTo($odLead, NewTicketNotification::class);
+    }
+
+    public function test_default_pic_migrations_backfill_legacy_busdev_categories_into_the_pivot(): void
+    {
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $odLead = $this->unitUser('Staff Unit', $busdev, 'Organization Development');
+        $odStaff = $this->unitUser('Staff Unit', $busdev, 'Organization Development Staff');
+        $sop = ProblemCategory::create(['unit_id' => $busdev->id, 'name' => 'Standard Operating Procedure (SOP)']);
+        $jd = ProblemCategory::create(['unit_id' => $busdev->id, 'name' => 'Job Description (JD)']);
+        $odoo = ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Odoo Program']);
+        $strayScript = ProblemCategory::create(['unit_id' => $it->id, 'name' => 'Script']);
+        $manual = $this->unitUser('Staff Unit', $busdev, 'Manual SE PIC');
+        $se = ProblemCategory::create(['unit_id' => $busdev->id, 'name' => 'Surat Edaran (SE)']);
+        $alreadyPivoted = $this->unitUser('Staff Unit', $busdev, 'Already Pivoted PIC');
+        $se->defaultResponsibles()->attach($alreadyPivoted->id);
+
+        // Migrasi pertama membuat kolom tunggal dan mengisi pemetaan lama BUSDEV.
+        $singleColumn = require database_path('migrations/2026_11_09_000001_add_default_responsible_to_problem_categories_table.php');
+        $singleColumn->up();
+        $this->assertTrue(Schema::hasColumn('problem_categories', 'default_responsible_id'));
+        ProblemCategory::query()->whereKey($se->id)->update(['default_responsible_id' => $manual->id]);
+
+        // Migrasi kedua memindahkan kolom itu ke tabel pivot lalu menghapusnya.
+        $pivot = require database_path('migrations/2026_11_09_000002_create_problem_category_responsibles_table.php');
+        $pivot->up();
+
+        $this->assertFalse(Schema::hasColumn('problem_categories', 'default_responsible_id'));
+        $this->assertSame([$odLead->id], $sop->fresh()->defaultResponsibles->modelKeys());
+        $this->assertSame([$odStaff->id], $jd->fresh()->defaultResponsibles->modelKeys());
+        $this->assertSame([], $odoo->fresh()->defaultResponsibles->modelKeys());
+        $this->assertSame([], $strayScript->fresh()->defaultResponsibles->modelKeys(), 'OD lead is not an IT processor');
+        $this->assertEqualsCanonicalizing(
+            [$alreadyPivoted->id, $manual->id],
+            $se->fresh()->defaultResponsibles->modelKeys(),
+            'manual choice joins the PIC that was already in the pivot',
+        );
+    }
+
+    public function test_category_default_pics_must_belong_to_the_destination_unit(): void
+    {
+        $it = Unit::create(['name' => 'IT']);
+        $finance = Unit::create(['name' => 'Finance']);
+        $admin = $this->unitUser('Admin Unit', $it, 'IT Category Admin');
+        $itStaff = $this->unitUser('Staff Unit', $it, 'IT Category PIC');
+        $financeStaff = $this->unitUser('Staff Unit', $finance, 'Finance Outsider');
+
+        $this->assertSame(
+            [$admin->id => $admin->name, $itStaff->id => $itStaff->name],
+            ProblemCategory::defaultResponsibleOptions($it->id),
+        );
+
+        $this->actingAs($admin);
+
+        Livewire::test(CreateProblemCategory::class)
+            ->fillForm([
+                'unit_id' => $it->id,
+                'name' => 'Akses VPN',
+                'default_responsibles' => [$itStaff->id, $financeStaff->id],
+            ])
+            ->call('create')
+            // Aturan `in` multi-select berlaku per elemen; indeks 1 adalah staf Finance.
+            ->assertHasFormErrors(['default_responsibles.1']);
+
+        $this->assertFalse(ProblemCategory::query()->where('name', 'Akses VPN')->exists());
+
+        Livewire::test(CreateProblemCategory::class)
+            ->fillForm([
+                'unit_id' => $it->id,
+                'name' => 'Akses VPN',
+                'default_responsibles' => [$itStaff->id, $admin->id],
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $category = ProblemCategory::query()->where('name', 'Akses VPN')->firstOrFail();
+        $this->assertSame([$admin->id, $itStaff->id], $category->defaultResponsibles->modelKeys());
+
+        $this->actingAs($admin);
+        Livewire::test(EditProblemCategory::class, ['record' => $category->getRouteKey()])
+            ->assertFormSet(['default_responsibles' => [(string) $admin->id, (string) $itStaff->id]])
+            ->fillForm(['default_responsibles' => [$itStaff->id]])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame([$itStaff->id], $category->fresh()->defaultResponsibles->modelKeys());
+    }
+
+    public function test_master_data_pages_open_their_actions_as_slide_over_modals(): void
+    {
+        if (! Schema::hasTable('unit_slas')) {
+            Schema::create('unit_slas', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('unit_id');
+                $table->unsignedBigInteger('priority_id');
+                $table->integer('target_hours');
+                $table->timestamps();
+            });
+        }
+
+        $unit = Unit::create(['name' => 'IT']);
+        $sla = UnitSla::create(['unit_id' => $unit->id, 'priority_id' => $this->priority->id, 'target_hours' => 24]);
+        $entity = BusinessEntity::create(['name' => 'Complete Selular']);
+        $open = TicketStatus::query()->findOrFail(TicketStatus::OPEN);
+        $this->actingAs($this->user('Super Admin', 'Master Data Admin'));
+
+        // Status tiket: dulu punya halaman Create/Edit/View dan relation manager.
+        $this->assertSame(['index'], array_keys(TicketStatusResource::getPages()));
+        $this->assertSame([], TicketStatusResource::getRelations());
+        $this->assertDirectoryDoesNotExist(app_path('Filament/Resources/TicketStatusResource/RelationManagers'));
+
+        $statuses = Livewire::test(ManageTicketStatuses::class)
+            ->assertCanSeeTableRecords(TicketStatus::all());
+        $this->assertActionsOpenAsMediumSlideOvers($statuses, [
+            'create' => TestAction::make('create'),
+            'view' => TestAction::make('view')->table($open),
+            'edit' => TestAction::make('edit')->table($open),
+        ]);
+        $statuses
+            ->callAction(TestAction::make('edit')->table($open), data: ['name' => 'Terbuka'])
+            ->assertHasNoActionErrors();
+        $this->assertSame('Terbuka', $open->fresh()->name);
+
+        // SLA dan badan usaha sudah satu halaman; aksinya kini slide-over md.
+        $this->assertSame(['index'], array_keys(UnitSlaResource::getPages()));
+        $slas = Livewire::test(ManageUnitSlas::class)
+            ->assertCanSeeTableRecords([$sla]);
+        $this->assertActionsOpenAsMediumSlideOvers($slas, [
+            'create' => TestAction::make('create'),
+            'edit' => TestAction::make('edit')->table($sla),
+        ]);
+        $slas
+            ->callAction(TestAction::make('edit')->table($sla), data: ['target_hours' => 8])
+            ->assertHasNoActionErrors();
+        $this->assertSame(8, (int) $sla->fresh()->target_hours);
+
+        $this->assertSame(['index'], array_keys(BusinessEntityResource::getPages()));
+        $entities = Livewire::test(ManageBusinessEntities::class)
+            ->assertCanSeeTableRecords([$entity]);
+        $this->assertActionsOpenAsMediumSlideOvers($entities, [
+            'create' => TestAction::make('create'),
+            'edit' => TestAction::make('edit')->table($entity),
+        ]);
+        $entities
+            ->callAction(TestAction::make('create'), data: ['name' => 'Complete Mulia'])
+            ->assertHasNoActionErrors();
+        $this->assertTrue(BusinessEntity::query()->where('name', 'Complete Mulia')->exists());
+    }
+
+    /**
+     * @param  array<string, TestAction>  $actions
+     */
+    private function assertActionsOpenAsMediumSlideOvers($page, array $actions): void
+    {
+        foreach ($actions as $name => $testAction) {
+            $page->mountAction($testAction);
+            $action = $page->instance()->getMountedAction();
+            $this->assertInstanceOf(Action::class, $action, $name);
+            $this->assertTrue($action->isModalSlideOver(), "{$name} opens as a slide-over");
+            $this->assertSame(Width::Medium, $action->getModalWidth(), "{$name} uses the md width");
+            $page->unmountAction();
+        }
+    }
+
     private function createMailboxAuthorizationSchema(): void
     {
         Schema::create('permissions', function (Blueprint $table): void {
@@ -995,6 +1352,98 @@ class TicketMailboxAccessTest extends TestCase
 
         $this->seed(RoleSeeder::class);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    public function test_ticket_list_policy_checks_reuse_unit_memberships_instead_of_requerying_per_row(): void
+    {
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $staff = $this->unitUser('Staff Unit', $destination, 'IT Listing Staff');
+        $reporter = $this->unitUser('User', $origin, 'Finance Listing Reporter');
+        $category = ProblemCategory::create(['unit_id' => $destination->id, 'name' => 'Jaringan']);
+
+        $this->actingAs($reporter);
+        foreach (range(1, 8) as $i) {
+            Ticket::create([
+                'priority_id' => $this->priority->id,
+                'unit_id' => $destination->id,
+                'owner_id' => $reporter->id,
+                'problem_category_id' => $category->id,
+                'title' => "Tiket $i",
+                'description' => "Tiket $i",
+                'ticket_statuses_id' => TicketStatus::OPEN,
+            ]);
+        }
+
+        $viewer = User::query()->findOrFail($staff->id);
+        $this->actingAs($viewer);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $tickets = Ticket::query()->visibleTo($viewer)->latest()->limit(8)->get();
+        $this->assertCount(8, $tickets);
+
+        foreach ($tickets as $ticket) {
+            $this->assertTrue(Gate::forUser($viewer)->allows('view', $ticket));
+            Gate::forUser($viewer)->allows('update', $ticket);
+            Gate::forUser($viewer)->allows('process', $ticket);
+        }
+
+        $queries = collect(DB::getQueryLog())->pluck('query');
+        DB::disableQueryLog();
+
+        $this->assertLessThanOrEqual(
+            1,
+            $queries->filter(fn (string $sql): bool => str_contains($sql, 'information_schema') || str_contains($sql, 'sqlite_master'))->count(),
+            'keberadaan tabel user_entities paling banyak dicek sekali per request',
+        );
+        $this->assertSame(
+            1,
+            $queries->filter(fn (string $sql): bool => str_contains($sql, 'user_entities') && str_contains($sql, 'from "units"'))->count(),
+            'keanggotaan divisi dimuat sekali lalu dipakai ulang untuk setiap baris',
+        );
+    }
+
+    public function test_performance_index_migration_dedupes_memberships_and_adds_indexes(): void
+    {
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $staff = $this->unitUser('Staff Unit', $it, 'IT Duplicate Member');
+        // Skema produksi tidak punya unique di pivot ini; tiru kondisinya agar
+        // dua attach bersamaan menghasilkan baris ganda seperti di MySQL.
+        Schema::table('user_entities', function (Blueprint $table): void {
+            $table->dropUnique(['user_id', 'entity_id', 'entity_type']);
+        });
+        $staff->units()->attach($it->id);
+        $staff->units()->attach($busdev->id);
+        $this->assertSame(3, DB::table('user_entities')->where('user_id', $staff->id)->count());
+
+        $migration = require database_path('migrations/2026_11_09_000003_add_performance_indexes_and_membership_unique.php');
+        $migration->up();
+
+        $this->assertSame(2, DB::table('user_entities')->where('user_id', $staff->id)->count());
+        $this->assertEqualsCanonicalizing([$it->id, $busdev->id], $staff->fresh()->assignedUnitIds());
+        $this->assertTrue(Schema::hasIndex('user_entities', 'user_entities_user_entity_unique'));
+        $this->assertTrue(Schema::hasIndex('tickets', 'tickets_unit_status_created_index'));
+        $this->assertTrue(Schema::hasIndex('tickets', 'tickets_owner_created_index'));
+        $this->assertTrue(Schema::hasIndex('tickets', 'tickets_responsible_status_index'));
+        $this->assertTrue(Schema::hasIndex('ticket_histories', 'ticket_histories_ticket_created_index'));
+        $this->assertTrue(Schema::hasIndex('users', 'users_identity_index'));
+        $this->assertFalse(Schema::hasIndex('tickets', 'tickets_sla_due_at_index'), 'kolom SLA tidak ada di skema test, indeksnya dilewati');
+
+        try {
+            $staff->units()->attach($it->id);
+            $this->fail('duplikat keanggotaan seharusnya ditolak oleh unique index');
+        } catch (QueryException) {
+            $this->addToAssertionCount(1);
+        }
+
+        // Migrasi bisa diulang tanpa error dan bisa di-rollback.
+        $migration->up();
+        $migration->down();
+        $this->assertFalse(Schema::hasIndex('user_entities', 'user_entities_user_entity_unique'));
+        $this->assertFalse(Schema::hasIndex('tickets', 'tickets_unit_status_created_index'));
     }
 
     private function unitUser(string $role, Unit $unit, string $name): User

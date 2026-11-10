@@ -204,7 +204,7 @@ Perilaku login email, mengikuti dnd-web dan gais-web:
 - Membuka URL magic link tidak langsung login. Token ditukar lewat `wire:init` setelah halaman tampil di browser, agar pemindai link di email tidak menghabiskannya.
 - Respons langkah pertama sama untuk email terdaftar, tidak terdaftar, akun nonaktif, atau akun terhapus, jadi status akun tidak bocor. Email hanya dikirim ke satu-satunya akun aktif pemilik alamat itu.
 - Batas permintaan: kirim kode 3 kali per 5 menit dan 10 kali per jam per email, serta 20 kali per menit per IP; verifikasi kode 15 kali per 5 menit per email dan 20 kali per menit per IP; magic link 20 kali per menit per IP.
-- Login email yang berhasil membuktikan kepemilikan alamat, jadi email ditandai terverifikasi (`email_verified_via = email_link`) bila belum punya sumber verifikasi tepercaya. Akibatnya notifikasi email ikut aktif; akses panel tidak bergantung pada tanda ini.
+- Login email yang berhasil membuktikan kepemilikan alamat, jadi email ditandai terverifikasi (`email_verified_via = email_link`) bila belum punya sumber verifikasi tepercaya (`admin`, `talenta`, `email_link`). Akibatnya notifikasi email ikut aktif; akses panel tidak bergantung pada tanda ini.
 - Email dikirim langsung, tidak lewat antrean, agar kegagalan SMTP langsung tampil di halaman login.
 
 Reset password dan halaman profil default Filament dimatikan. Staf mengubah data pribadi lewat My Profile Breezy yang didaftarkan panel.
@@ -282,6 +282,8 @@ erDiagram
     business_entities |o--o{ tickets : "kontrak pelapor"
     users ||--o{ tickets : "pelapor (owner)"
     users |o--o{ tickets : "PIC (responsible)"
+    problem_categories ||--o{ problem_category_responsibles : "PIC default"
+    users ||--o{ problem_category_responsibles : ""
     tickets ||--o{ comments : ""
     users ||--o{ comments : menulis
     tickets ||--o{ ticket_histories : riwayat
@@ -323,6 +325,11 @@ erDiagram
         bigint id PK
         bigint unit_id FK
         string name
+    }
+    problem_category_responsibles {
+        bigint id PK
+        bigint problem_category_id FK
+        bigint user_id FK "PIC default, boleh lebih dari satu"
     }
     priorities {
         bigint id PK
@@ -448,7 +455,11 @@ classDiagram
         +LOW = 4
         +ENHANCEMENT = 5
     }
-    class ProblemCategory
+    class ProblemCategory {
+        +defaultResponsibles() BelongsToMany~User~
+        +eligibleDefaultResponsibles() Collection~User~
+        +pickDefaultResponsible() User
+    }
     class UnitSla
     class BusinessEntity
     class Comment
@@ -688,6 +699,7 @@ php artisan helpdesk:sync-employees /path/ke/list-employee.json --apply  # simpa
 
 - Akun dicocokkan per NIK (`users.identity`), lalu per nomor HP. Karyawan tanpa akun dibuat dengan role `User`.
 - `branch` → badan usaha, `organization` → divisi, `job` → jabatan, `title` → level. Nama yang belum ada dibuat otomatis.
+- `email` → email akun, langsung dianggap terverifikasi (`email_verified_via = talenta`) karena Talenta mewajibkan email karyawan yang aktif, jadi notifikasi email langsung aktif tanpa verifikasi ulang. Email dan data verifikasinya dikunci di form user. Bila alamat itu sudah dipakai akun lain, email akun dibiarkan apa adanya. Karyawan tanpa email di Talenta tetap bisa diberi email manual.
 - Divisi Talenta yang namanya berbeda dari divisi Helpdesk dipetakan di `services.talenta.division_aliases` (default `IT SUPPORT` → `IT`, `HUMAN CAPITAL` → `HR`). Selain itu, ganti nama divisi atau badan usaha di panel agar cocok sebelum `--apply`.
 - Akun yang punya NIK tetapi tidak ada lagi di file dinonaktifkan. `Super Admin` dan `Master Admin` tidak disentuh.
 - Hanya divisi yang punya kategori masalah yang muncul sebagai tujuan laporan.

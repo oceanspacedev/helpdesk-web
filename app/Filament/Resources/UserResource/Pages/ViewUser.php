@@ -16,6 +16,8 @@ class ViewUser extends ViewRecord
         return [
             Actions\EditAction::make(),
             Impersonate::make()
+                // Terjemahan bawaan paket ("Peniruan") tidak lazim dipakai.
+                ->label('Masuk sebagai user')
                 ->record($this->getRecord())
                 ->redirectTo(route('filament.admin.pages.dashboard')),
         ];

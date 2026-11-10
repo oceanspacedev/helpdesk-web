@@ -2,16 +2,18 @@
 
 namespace App\Filament\Resources\UserResource\RelationManagers;
 
-use Filament\Forms;
 use Filament\Actions;
-use Filament\Schemas\Schema;
+use Filament\Forms;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Tables\Table;
+use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Table;
 
 class RolesRelationManager extends RelationManager
 {
     protected static string $relationship = 'roles';
+
+    protected static ?string $title = 'Peran';
 
     protected static ?string $recordTitleAttribute = 'name';
 
@@ -22,8 +24,7 @@ class RolesRelationManager extends RelationManager
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->maxLength(255),
-            ])
-        ;
+            ]);
     }
 
     public function table(Table $table): Table
@@ -42,7 +43,6 @@ class RolesRelationManager extends RelationManager
             ])
             ->bulkActions([
                 Actions\DetachBulkAction::make(),
-            ])
-        ;
+            ]);
     }
 }

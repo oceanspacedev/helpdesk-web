@@ -3,21 +3,29 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\TicketStatusResource\Pages;
-use App\Filament\Resources\TicketStatusResource\RelationManagers\TicketsRelationManager;
 use App\Models\TicketStatus;
+use Filament\Actions;
 use Filament\Forms;
+use Filament\Infolists;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
+/**
+ * Status tiket dikelola dari satu halaman: tambah, lihat, dan ubah dibuka
+ * lewat panel geser (slide-over) di atas tabel, tanpa halaman detail terpisah.
+ */
 class TicketStatusResource extends Resource
 {
     protected static ?string $model = TicketStatus::class;
 
-    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-flag';
+
+    protected static string|\BackedEnum|null $activeNavigationIcon = 'heroicon-s-flag';
 
     protected static ?int $navigationSort = 4;
 
@@ -29,6 +37,20 @@ class TicketStatusResource extends Resource
                     ->translateLabel()
                     ->required()
                     ->maxLength(255),
+            ]);
+    }
+
+    public static function infolist(Schema $schema): Schema
+    {
+        return $schema
+            ->components([
+                Infolists\Components\TextEntry::make('id')
+                    ->label('#'),
+                Infolists\Components\TextEntry::make('name')
+                    ->translateLabel(),
+                Infolists\Components\TextEntry::make('tickets_count')
+                    ->label(__('Tickets Count'))
+                    ->state(fn (TicketStatus $record): int => static::visibleTicketsCount($record)),
             ]);
     }
 
@@ -48,24 +70,21 @@ class TicketStatusResource extends Resource
                     ->sortable(),
             ])
             ->filters([])
-            ->actions([])
+            ->actions([
+                Actions\ViewAction::make()
+                    ->slideOver()
+                    ->modalWidth(Width::Medium),
+                Actions\EditAction::make()
+                    ->slideOver()
+                    ->modalWidth(Width::Medium),
+            ])
             ->bulkActions([]);
-    }
-
-    public static function getRelations(): array
-    {
-        return [
-            TicketsRelationManager::class,
-        ];
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListTicketStatuses::route('/'),
-            'create' => Pages\CreateTicketStatus::route('/create'),
-            'view' => Pages\ViewTicketStatus::route('/{record}'),
-            'edit' => Pages\EditTicketStatus::route('/{record}/edit'),
+            'index' => Pages\ManageTicketStatuses::route('/'),
         ];
     }
 
@@ -82,6 +101,21 @@ class TicketStatusResource extends Resource
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ]);
+    }
+
+    /**
+     * Jumlah tiket berstatus ini yang boleh dilihat pengguna aktif, mengikuti
+     * aturan kotak masuk yang sama dengan kolom tabel.
+     */
+    public static function visibleTicketsCount(TicketStatus $record): int
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return 0;
+        }
+
+        return $record->tickets()->visibleTo($user)->count();
     }
 
     public static function getPluralModelLabel(): string

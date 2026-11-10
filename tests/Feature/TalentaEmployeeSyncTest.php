@@ -239,6 +239,56 @@ class TalentaEmployeeSyncTest extends TestCase
     /**
      * @param  list<array<string, mixed>>  $employees
      */
+    public function test_talenta_email_is_copied_and_trusted_without_further_verification(): void
+    {
+        BusinessEntity::create(['name' => 'CV Top Selular']);
+        Unit::create(['name' => 'IT']);
+        // Akun lama: email pribadi belum terverifikasi.
+        $existing = User::create([
+            'name' => 'Pelapor Lama',
+            'email' => 'pribadi@example.test',
+            'phone' => '081200000011',
+            'is_active' => true,
+        ]);
+        // Akun lain sudah memakai alamat yang tercatat di Talenta untuk karyawan kedua.
+        $owner = User::create(['name' => 'Pemilik Alamat', 'email' => 'dipakai@example.test', 'phone' => '081200000019', 'is_active' => true]);
+
+        $this->writeEmployees([
+            ['email' => 'Rina.Kantor@Example.test'] + $this->employee('2024.01.01.11', 'RINA', 'LAMA', '081200000011', 'CV Top Selular', 'IT SUPPORT', 'STAFF IT'),
+            ['email' => 'baru@example.test'] + $this->employee('2024.01.01.12', 'BAGUS', 'BARU', '081200000012', 'CV Top Selular', 'IT SUPPORT', 'STAFF IT'),
+            ['email' => 'dipakai@example.test'] + $this->employee('2024.01.01.13', 'CITRA', 'BENTROK', '081200000013', 'CV Top Selular', 'IT SUPPORT', 'STAFF IT'),
+            $this->employee('2024.01.01.14', 'DEDI', 'TANPAEMAIL', '081200000014', 'CV Top Selular', 'IT SUPPORT', 'STAFF IT'),
+        ]);
+
+        $this->artisan('helpdesk:sync-employees', ['file' => $this->file, '--apply' => true])->assertSuccessful();
+
+        $existing->refresh();
+        $this->assertSame('rina.kantor@example.test', $existing->email, 'email Talenta menggantikan email lama');
+        $this->assertSame(User::EMAIL_VERIFIED_VIA_TALENTA, $existing->email_verified_via);
+        $this->assertNotNull($existing->email_verified_at);
+        $this->assertTrue($existing->canUseVerifiedEmail());
+
+        $created = User::query()->where('identity', '2024.01.01.12')->sole();
+        $this->assertSame('baru@example.test', $created->email);
+        $this->assertTrue($created->hasTalentaEmail());
+        $this->assertTrue($created->canUseVerifiedEmail());
+
+        $clash = User::query()->where('identity', '2024.01.01.13')->sole();
+        $this->assertNull($clash->email, 'alamat milik akun lain tidak diambil');
+        $this->assertNull($clash->email_verified_via);
+        $this->assertSame('dipakai@example.test', $owner->fresh()->email);
+        $this->assertNull($owner->fresh()->email_verified_via, 'akun pemilik alamat tidak ikut ditandai');
+
+        $noEmail = User::query()->where('identity', '2024.01.01.14')->sole();
+        $this->assertNull($noEmail->email);
+        $this->assertFalse($noEmail->canUseVerifiedEmail());
+
+        // Import ulang file yang sama tidak mengubah apa pun.
+        $verifiedAt = $existing->email_verified_at->toDateTimeString();
+        $this->artisan('helpdesk:sync-employees', ['file' => $this->file, '--apply' => true])->assertSuccessful();
+        $this->assertSame($verifiedAt, $existing->fresh()->email_verified_at->toDateTimeString());
+    }
+
     private function writeEmployees(array $employees): void
     {
         file_put_contents($this->file, json_encode([
