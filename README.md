@@ -187,6 +187,8 @@ Data nama dan nomor tidak disalin ke tabel tiket. Pencocokan identitas pada migr
 
 Alur transisi staf yang sama dipakai perintah MCP staf (`proses` / `done`) di `/mcp/helpdesk/staff`.
 
+PIC yang ditunjuk setelah tiket dibuat ikut diberi tahu: mengganti penanggung jawab di form **Ubah** (Super Admin / Master Admin) atau mengganti kategori lewat **Ubah kategori** sehingga tiket jatuh ke PIC default kategori baru mengirim notifikasi "Laporan ditugaskan" (WhatsApp, lonceng, email) ke PIC baru saja. **Pindah unit** sudah mengabari penerima di unit tujuan, dan transisi Proses / Ambil Alih / Selesai / Batalkan tidak memberi tahu petugas atas tindakannya sendiri.
+
 <img src="screenshot/admin-tickets.png" width="100%" alt="Daftar tiket di panel: tab Semua Tiket dan Tiket Keluar, pengirim, unit tujuan, penanggung jawab, status, dan status SLA" />
 
 <img src="screenshot/admin-ticket-detail.png" width="100%" alt="Detail tiket: aksi Ubah, Ubah kategori, Pindah unit, Selesai, Batalkan, data pelapor, SLA, dan komentar" />

@@ -401,6 +401,24 @@ class Ticket extends Model
                 }
             }
 
+            // PIC yang ditunjuk ulang (diganti manual di form Ubah, atau PIC
+            // default kategori baru lewat Ubah kategori) diberi tahu bahwa
+            // tiket kini miliknya. Pindah unit sudah mengabari penerima baru
+            // di atas, dan transisi workflow menunjuk aktornya sendiri sebagai
+            // PIC sehingga tidak perlu dikabari atas tindakannya sendiri.
+            if (! self::$isSeeding
+                && $ticket->wasChanged('responsible_id')
+                && ! $ticket->wasChanged('unit_id')
+                && $ticket->responsible_id
+                && (int) $ticket->responsible_id !== (int) Auth::id()) {
+                // Relasi yang dimuat sebelum perubahan masih berisi PIC lama.
+                $ticket->unsetRelation('responsible');
+                $responsible = $ticket->eligibleResponsible();
+                if ($responsible) {
+                    HelpdeskNotifier::send($responsible, NewTicketNotification::assigned($ticket));
+                }
+            }
+
             if (! self::$isSeeding && $ticket->wasChanged('ticket_statuses_id')) {
                 $status = (int) $ticket->ticket_statuses_id;
                 if (in_array($status, [TicketStatus::IN_PROGRESS, TicketStatus::CANCEL, TicketStatus::CLOSED], true)) {
