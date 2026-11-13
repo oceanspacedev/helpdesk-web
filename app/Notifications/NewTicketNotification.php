@@ -20,11 +20,27 @@ class NewTicketNotification extends Notification implements ShouldQueueAfterComm
 
     /**
      * Create a new notification instance.
+     *
+     * @param  bool  $assigned  Tiket lama yang baru ditugaskan ke penerima, bukan laporan baru.
      */
-    public function __construct($ticket)
+    public function __construct($ticket, protected bool $assigned = false)
     {
         $this->ticket = $ticket;
         $this->onQueue('notifications');
+    }
+
+    /**
+     * Notifikasi untuk PIC yang ditunjuk setelah tiket dibuat (ganti PIC
+     * manual atau PIC default kategori baru).
+     */
+    public static function assigned(Ticket $ticket): static
+    {
+        return new static($ticket, assigned: true);
+    }
+
+    public function isAssignment(): bool
+    {
+        return $this->assigned;
     }
 
     /**
@@ -46,11 +62,14 @@ class NewTicketNotification extends Notification implements ShouldQueueAfterComm
             ? HelpdeskWhatsAppMessage::ticketNumber($this->ticket)
             : '#'.($this->ticket->id ?? '');
         $ticketUrl = url('/admin/tickets/'.($this->ticket->id ?? ''));
+        [$heading, $intro] = $this->assigned
+            ? ['Laporan ditugaskan', 'Anda ditunjuk sebagai PIC laporan ini.']
+            : ['Laporan baru', 'Ada laporan baru yang perlu ditindaklanjuti.'];
 
         return (new MailMessage)
-            ->subject('Laporan baru: '.$number)
+            ->subject($heading.': '.$number)
             ->greeting('Halo '.$notifiable->name.',')
-            ->line('Ada laporan baru yang perlu ditindaklanjuti.')
+            ->line($intro)
             ->line('**Nomor:** '.$number)
             ->line('**Judul:** '.($this->ticket->title ?? ''))
             ->action('Buka tiket', $ticketUrl);
@@ -78,6 +97,8 @@ class NewTicketNotification extends Notification implements ShouldQueueAfterComm
             return '';
         }
 
-        return HelpdeskWhatsAppMessage::forStaff($this->ticket);
+        return $this->assigned
+            ? HelpdeskWhatsAppMessage::forAssignedStaff($this->ticket)
+            : HelpdeskWhatsAppMessage::forStaff($this->ticket);
     }
 }

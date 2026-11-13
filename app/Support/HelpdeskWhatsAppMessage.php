@@ -30,6 +30,25 @@ final class HelpdeskWhatsAppMessage
 
     public static function forStaff(Ticket $ticket): string
     {
+        return self::staffMessage($ticket, 'Laporan baru');
+    }
+
+    /**
+     * Pesan untuk PIC yang ditunjuk setelah tiket dibuat: diganti manual oleh
+     * admin atau jatuh ke PIC default kategori baru. Isinya sama dengan
+     * laporan baru agar PIC langsung punya konteks, hanya judulnya berbeda.
+     */
+    public static function forAssignedStaff(Ticket $ticket): string
+    {
+        return self::staffMessage(
+            $ticket,
+            'Laporan ditugaskan',
+            footer: 'Anda ditunjuk sebagai PIC laporan ini.',
+        );
+    }
+
+    private static function staffMessage(Ticket $ticket, string $heading, ?string $footer = null): string
+    {
         $ticket->loadMissing(['owner', 'reporterUnit', 'reporterBusinessEntity']);
         $number = self::ticketNumber($ticket);
         $owner = $ticket->owner;
@@ -51,13 +70,14 @@ final class HelpdeskWhatsAppMessage
         ], static fn (?string $line): bool => $line !== null && $line !== ''));
 
         return self::compose(
-            'Laporan baru',
+            $heading,
             $number,
             $ticket->title,
             self::destination($ticket),
             body: self::excerpt($ticket),
             meta: $meta !== '' ? $meta : null,
             url: url('/admin/tickets/'.$ticket->id),
+            footer: $footer,
         );
     }
 
@@ -193,6 +213,7 @@ final class HelpdeskWhatsAppMessage
         return match ($heading) {
             'Laporan diterima', 'Laporan selesai' => '✅ ',
             'Laporan baru' => '🎫 ',
+            'Laporan ditugaskan' => '📌 ',
             'Laporan diproses' => '⏳ ',
             'Laporan dibatalkan' => '❌ ',
             'Komentar baru' => '💬 ',
