@@ -654,6 +654,8 @@ Queue default adalah `redis`. Jalankan Horizon agar notifikasi tiket tidak menum
 php artisan horizon
 ```
 
+Bila hosting tidak bisa menjalankan worker (produksi saat ini memakai `QUEUE_CONNECTION=sync`), notifikasi dikirim di dalam request setelah commit, satu per satu dan saling terisolasi: email yang gagal tidak menggugurkan WhatsApp dan lonceng. Turunkan `MAIL_TIMEOUT` (misalnya `5`) agar SMTP yang macet tidak menyita waktu request.
+
 Untuk frontend production-like:
 
 ```bash
@@ -809,7 +811,7 @@ Daftar ini adalah batas perilaku aktual, bukan fitur yang dijanjikan:
 3. **Role `Master Admin` tidak memiliki akun seed.** Hanya Super Admin, Admin Unit, dan Staff Unit yang punya login contoh.
 4. **MCP bukan produk utama.** Dokumentasi operasional MCP tetap berbahasa Inggris di `docs/mcp/README.md` dan tidak diganti oleh README ini.
 5. **Tidak ada REST API domain.** Jangan mengasumsikan klien mobile/API terpisah; satu-satunya route `routes/api.php` adalah `GET /api/user`.
-6. **Queue default `redis` + Horizon.** Notifikasi tiket mengantri di `notifications`. Tanpa Redis dan `php artisan horizon`, notifikasi tidak terkirim. Tes memakai `QUEUE_CONNECTION=sync` di `phpunit.xml`.
+6. **Queue default `redis` + Horizon; produksi saat ini `sync`.** Dengan `redis`, notifikasi tiket mengantri di `notifications` dan butuh `php artisan horizon`. Dengan `sync`, notifikasi dikirim sinkron di akhir request (setelah commit) tanpa retry dan tanpa `failed_jobs`; kegagalan hanya tercatat di log sebagai `Gagal mengirim notifikasi Helpdesk`. Tes memakai `QUEUE_CONNECTION=sync` di `phpunit.xml`.
 7. **Multi-instance membutuhkan store bersama.** Komentar di `.env.example` menyatakan Redis diperlukan agar draft MCP, OTP, registrasi, rate limit, dan lock terbagi.
 8. **Registrasi panel dan reset password dimatikan; login Google dicabut.** Onboarding staf tetap manual / seeder / Talenta OTP. Tabel lama `socialite_users` masih ada dan tidak dipakai lagi.
 
