@@ -1101,6 +1101,122 @@ class TicketMailboxAccessTest extends TestCase
         Notification::assertNotSentTo($odLead, NewTicketNotification::class);
     }
 
+    public function test_manually_reassigned_pic_is_notified_and_the_previous_pic_is_not(): void
+    {
+        Notification::fake();
+
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $sender = $this->unitUser('Admin Unit', $origin, 'Finance Reassign Admin');
+        $formerPic = $this->unitUser('Staff Unit', $destination, 'IT Former PIC');
+        $newPic = $this->unitUser('Staff Unit', $destination, 'IT New PIC');
+        $superAdmin = $this->user('Super Admin', 'Super Admin Reassign');
+        $ticket = $this->ticket($sender, $destination, 'Ticket reassigned by admin', responsible: $formerPic);
+
+        $this->actingAs($superAdmin);
+
+        Livewire::test(EditTicket::class, ['record' => $ticket->getRouteKey()])
+            ->fillForm(['responsible_id' => $newPic->id])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame($newPic->id, (int) $ticket->fresh()->responsible_id);
+        Notification::assertSentTo(
+            $newPic,
+            NewTicketNotification::class,
+            fn (NewTicketNotification $notification): bool => $notification->isAssignment()
+                && str_contains($notification->toWhatsapp($newPic), 'Laporan ditugaskan'),
+        );
+        Notification::assertNotSentTo([$formerPic, $sender, $superAdmin], NewTicketNotification::class);
+    }
+
+    public function test_reclassifying_to_a_category_with_a_default_pic_notifies_that_pic(): void
+    {
+        Notification::fake();
+
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $sender = $this->unitUser('Admin Unit', $origin, 'Finance Reclassify Admin');
+        $itStaff = $this->unitUser('Staff Unit', $destination, 'IT Reclassify Staff');
+        $networkPic = $this->unitUser('Staff Unit', $destination, 'IT Network Reclassify PIC');
+        $network = ProblemCategory::create(['unit_id' => $destination->id, 'name' => 'Jaringan & Internet']);
+        $network->defaultResponsibles()->attach($networkPic->id);
+        $ticket = $this->ticket($sender, $destination, 'Ticket reclassified to network');
+
+        $this->actingAs($itStaff);
+
+        // Halaman detail memuat relasi responsible (masih null) sebelum kategori
+        // diganti; notifikasi harus membaca PIC baru, bukan relasi lama itu.
+        Livewire::test(ViewTicket::class, ['record' => $ticket->getRouteKey()])
+            ->callAction('ubah_kategori', ['problem_category_id' => $network->id])
+            ->assertHasNoActionErrors();
+
+        $ticket->refresh();
+        $this->assertSame($network->id, (int) $ticket->problem_category_id);
+        $this->assertSame($networkPic->id, (int) $ticket->responsible_id);
+        Notification::assertSentTo(
+            $networkPic,
+            NewTicketNotification::class,
+            fn (NewTicketNotification $notification): bool => $notification->isAssignment(),
+        );
+        Notification::assertNotSentTo([$itStaff, $sender], NewTicketNotification::class);
+    }
+
+    public function test_processing_a_ticket_does_not_notify_the_actor_as_its_new_pic(): void
+    {
+        Notification::fake();
+
+        $origin = Unit::create(['name' => 'Finance']);
+        $destination = Unit::create(['name' => 'IT']);
+        $sender = $this->unitUser('Admin Unit', $origin, 'Finance Process Admin');
+        $itStaff = $this->unitUser('Staff Unit', $destination, 'IT Process Staff');
+        $ticket = $this->ticket($sender, $destination, 'Ticket processed by its own staff');
+
+        $this->actingAs($itStaff);
+
+        Livewire::test(ViewTicket::class, ['record' => $ticket->getRouteKey()])
+            ->callAction('proses')
+            ->assertHasNoActionErrors();
+
+        $ticket->refresh();
+        $this->assertSame($itStaff->id, (int) $ticket->responsible_id);
+        Notification::assertNotSentTo($itStaff, NewTicketNotification::class);
+        Notification::assertSentTo($sender, TicketStatusChangedNotification::class);
+    }
+
+    public function test_moving_a_ticket_to_a_unit_with_a_category_pic_notifies_that_pic_once(): void
+    {
+        Notification::fake();
+
+        $origin = Unit::create(['name' => 'Finance']);
+        $it = Unit::create(['name' => 'IT']);
+        $busdev = Unit::create(['name' => 'BUSDEV']);
+        $sop = ProblemCategory::create(['unit_id' => $busdev->id, 'name' => 'Standard Operating Procedure (SOP)']);
+        $sender = $this->unitUser('Admin Unit', $origin, 'Finance Move Once Admin');
+        $itStaff = $this->unitUser('Staff Unit', $it, 'IT Move Once Staff');
+        $sopPic = $this->unitUser('Staff Unit', $busdev, 'BUSDEV SOP PIC');
+        $busdevColleague = $this->unitUser('Staff Unit', $busdev, 'BUSDEV Move Once Colleague');
+        $sop->defaultResponsibles()->attach($sopPic->id);
+        $ticket = $this->ticket($sender, $it, 'Misrouted to IT, SOP PIC hears once', responsible: $itStaff);
+
+        $this->actingAs($itStaff);
+
+        Livewire::test(ViewTicket::class, ['record' => $ticket->getRouteKey()])
+            ->callAction('pindah_unit', [
+                'unit_id' => $busdev->id,
+                'problem_category_id' => $sop->id,
+            ])
+            ->assertHasNoActionErrors();
+
+        $ticket->refresh();
+        $this->assertSame($busdev->id, (int) $ticket->unit_id);
+        $this->assertSame($sopPic->id, (int) $ticket->responsible_id);
+        // Cabang pindah unit sudah mengabari PIC kategori; cabang ganti PIC
+        // tidak boleh mengirim lagi pada update yang sama.
+        Notification::assertSentToTimes($sopPic, NewTicketNotification::class, 1);
+        Notification::assertNotSentTo([$busdevColleague, $itStaff, $sender], NewTicketNotification::class);
+    }
+
     public function test_default_pic_migrations_backfill_legacy_busdev_categories_into_the_pivot(): void
     {
         $it = Unit::create(['name' => 'IT']);

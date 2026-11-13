@@ -61,7 +61,7 @@ class HelpdeskWhatsAppMessageTest extends TestCase
         $received = HelpdeskWhatsAppMessage::forStaff($ticket);
 
         $number = HelpdeskWhatsAppMessage::ticketNumber($ticket);
-        $this->assertSame("HD-".now()->format('Y').'-'.str_pad((string) $ticket->id, 5, '0', STR_PAD_LEFT), $number);
+        $this->assertSame('HD-'.now()->format('Y').'-'.str_pad((string) $ticket->id, 5, '0', STR_PAD_LEFT), $number);
 
         foreach ([$submitted, $received] as $message) {
             $this->assertStringStartsWith("🛠️ *Helpdesk*\n", $message);
@@ -119,6 +119,29 @@ class HelpdeskWhatsAppMessageTest extends TestCase
             .'💬 https://wa.me/62895636786435?text='.rawurlencode('Terkait '.$number)."\n\n"
             .'🔗 '.url('/admin/tickets/'.$ticket->id),
             $message,
+        );
+    }
+
+    public function test_assigned_staff_template_reuses_the_staff_frame_with_its_own_heading(): void
+    {
+        $reporter = $this->user('Pelapor Tugas', '6281234500407');
+        $staff = $this->user('Petugas Tugas', '6281234500408');
+        $ticket = $this->ticket($reporter, 'Email kantor tidak bisa login');
+        $number = HelpdeskWhatsAppMessage::ticketNumber($ticket);
+
+        $message = HelpdeskWhatsAppMessage::forAssignedStaff($ticket);
+
+        $this->assertStringStartsWith("🛠️ *Helpdesk*\n📌 Laporan ditugaskan · *".$number.'*', $message);
+        $this->assertStringContainsString('🏢 IT · Akses Akun · Complete Selular · 🟡 Medium', $message);
+        $this->assertStringContainsString('👤 Pelapor Tugas', $message);
+        $this->assertStringContainsString('🔗 '.url('/admin/tickets/'.$ticket->id), $message);
+        $this->assertStringEndsWith("\n\nAnda ditunjuk sebagai PIC laporan ini.", $message);
+        $this->assertStringNotContainsString('Laporan baru', $message);
+
+        $this->assertSame($message, NewTicketNotification::assigned($ticket)->toWhatsapp($staff));
+        $this->assertSame(
+            HelpdeskWhatsAppMessage::forStaff($ticket),
+            (new NewTicketNotification($ticket))->toWhatsapp($staff),
         );
     }
 
