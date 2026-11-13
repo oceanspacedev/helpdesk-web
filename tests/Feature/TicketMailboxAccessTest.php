@@ -36,6 +36,7 @@ use App\Notifications\NewTicketNotification;
 use App\Notifications\TicketStatusChangedNotification;
 use App\Notifications\TicketSubmittedNotification;
 use App\Policies\TicketPolicy;
+use App\Services\WhatsAppGateway;
 use Database\Seeders\RoleSeeder;
 use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
@@ -43,8 +44,10 @@ use Filament\Schemas\Schema as FilamentSchema;
 use Filament\Support\Enums\Width;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Notifications\Notification as BaseNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
@@ -52,7 +55,9 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\Concerns\CreatesHelpdeskIntegrationSchema;
+use Tests\Fakes\RecordingWhatsAppGateway;
 use Tests\TestCase;
 
 class TicketMailboxAccessTest extends TestCase
@@ -1256,6 +1261,70 @@ class TicketMailboxAccessTest extends TestCase
             $this->assertSame(Width::Medium, $action->getModalWidth(), "{$name} uses the md width");
             $page->unmountAction();
         }
+    }
+
+    public function test_a_failing_mail_channel_does_not_block_whatsapp_and_bell_notifications(): void
+    {
+        // Produksi memakai queue sync: setiap notifikasi dieksekusi berurutan di
+        // dalam commit transaksi. Email PIC yang gagal (SMTP timeout) tidak boleh
+        // menggugurkan WA dan lonceng PIC maupun tanda terima WA ke pelapor.
+        Schema::create('notifications', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            $table->string('type');
+            $table->morphs('notifiable');
+            $table->text('data');
+            $table->timestamp('read_at')->nullable();
+            $table->timestamps();
+        });
+        config()->set('services.whatsapp_gateway.url', 'https://waghub.test');
+        config()->set('services.whatsapp_gateway.token', 'test-secret-token');
+        $gateway = new RecordingWhatsAppGateway;
+        $this->app->instance(WhatsAppGateway::class, $gateway);
+        Notification::extend('mail', fn (): object => new class
+        {
+            public function send(object $notifiable, BaseNotification $notification): void
+            {
+                throw new TransportException('Connection to "ssl://smtp.example.test:465" timed out.');
+            }
+        });
+        Log::spy();
+
+        $origin = Unit::create(['name' => 'Warehouse']);
+        $destination = Unit::create(['name' => 'IT']);
+        $pic = $this->unitUser('Staff Unit', $destination, 'IT DND PIC');
+        $pic->forceFill(['phone' => '081234567890'])->save();
+        $reporter = $this->unitUser('User', $origin, 'Warehouse DND Reporter');
+        $reporter->forceFill(['phone' => '081298765432'])->save();
+        $category = ProblemCategory::create([
+            'unit_id' => $destination->id,
+            'name' => 'DND (Do And Done)',
+        ]);
+        $category->defaultResponsibles()->attach($pic->id);
+
+        $this->actingAs($reporter);
+        $ticket = DB::transaction(fn (): Ticket => Ticket::create([
+            'priority_id' => $this->priority->id,
+            'unit_id' => $destination->id,
+            'owner_id' => $reporter->id,
+            'problem_category_id' => $category->id,
+            'title' => 'Hapus DND bulan November',
+            'description' => 'Minta dibantu hapus DND yang sudah tersubmit.',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]));
+
+        $this->assertSame($pic->id, (int) $ticket->fresh()->responsible_id);
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $pic->id,
+            'type' => NewTicketNotification::class,
+        ]);
+        $this->assertSame(
+            ['081234567890', '081298765432'],
+            array_column($gateway->messages, 'phone'),
+            'WA ke PIC lalu tanda terima ke pelapor tetap terkirim walau email gagal',
+        );
+        Log::shouldHaveReceived('error')
+            ->withArgs(fn (string $message): bool => str_starts_with($message, 'Gagal mengirim notifikasi Helpdesk'))
+            ->atLeast()->once();
     }
 
     private function createMailboxAuthorizationSchema(): void
