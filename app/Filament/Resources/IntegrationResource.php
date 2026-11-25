@@ -4,8 +4,11 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\IntegrationResource\Pages;
 use App\Models\Integration;
-use App\Services\Integrations\External\ExternalSystemClient;
 use App\Services\Integrations\External\ExternalSystemException;
+use App\Services\Integrations\IntegrationConnector;
+use App\Services\Integrations\IntegrationHealthCheck;
+use App\Services\Integrations\IntegrationSelfTest;
+use App\Support\OutboundUrl;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Infolists;
@@ -16,6 +19,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Enums\Width;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
 /**
@@ -56,6 +60,11 @@ class IntegrationResource extends Resource
                     ->placeholder('https://modul.example.com/api/helpdesk/v1')
                     ->helperText('Sudah termasuk prefix versi. Helpdesk memanggil {base_url}/categories, /forms/{kode}, dan /tickets.')
                     ->url()
+                    ->rules([fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                        if (is_string($value) && ($problem = OutboundUrl::problem($value)) !== null) {
+                            $fail($problem);
+                        }
+                    }])
                     ->required()
                     ->maxLength(500)
                     ->columnSpan('full'),
@@ -111,6 +120,17 @@ class IntegrationResource extends Resource
                     ->label('Tes terakhir')
                     ->boolean()
                     ->tooltip(fn (Integration $record): ?string => $record->last_check_message),
+                Tables\Columns\TextColumn::make('last_check_message')
+                    ->label('Status koneksi')
+                    ->placeholder('Belum pernah dites')
+                    ->wrap()
+                    ->limit(160)
+                    ->color(fn (Integration $record): string => match (true) {
+                        $record->last_check_ok === false => 'danger',
+                        str_contains((string) $record->last_check_message, 'belum diimpor'),
+                        str_contains((string) $record->last_check_message, 'tidak ada lagi') => 'warning',
+                        default => 'gray',
+                    }),
                 Tables\Columns\TextColumn::make('last_checked_at')
                     ->label('Dites pada')
                     ->dateTime()
@@ -124,6 +144,16 @@ class IntegrationResource extends Resource
                     ->icon('heroicon-o-signal')
                     ->authorize(fn (Integration $record): bool => (bool) auth()->user()?->can('update', $record))
                     ->action(fn (Integration $record) => static::testConnection($record)),
+                Actions\Action::make('syncCategories')
+                    ->label('Sinkron kategori')
+                    ->icon('heroicon-o-arrow-path')
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (Integration $record): string => "Sinkron kategori {$record->name}")
+                    ->modalDescription('Kategori aktif baru di sistem tujuan ditambahkan ke unit yang memakai integrasi ini. Kategori yang Anda hapus tidak dipulihkan, dan kategori yang tidak ada lagi di sistem tujuan tidak dihapus.')
+                    ->modalSubmitActionLabel('Sinkron')
+                    ->authorize(fn (Integration $record): bool => (bool) auth()->user()?->can('update', $record))
+                    ->visible(fn (Integration $record): bool => $record->units()->exists())
+                    ->action(fn (Integration $record) => static::syncCategories($record)),
                 Actions\EditAction::make()
                     ->slideOver()
                     ->modalWidth(Width::Medium),
@@ -132,32 +162,63 @@ class IntegrationResource extends Resource
     }
 
     /**
-     * Tes koneksi memanggil GET {base}/categories dan menyimpan hasilnya.
+     * Tes koneksi = tes menyeluruh tanpa tiket: token dan kategori, form
+     * setiap kategori unit, lalu webhook bolak-balik (IntegrationSelfTest).
+     * Mengembalikan kesehatan koneksi dasarnya.
      */
     public static function testConnection(Integration $integration): bool
     {
-        try {
-            $categories = ExternalSystemClient::for($integration)->categories();
-            $ok = true;
-            $message = 'Terhubung. '.count($categories).' kategori ditemukan.';
-        } catch (ExternalSystemException $exception) {
-            $ok = false;
-            $message = Str::limit($exception->getMessage(), 480);
-        }
-
-        $integration->forceFill([
-            'last_checked_at' => now(),
-            'last_check_ok' => $ok,
-            'last_check_message' => $message,
-        ])->save();
+        $result = app(IntegrationSelfTest::class)->run($integration);
+        $health = $result->health;
 
         Notification::make()
-            ->title($ok ? 'Koneksi berhasil' : 'Koneksi gagal')
-            ->body($message)
-            ->status($ok ? 'success' : 'danger')
+            ->title(match (true) {
+                ! $health->ok => 'Koneksi gagal',
+                ! $result->passed() => 'Terhubung, tetapi ada yang bermasalah',
+                default => 'Koneksi berhasil',
+            })
+            ->body(new HtmlString(nl2br(e($result->summary()))))
+            ->status(match (true) {
+                ! $result->passed() => 'danger',
+                $health->newCategories !== [] || $health->missingCategories !== [] => 'warning',
+                default => 'success',
+            })
+            ->persistent(! $result->passed())
             ->send();
 
-        return $ok;
+        return $health->ok;
+    }
+
+    public static function syncCategories(Integration $integration): void
+    {
+        try {
+            $result = app(IntegrationConnector::class)->syncCategories($integration);
+        } catch (ExternalSystemException $exception) {
+            Notification::make()->title('Sinkron gagal')->body($exception->getMessage())->danger()->send();
+
+            return;
+        }
+
+        $health = app(IntegrationHealthCheck::class)->run($integration);
+        $lines = [];
+        if ($result['created'] !== []) {
+            $lines[] = count($result['created']).' kategori ditambahkan: '.implode(', ', $result['created']).'.';
+        }
+        if ($result['mapped'] !== []) {
+            $lines[] = count($result['mapped']).' kategori lama dipetakan: '.implode(', ', $result['mapped']).'.';
+        }
+        if ($lines === []) {
+            $lines[] = 'Semua kategori sudah sesuai.';
+        }
+        if ($health->missingCategories !== []) {
+            $lines[] = 'Tidak ada lagi di sistem tujuan (tidak dihapus): '.implode(', ', $health->missingCategories).'.';
+        }
+
+        Notification::make()
+            ->title('Sinkron kategori selesai')
+            ->body(implode(' ', $lines))
+            ->status($health->missingCategories === [] ? 'success' : 'warning')
+            ->send();
     }
 
     public static function getPages(): array

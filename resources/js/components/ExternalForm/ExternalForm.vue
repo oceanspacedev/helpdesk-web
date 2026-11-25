@@ -1,10 +1,12 @@
 <script setup>
+import { computed } from 'vue';
 import Button from '../Button.vue';
 import Callout from '../Callout.vue';
 import ExternalFields from './ExternalFields.vue';
+import { autoLabels } from '../../support/externalForm.js';
 
 // Renderer generik definisi form sistem eksternal (kontrak v1 §3.2).
-defineProps({
+const props = defineProps({
     // { key, title, description, downloads[], fields[] } atau null saat memuat/gagal.
     schema: { type: Object, default: null },
     values: { type: Object, required: true },
@@ -14,6 +16,10 @@ defineProps({
 });
 
 defineEmits(['retry']);
+
+// Hanya label: nilai identitas pelapor tidak pernah dikirim ke browser.
+// Mengikuti visible_if dan baris repeater, seperti yang dikirim server.
+const autoFieldLabels = computed(() => autoLabels(props.schema?.fields ?? [], props.values));
 </script>
 
 <template>
@@ -47,6 +53,14 @@ defineEmits(['retry']);
                     </a>
                 </li>
             </ul>
+
+            <p
+                v-if="autoFieldLabels.length"
+                class="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
+                data-testid="external-auto-note"
+            >
+                Diisi otomatis dari data karyawan: {{ autoFieldLabels.join(', ') }}.
+            </p>
 
             <ExternalFields :fields="schema.fields ?? []" :values="values" :errors="errors" />
         </template>

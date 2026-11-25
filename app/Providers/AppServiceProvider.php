@@ -11,6 +11,7 @@ use App\Policies\ExceptionPolicy;
 use App\Policies\PermissionPolicy;
 use App\Policies\RolePolicy;
 use App\Services\Integrations\HelpdeskMcpConfiguration;
+use App\Services\Integrations\IntegrationConnector;
 use App\Services\Integrations\PublicReporterIdentityService;
 use App\Support\ObservabilityAccess;
 use BezhanSalleh\FilamentExceptions\Models\Exception;
@@ -30,6 +31,8 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(HelpdeskMcpConfiguration::class);
+        // Satu daftar kategori per request untuk wizard "Hubungkan sistem".
+        $this->app->scoped(IntegrationConnector::class);
     }
 
     protected function registerAuthorization(): void

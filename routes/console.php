@@ -33,3 +33,9 @@ Schedule::command('model:prune', ['--model' => [FilamentException::class]])
     ->daily()
     ->onOneServer();
 Schedule::command('horizon:snapshot')->everyFiveMinutes();
+
+// Kesehatan integrasi sistem eksternal: admin dikabari saat terputus / pulih.
+Schedule::command('integrations:check')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();

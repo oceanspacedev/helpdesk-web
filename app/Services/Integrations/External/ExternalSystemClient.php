@@ -20,6 +20,11 @@ class ExternalSystemClient
 {
     private const CONNECT_TIMEOUT_SECONDS = 5;
 
+    /** Batas kolom problem_categories.external_key dan name. */
+    public const MAX_CATEGORY_KEY_LENGTH = 100;
+
+    public const MAX_CATEGORY_NAME_LENGTH = 255;
+
     public function __construct(
         private readonly Integration $integration,
     ) {}
@@ -32,7 +37,11 @@ class ExternalSystemClient
     /**
      * GET {base}/categories.
      *
-     * @return list<array{key: string, name: string, active: bool}>
+     * `description` dan `needs_observation` (opsional, v1.1) dipakai kartu
+     * pilihan kategori di langkah `category_picker`; string kosong / false
+     * bila tidak ada.
+     *
+     * @return list<array{key: string, name: string, active: bool, description: string, needs_observation: bool}>
      */
     public function categories(): array
     {
@@ -45,20 +54,25 @@ class ExternalSystemClient
         $categories = [];
         foreach ($data as $category) {
             $key = is_array($category) && is_scalar($category['key'] ?? null) ? trim((string) $category['key']) : '';
-            if ($key === '') {
+            // Key harus muat di problem_categories.external_key dan unik;
+            // duplikat setelah yang pertama diabaikan.
+            if ($key === '' || mb_strlen($key) > self::MAX_CATEGORY_KEY_LENGTH || isset($categories[$key])) {
                 continue;
             }
 
-            $categories[] = [
+            // Karakter format tak terlihat (mis. U+202E pembalik arah) dibuang
+            // agar nama kategori tidak bisa menyamar di tampilan.
+            $name = is_scalar($category['name'] ?? null) ? trim((string) preg_replace('/\p{Cf}/u', '', (string) $category['name'])) : '';
+            $categories[$key] = [
                 'key' => $key,
-                'name' => is_scalar($category['name'] ?? null) && trim((string) $category['name']) !== ''
-                    ? trim((string) $category['name'])
-                    : $key,
+                'name' => mb_substr($name !== '' ? $name : $key, 0, self::MAX_CATEGORY_NAME_LENGTH),
                 'active' => (bool) ($category['active'] ?? true),
+                'description' => is_scalar($category['description'] ?? null) ? trim((string) $category['description']) : '',
+                'needs_observation' => ($category['needs_observation'] ?? false) === true,
             ];
         }
 
-        return $categories;
+        return array_values($categories);
     }
 
     /**
@@ -116,9 +130,37 @@ class ExternalSystemClient
     }
 
     /**
-     * @param  list<array<string, mixed>>|null  $multipart
+     * PUT {base}/webhook (kontrak §4.1, opsional): daftarkan URL dan rahasia
+     * webhook helpdesk di sistem eksternal, supaya admin tidak perlu
+     * menyalinnya ke konfigurasi sistem itu. 404 = sistem belum mendukung.
      */
-    private function send(string $method, string $path, ?array $multipart = null): Response
+    public function registerWebhook(string $url, string $secret): void
+    {
+        $this->send('put', 'webhook', json: ['url' => $url, 'secret' => $secret]);
+    }
+
+    /**
+     * POST {base}/webhook/test (kontrak §4.2, opsional): minta sistem
+     * eksternal mengirim event "ping" bertanda tangan ke webhook helpdesk.
+     *
+     * @return array{delivered: bool, event_id: string, error: ?string}
+     */
+    public function testWebhook(): array
+    {
+        $data = $this->data($this->send('post', 'webhook/test', json: []), 'webhook.test');
+
+        return [
+            'delivered' => ($data['delivered'] ?? false) === true,
+            'event_id' => is_scalar($data['event_id'] ?? null) ? (string) $data['event_id'] : '',
+            'error' => is_scalar($data['error'] ?? null) ? (string) $data['error'] : null,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>|null  $multipart
+     * @param  array<string, mixed>|null  $json
+     */
+    private function send(string $method, string $path, ?array $multipart = null, ?array $json = null): Response
     {
         if (! $this->integration->is_active) {
             throw new ExternalUnavailableException('Integrasi '.$this->integration->name.' sedang nonaktif.');
@@ -133,9 +175,11 @@ class ExternalSystemClient
 
         try {
             $request = $this->request();
-            $response = $multipart === null
-                ? $request->send(strtoupper($method), $url)
-                : $request->asMultipart()->post($url, $multipart);
+            $response = match (true) {
+                $multipart !== null => $request->asMultipart()->post($url, $multipart),
+                $json !== null => $request->asJson()->send(strtoupper($method), $url, ['json' => $json]),
+                default => $request->send(strtoupper($method), $url),
+            };
         } catch (ConnectionException $exception) {
             $this->logFailure($path, null, 'connection');
 
@@ -183,7 +227,10 @@ class ExternalSystemClient
     {
         $timeout = $this->integration->timeoutSeconds();
 
+        // Redirect tidak diikuti: respons 3xx bisa mengarahkan helpdesk
+        // (dan token Bearer-nya) ke host lain, mis. alamat metadata cloud.
         return Http::withToken((string) $this->integration->token)
+            ->withoutRedirecting()
             ->acceptJson()
             ->timeout($timeout)
             ->connectTimeout(min(self::CONNECT_TIMEOUT_SECONDS, $timeout));

@@ -10,6 +10,7 @@ use App\Models\TicketStatus;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\Integrations\HelpdeskFormOptionsService;
+use App\Services\Integrations\HelpdeskReporterRegistrationService;
 use App\Support\HelpdeskWhatsAppMessage;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Notification;
@@ -287,6 +288,44 @@ class TalentaEmployeeSyncTest extends TestCase
         $verifiedAt = $existing->email_verified_at->toDateTimeString();
         $this->artisan('helpdesk:sync-employees', ['file' => $this->file, '--apply' => true])->assertSuccessful();
         $this->assertSame($verifiedAt, $existing->fresh()->email_verified_at->toDateTimeString());
+    }
+
+    public function test_public_reporter_is_completed_from_talenta_by_phone(): void
+    {
+        $it = Unit::create(['name' => 'IT']);
+        $entity = BusinessEntity::create(['name' => 'CV Top Selular']);
+        $reporter = User::create(['name' => 'Pelapor WhatsApp 0021', 'phone' => '081200000021', 'is_active' => true]);
+        $ambiguous = User::create(['name' => 'Pelapor WhatsApp 0022', 'phone' => '081200000022', 'is_active' => true]);
+        $taken = User::create(['name' => 'Pelapor WhatsApp 0023', 'phone' => '081200000023', 'is_active' => true]);
+        User::create(['name' => 'Akun lain', 'identity' => '2024.01.01.23', 'phone' => '081200000099', 'is_active' => true]);
+        $unknown = User::create(['name' => 'Pelapor WhatsApp 0024', 'phone' => '081200000024', 'is_active' => true]);
+
+        $this->writeEmployees([
+            ['email' => 'Rina@Example.com'] + $this->employee('2024.01.01.21', 'RINA', 'PRATAMA', '+6281200000021', 'CV Top Selular', 'IT SUPPORT', 'STAFF IT', 'STAFF'),
+            $this->employee('2024.01.01.22', 'KEMBAR', 'SATU', '081200000022', 'CV Top Selular', 'IT SUPPORT', 'STAFF'),
+            $this->employee('2024.01.01.25', 'KEMBAR', 'DUA', '081200000022', 'CV Top Selular', 'IT SUPPORT', 'STAFF'),
+            $this->employee('2024.01.01.23', 'SUDAH', 'ADA', '081200000023', 'CV Top Selular', 'IT SUPPORT', 'STAFF'),
+        ]);
+        config()->set('services.talenta.employee_file', $this->file);
+        $service = app(HelpdeskReporterRegistrationService::class);
+
+        $this->assertTrue($service->completeFromTalenta($reporter));
+        $reporter->refresh();
+        $this->assertSame('2024.01.01.21', $reporter->identity);
+        $this->assertSame('RINA PRATAMA', mb_strtoupper($reporter->name));
+        $this->assertSame('rina@example.com', $reporter->email);
+        $this->assertSame($it->id, (int) $reporter->unit_id);
+        $this->assertSame($entity->id, (int) $reporter->business_entity_id);
+        $this->assertNotNull($reporter->talenta_synced_at);
+        // Sudah punya NIK: tidak diproses ulang.
+        $this->assertFalse($service->completeFromTalenta($reporter));
+
+        // Nomor kembar di Talenta, NIK sudah dipakai akun lain, atau nomor tidak dikenal: tidak diubah.
+        foreach ([$ambiguous, $taken, $unknown] as $user) {
+            $this->assertFalse($service->completeFromTalenta($user));
+            $this->assertNull($user->fresh()->identity);
+            $this->assertNull($user->fresh()->unit_id);
+        }
     }
 
     private function writeEmployees(array $employees): void

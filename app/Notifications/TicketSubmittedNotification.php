@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Channels\WhatsAppChannel;
 use App\Models\Ticket;
 use App\Notifications\Concerns\ResolvesHelpdeskNotificationChannels;
+use App\Services\Integrations\External\ExternalTicketSnapshot;
 use App\Support\HelpdeskWhatsAppMessage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
@@ -32,14 +33,25 @@ class TicketSubmittedNotification extends Notification implements ShouldQueueAft
     public function toMail(object $notifiable): MailMessage
     {
         $number = HelpdeskWhatsAppMessage::ticketNumber($this->ticket);
-
-        return (new MailMessage)
+        $mail = (new MailMessage)
             ->subject('Laporan diterima: '.$number)
             ->greeting('Halo '.$notifiable->name.',')
             ->line('Laporan Anda sudah masuk Helpdesk.')
-            ->line('**Nomor:** '.$number)
-            ->line('**Judul:** '.$this->ticket->title)
+            ->line('**Nomor:** '.$number);
+
+        if ($this->ticket->isExternal() && filled($this->ticket->external_ref)) {
+            $mail->line('**Referensi:** '.$this->ticket->external_ref);
+        }
+
+        $mail->line('**Judul:** '.$this->ticket->title)
             ->line('Tim akan menindaklanjuti.');
+
+        $trackUrl = $this->ticket->isExternal() ? ExternalTicketSnapshot::trackUrl($this->ticket) : null;
+        if ($trackUrl !== null) {
+            $mail->action('Lacak progres', $trackUrl);
+        }
+
+        return $mail;
     }
 
     /**

@@ -18,6 +18,7 @@ trait CreatesHelpdeskIntegrationSchema
             'ticket_histories',
             'tickets',
             'integration_events',
+            'external_submissions',
             'helpdesk_mcp_settings',
             'helpdesk_identity_assertion_uses',
             'helpdesk_reporter_bindings',
@@ -155,6 +156,22 @@ trait CreatesHelpdeskIntegrationSchema
             $table->string('event_id', 191);
             $table->timestamp('received_at');
             $table->unique(['integration_id', 'event_id']);
+        });
+
+        Schema::create('external_submissions', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('integration_id');
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->unsignedBigInteger('unit_id')->nullable();
+            $table->string('category_name')->nullable();
+            $table->string('external_ref', 191);
+            $table->string('title', 250);
+            $table->string('status_code', 32)->nullable();
+            $table->string('status_label')->nullable();
+            $table->string('track_url', 1000)->nullable();
+            $table->timestamp('status_checked_at')->nullable();
+            $table->timestamps();
+            $table->unique(['integration_id', 'external_ref']);
         });
 
         Schema::create('units', function (Blueprint $table): void {

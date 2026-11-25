@@ -42,6 +42,11 @@ Route::controller(PublicTicketController::class)->group(function (): void {
         ->middleware(['cache.headers:private;no_store;no_cache;must_revalidate', 'throttle:public-external-form'])
         ->whereNumber('category')
         ->name('public-tickets.external-form');
+    // Form pembuka unit berintegrasi (wizard: langkah sebelum pilihan kategori).
+    Route::get('/lapor/unit/{unit}/form', 'externalUnitForm')
+        ->middleware(['cache.headers:private;no_store;no_cache;must_revalidate', 'throttle:public-external-form'])
+        ->whereNumber('unit')
+        ->name('public-tickets.external-unit-form');
 
     Route::prefix('pelapor')->name('public-reporter.')->group(function (): void {
         Route::post('/identitas', 'identify')

@@ -66,7 +66,7 @@ function initialValue(field, provided) {
             return Array.from({ length: count }, () => initialRow(field.fields));
         }
         default:
-            if (field.auto) {
+            if (field.auto || field.ticket) {
                 return undefined;
             }
             if (provided !== undefined && provided !== null && typeof provided !== 'object') {
@@ -79,6 +79,220 @@ function initialValue(field, provided) {
 
 export function initialValues(fields) {
     return initialRow(fields);
+}
+
+function normalized(value) {
+    return value === null || value === undefined ? '' : String(value).trim().toLowerCase();
+}
+
+/**
+ * Aturan dasar yang juga diperiksa server (ExternalFormSchema::passesRules)
+ * sebelum sebuah nilai boleh diisi otomatis.
+ */
+export function passesRules(field, value) {
+    const rules = field.rules ?? {};
+    if (['select', 'radio'].includes(field.type)) {
+        return true;
+    }
+    if (field.type === 'number') {
+        const number = Number(value);
+
+        return (
+            value !== '' &&
+            !Number.isNaN(number) &&
+            (rules.min === undefined || number >= rules.min) &&
+            (rules.max === undefined || number <= rules.max)
+        );
+    }
+    if (field.type === 'date') {
+        const min = minDate(field);
+
+        return /^\d{4}-\d{2}-\d{2}$/.test(value) && (!min || value >= min);
+    }
+    if (field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        return false;
+    }
+
+    const length = [...value].length;
+
+    return (rules.min === undefined || length >= rules.min) && (rules.max === undefined || length <= rules.max);
+}
+
+function entityCoreAndInitials(name) {
+    const normalizedName = String(name ?? '')
+        .toLowerCase()
+        .replace(/[.,\-/]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!normalizedName) {
+        return ['', ''];
+    }
+
+    const words = normalizedName.split(' ');
+    const prefixes = ['pt', 'cv', 'ud', 'yayasan', 'koperasi'];
+    while (words.length > 1 && prefixes.includes(words[0])) {
+        words.shift();
+    }
+
+    const core = words.join(' ');
+    const initials = words.length > 1 ? words.map((word) => word[0] ?? '').join('') : '';
+
+    return [core, initials];
+}
+
+function entityCoreMatches(a, b) {
+    const [coreA, initialsA] = entityCoreAndInitials(a);
+    const [coreB, initialsB] = entityCoreAndInitials(b);
+    if (!coreA || !coreB) {
+        return false;
+    }
+    if (coreA === coreB) {
+        return true;
+    }
+    if (!coreA.includes(' ') && coreA.length >= 2 && initialsB && coreA === initialsB) {
+        return true;
+    }
+
+    return !coreB.includes(' ') && coreB.length >= 2 && Boolean(initialsA) && coreB === initialsA;
+}
+
+/**
+ * Cocokkan nama badan usaha helpdesk ke opsi field badan usaha sistem tujuan.
+ */
+export function matchBusinessEntityOption(options, text) {
+    const needle = normalized(text);
+    if (!needle) {
+        return null;
+    }
+
+    const list = options ?? [];
+    const exact = list.find(
+        (item) => normalized(item.value) === needle || normalized(item.label) === needle,
+    );
+    if (exact) {
+        return String(exact.value);
+    }
+
+    const matched = [];
+    for (const option of list) {
+        if (entityCoreMatches(needle, option.label) || entityCoreMatches(needle, option.value)) {
+            const value = String(option.value);
+            if (!matched.includes(value)) {
+                matched.push(value);
+            }
+        }
+    }
+
+    return matched.length === 1 ? matched[0] : null;
+}
+
+/**
+ * Nilai opsi field (select/radio) yang cocok dengan teks, tanpa membedakan
+ * huruf besar/kecil, terhadap nilai atau label opsi. Field teks: teks itu,
+ * selama lolos aturan field. Null bila tidak bisa diisi otomatis.
+ */
+export function matchPrefill(field, text) {
+    const needle = normalized(text);
+    if (!needle) {
+        return null;
+    }
+    if (!['select', 'radio'].includes(field.type)) {
+        const value = String(text).trim();
+
+        return passesRules(field, value) ? value : null;
+    }
+
+    const option = (field.options ?? []).find(
+        (item) => normalized(item.value) === needle || normalized(item.label) === needle,
+    );
+
+    return option ? String(option.value) : null;
+}
+
+/**
+ * Teks sumber field bertanda `ticket` selain field badan usaha itu sendiri
+ * (sama dengan ExternalFormSchema::ticketEntityTexts): label lalu nilai opsi
+ * terpilih bila form punya field badan usaha (`entity` = ringkasan
+ * `business_entity` dari server), atau nama badan usaha helpdesk terpilih.
+ */
+export function ticketEntityTexts(entity, option, businessEntityName) {
+    if (entity) {
+        const chosen = (entity.options ?? []).find((item) => String(item.value) === String(option ?? ''));
+
+        return chosen ? [chosen.label, chosen.value] : [];
+    }
+
+    return normalized(businessEntityName) ? [businessEntityName] : [];
+}
+
+/**
+ * Isi `ticket_value` setiap field bertanda `ticket` dengan nilai yang akan
+ * dikirim server: field badan usaha = opsi terpilih, field lain = teks
+ * sumber pertama yang cocok. Field ini tidak dirender (dijawab lewat
+ * pertanyaan badan usaha helpdesk); nilainya hanya dipakai untuk visible_if.
+ */
+export function withTicketValues(fields, { option = '', texts = [] } = {}) {
+    return (fields ?? []).map((field) => {
+        if (field.type === 'repeater') {
+            return { ...field, fields: withTicketValues(field.fields, { option, texts }) };
+        }
+        if (!field.ticket) {
+            return field;
+        }
+        if (field.business_entity) {
+            const chosen = (field.options ?? []).find((item) => String(item.value) === String(option ?? ''));
+
+            return { ...field, ticket_value: chosen ? String(chosen.value) : null };
+        }
+
+        const value = texts.map((text) => matchPrefill(field, text)).find((item) => item !== null) ?? null;
+
+        return { ...field, ticket_value: value };
+    });
+}
+
+/**
+ * Nilai satu level untuk visible_if: isian browser, dengan field bertanda
+ * `ticket` diganti nilai yang akan dikirim server (`ticket_value`).
+ */
+export function levelScope(fields, values) {
+    const scope = { ...(values ?? {}) };
+    for (const field of fields ?? []) {
+        if (field.ticket) {
+            scope[field.key] = field.ticket_value ?? null;
+        }
+    }
+
+    return scope;
+}
+
+/**
+ * Label field yang diisi otomatis helpdesk dan benar-benar dikirim: tampil
+ * menurut visible_if, dan di dalam repeater hanya bila ada barisnya. Unik.
+ */
+export function autoLabels(fields, values = {}, parentScopes = []) {
+    const scopes = [levelScope(fields, values), ...parentScopes];
+    const labels = [];
+    const add = (label) => {
+        if (!labels.includes(label)) {
+            labels.push(label);
+        }
+    };
+    for (const field of fields ?? []) {
+        if (!isVisible(field, scopes)) {
+            continue;
+        }
+        if (field.type === 'repeater') {
+            const rows = Array.isArray(values?.[field.key]) ? values[field.key] : [];
+            for (const row of rows) {
+                autoLabels(field.fields, row ?? {}, scopes).forEach(add);
+            }
+        } else if (field.auto) {
+            add(field.label);
+        }
+    }
+
+    return labels;
 }
 
 function comparable(value) {
@@ -96,6 +310,12 @@ function comparable(value) {
  * scopes: nilai level saat ini lebih dulu, lalu level-level di atasnya.
  */
 export function isVisible(field, scopes) {
+    // Dihitung server: visible_if mengacu ke field otomatis yang nilainya
+    // tidak dikirim ke browser.
+    if (typeof field.visible === 'boolean') {
+        return field.visible;
+    }
+
     const condition = field.visible_if;
     if (!condition || typeof condition.field !== 'string') {
         return true;
@@ -111,14 +331,14 @@ export function isVisible(field, scopes) {
 }
 
 /**
- * Isian yang dikirim: field tersembunyi, info, dan field yang diisi otomatis
- * oleh server tidak ikut.
+ * Isian yang dikirim: field tersembunyi, info, dan field yang diisi server
+ * (identitas otomatis, badan usaha) tidak ikut.
  */
 export function pruneAnswers(fields, values, parentScopes = []) {
-    const scopes = [values ?? {}, ...parentScopes];
+    const scopes = [levelScope(fields, values), ...parentScopes];
     const result = {};
     for (const field of fields ?? []) {
-        if (field.type === 'info' || field.auto || !isVisible(field, scopes)) {
+        if (field.type === 'info' || field.auto || field.ticket || !isVisible(field, scopes)) {
             continue;
         }
 
@@ -203,7 +423,7 @@ export function rulesHint(field) {
             parts.push(`maks. ${rules.max}`);
         }
     }
-    if (field.type === 'repeater') {
+    if (field.type === 'repeater' && !isSingleRow(field)) {
         if (field.min_items) {
             parts.push(`min. ${field.min_items} baris`);
         }
@@ -221,7 +441,7 @@ function extensionOf(name) {
     return index >= 0 ? name.slice(index + 1).toLowerCase() : '';
 }
 
-function fileErrors(field, files) {
+export function fileErrors(field, files) {
     const rules = field.rules ?? {};
     if (Array.isArray(rules.accept) && rules.accept.length) {
         const invalid = files.find((file) => !rules.accept.includes(extensionOf(file.name)));
@@ -253,10 +473,10 @@ function fileErrors(field, files) {
  * mis. { "answers.proses.0.judul": "..." }.
  */
 export function validateAnswers(fields, values, parentScopes = [], path = 'answers') {
-    const scopes = [values ?? {}, ...parentScopes];
+    const scopes = [levelScope(fields, values), ...parentScopes];
     const errors = {};
     for (const field of fields ?? []) {
-        if (field.type === 'info' || field.auto || !isVisible(field, scopes)) {
+        if (field.type === 'info' || field.auto || field.ticket || !isVisible(field, scopes)) {
             continue;
         }
 
@@ -350,4 +570,12 @@ export function errorFor(errors, path, field) {
     const nested = Object.keys(errors).find((key) => key.startsWith(prefix));
 
     return nested ? errors[nested] : '';
+}
+
+/**
+ * Repeater berisi tepat satu baris (`max_items: 1`): ditampilkan sebagai
+ * isian biasa, tanpa kartu baris, tombol tambah, atau hapus.
+ */
+export function isSingleRow(field) {
+    return field?.type === 'repeater' && field.max_items === 1;
 }

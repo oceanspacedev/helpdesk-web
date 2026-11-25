@@ -1,11 +1,12 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import Brand from '../../components/Brand.vue';
 import Button from '../../components/Button.vue';
 import Callout from '../../components/Callout.vue';
 import Card from '../../components/Card.vue';
 import ExternalForm from '../../components/ExternalForm/ExternalForm.vue';
+import ExternalWizard from '../../components/ExternalForm/ExternalWizard.vue';
 import Field from '../../components/Field.vue';
 import Icon from '../../components/Icon.vue';
 import Input from '../../components/Input.vue';
@@ -14,12 +15,29 @@ import SelectInput from '../../components/SelectInput.vue';
 import SimpleLayout from '../../components/SimpleLayout.vue';
 import TextareaInput from '../../components/TextareaInput.vue';
 import TextLink from '../../components/TextLink.vue';
+import TicketSuccessCard from '../../components/TicketSuccessCard.vue';
+import ToastRegion from '../../components/ToastRegion.vue';
+import { useToast } from '../../support/toast.js';
 import {
     initialValues,
+    levelScope,
+    matchBusinessEntityOption,
     newIdempotencyKey,
     pruneAnswers,
+    ticketEntityTexts,
     validateAnswers,
+    withTicketValues,
 } from '../../support/externalForm.js';
+import {
+    asWizardSchema,
+    carryAnswers,
+    categoryReady,
+    hasSteps,
+    keepOtherStepErrors,
+    showCategorySteps,
+    visibleSteps,
+    wizardSubmitBlocker,
+} from '../../support/externalWizard.js';
 
 const props = defineProps({
     screen: { type: String, required: true },
@@ -34,7 +52,61 @@ const props = defineProps({
 });
 
 const page = usePage();
+const toast = useToast();
 const flash = computed(() => page.props.flash ?? {});
+const dismissedSuccess = ref(false);
+const visibleTicketSuccess = computed(() =>
+    dismissedSuccess.value ? null : (flash.value.ticket_success ?? null),
+);
+
+function notifyTicketSuccess(success) {
+    if (!success) {
+        return;
+    }
+
+    const code = success.number || success.external_ref;
+    const parts = [code, success.unit ? `Unit ${success.unit}` : null].filter(Boolean);
+    toast.success({
+        dedupeKey: `ticket-success:${code ?? ''}:${success.title ?? ''}`,
+        title: 'Laporan berhasil dikirim',
+        description: parts.join(' · '),
+        duration: 4500,
+    });
+}
+
+function notifySubmitError() {
+    toast.danger({
+        dedupeKey: 'ticket-submit-error',
+        title: 'Laporan belum dapat dikirim',
+        description: 'Periksa kembali bagian yang ditandai merah.',
+        duration: 4500,
+    });
+}
+
+watch(
+    () => flash.value.ticket_success,
+    (success) => {
+        dismissedSuccess.value = false;
+        if (success) {
+            notifyTicketSuccess(success);
+        }
+    },
+    { immediate: true },
+);
+
+watch(
+    () => flash.value.status,
+    (status) => {
+        if (status && !flash.value.ticket_success) {
+            toast.info({
+                dedupeKey: `flash-status:${status}`,
+                title: status,
+                duration: 4500,
+            });
+        }
+    },
+    { immediate: true },
+);
 const maxFiles = 5;
 const maxBytes = 10 * 1024 * 1024;
 const fileInput = ref(null);
@@ -48,6 +120,9 @@ const ticketForm = useForm({
     submission_token: props.submissionToken,
     website: '',
     business_entities_id: props.old.business_entities_id ?? '',
+    // Pertanyaan badan usaha versi sistem tujuan: nilai opsi field badan
+    // usaha form eksternal (bila form punya field itu).
+    external_business_entity: props.old.external_business_entity ?? '',
     unit_id: props.old.unit_id ?? '',
     problem_category_id: props.old.problem_category_id ?? '',
     priority_id: props.old.priority_id ?? props.defaultPriorityId ?? '',
@@ -61,9 +136,19 @@ const ticketForm = useForm({
 
 // Form dinamis sistem eksternal untuk kategori yang dipilih.
 const externalSchema = ref(null);
+// Kategori pemilik externalSchema (form wizard: kategori sudah dipilih dan dimuat).
+const externalSchemaCategoryId = ref('');
 const externalLoading = ref(false);
 const externalLoadError = ref('');
 let externalRequestId = 0;
+
+// Form pembuka unit berintegrasi (kontrak §3.2 "Langkah"): bila punya
+// `steps`, pengajuan memakai wizard seperti form asli sistem tujuan.
+// { schema, categoryId } atau null.
+const unitWizard = ref(null);
+const unitLoading = ref(false);
+let unitRequestId = 0;
+const wizard = ref(null);
 
 const changeForm = useForm({});
 
@@ -85,6 +170,104 @@ const selectedCategory = computed(() =>
 );
 
 const isExternal = computed(() => Boolean(selectedCategory.value?.is_external));
+
+const selectedUnit = computed(
+    () => (props.options.units ?? []).find((unit) => String(unit.id) === String(ticketForm.unit_id)) ?? null,
+);
+
+// Unit berintegrasi yang formnya wizard: kategori dipilih sebagai kartu di
+// dalam wizard, judul tidak ditanyakan (diturunkan server).
+const wizardMode = computed(() => Boolean(selectedUnit.value?.is_external) && hasSteps(unitWizard.value?.schema));
+
+// Form unit sedang dimuat: belum diketahui wizard atau bukan.
+const unitPending = computed(() => Boolean(selectedUnit.value?.is_external) && unitLoading.value);
+
+const categoryState = computed(() => ({
+    categoryId: ticketForm.problem_category_id,
+    schemaCategoryId: externalSchemaCategoryId.value,
+    schema: externalSchema.value,
+    loading: externalLoading.value,
+}));
+
+// Kategori terpilih dan formnya (milik kartu itu) sudah dimuat.
+const wizardChosen = computed(() => wizardMode.value && categoryReady(categoryState.value));
+
+// Untuk tampilan wizard: seksi kartu kategori dan langkah sesudahnya tampil
+// bila form kategori terpilih sudah dimuat; selama form baru dimuat, form
+// kategori sebelumnya tetap tampil. Bila form baru gagal dimuat, langkah
+// kategori lama tidak tampil lagi.
+const wizardShowsCategory = computed(() => wizardMode.value && showCategorySteps(categoryState.value));
+
+// Form yang sedang dirender: form kategori terpilih, atau (wizard sebelum
+// kategori dipilih / form kategori gagal dimuat) form pembuka unit.
+const activeSchema = computed(() => {
+    if (!wizardMode.value) {
+        return externalSchema.value;
+    }
+
+    return wizardShowsCategory.value ? externalSchema.value : unitWizard.value?.schema ?? null;
+});
+
+const wizardCategories = computed(() => activeSchema.value?.categories ?? unitWizard.value?.schema?.categories ?? []);
+
+const externalActive = computed(() => isExternal.value || wizardMode.value);
+
+const selectedBusinessEntityName = computed(
+    () =>
+        (props.options.business_entities ?? []).find(
+            (entity) => String(entity.id) === String(ticketForm.business_entities_id),
+        )?.name ?? '',
+);
+
+// Form sistem tujuan yang punya field badan usaha: pertanyaan "Badan Usaha
+// yang Dilaporkan" memakai opsi field itu (satu pertanyaan saja, milik
+// helpdesk). { key, label, required, options[], default } atau null.
+const externalEntity = computed(() => (externalActive.value ? activeSchema.value?.business_entity ?? null : null));
+
+const externalEntityOptions = computed(() =>
+    (externalEntity.value?.options ?? []).map((option) => ({ id: option.value, name: option.label })),
+);
+
+// Pilihan badan usaha helpdesk tampil untuk unit internal, dan untuk form
+// sistem tujuan tanpa field badan usaha (setelah formnya dimuat).
+const showInternalEntity = computed(() => !externalActive.value || (Boolean(activeSchema.value) && !externalEntity.value));
+
+// Field badan usaha di form sistem tujuan tidak dirender; nilainya (untuk
+// visible_if) diturunkan dari jawaban pertanyaan badan usaha di atas.
+const externalFormView = computed(() => {
+    if (!activeSchema.value) {
+        return null;
+    }
+
+    const option = externalEntity.value ? ticketForm.external_business_entity : '';
+
+    return {
+        ...activeSchema.value,
+        fields: withTicketValues(activeSchema.value.fields, {
+            option,
+            texts: ticketEntityTexts(externalEntity.value, option, selectedBusinessEntityName.value),
+        }),
+    };
+});
+
+function externalEntityDefault(schema, current = '') {
+    const entity = schema?.business_entity;
+    if (!entity) {
+        return '';
+    }
+    if (current !== '' && (entity.options ?? []).some((option) => String(option.value) === String(current))) {
+        return current;
+    }
+
+    if (selectedBusinessEntityName.value) {
+        const matched = matchBusinessEntityOption(entity.options ?? [], selectedBusinessEntityName.value);
+        if (matched !== null) {
+            return matched;
+        }
+    }
+
+    return entity.default ?? '';
+}
 
 const attachmentTotalBytes = computed(() =>
     ticketForm.supporting_attachments.reduce((sum, file) => sum + (file.size ?? 0), 0),
@@ -110,6 +293,14 @@ const attachmentSummary = computed(() => {
 const ticketErrors = computed(() => Object.values(ticketForm.errors).filter(Boolean));
 const identityErrors = computed(() => Object.values(identityForm.errors).filter(Boolean));
 const changeErrors = computed(() => Object.values(changeForm.errors).filter(Boolean));
+const wizardGeneralError = computed(
+    () =>
+        ticketForm.errors.external ||
+        ticketForm.errors.answers ||
+        ticketForm.errors.ticket ||
+        ticketForm.errors.submission_token ||
+        '',
+);
 
 const attachmentErrors = computed(() =>
     Object.entries(ticketForm.errors)
@@ -125,26 +316,101 @@ watch(
     },
 );
 
+// Kembali (tombol Back) dari halaman lacak sistem tujuan: halaman dari riwayat
+// browser membawa isian dan token kiriman lama yang sudah dipakai. Muat ulang
+// dari server agar form bersih dengan token baru.
+function reloadIfRestored(event) {
+    if (event?.persisted) {
+        window.location.reload();
+    }
+}
+onMounted(() => {
+    window.addEventListener('pageshow', reloadIfRestored);
+    if (performance.getEntriesByType?.('navigation')?.[0]?.type === 'back_forward') {
+        window.location.reload();
+    }
+});
+onBeforeUnmount(() => window.removeEventListener('pageshow', reloadIfRestored));
+
+// Pelapor berganti ("Ganti nomor"): form sistem tujuan dan isian otomatisnya
+// milik pelapor lama, jadi pengisian dimulai lagi dari pilihan divisi.
+// Kembali ke layar nomor lalu memasukkan nomor yang sama (mis. identitas
+// perangkat kedaluwarsa) tidak menghapus isian.
+let lastReporterPhone = props.reporter?.phone ?? '';
+watch(
+    () => props.reporter?.phone ?? '',
+    (phone) => {
+        if (!phone) {
+            return;
+        }
+        const changed = lastReporterPhone !== '' && phone !== lastReporterPhone;
+        lastReporterPhone = phone;
+        if (!changed) {
+            return;
+        }
+        // Form yang masih dimuat untuk pelapor lama diabaikan saat tiba.
+        unitRequestId += 1;
+        externalRequestId += 1;
+        unitLoading.value = false;
+        externalLoading.value = false;
+        externalLoadError.value = '';
+        ticketForm.unit_id = '';
+        ticketForm.problem_category_id = '';
+        ticketForm.answers = {};
+        ticketForm.external_business_entity = '';
+        ticketForm.business_entities_id = props.old.business_entities_id ?? '';
+        ticketForm.clearErrors();
+        unitWizard.value = null;
+        externalSchema.value = null;
+        externalSchemaCategoryId.value = '';
+    },
+);
+
 watch(
     () => ticketForm.unit_id,
-    (unitId) => {
+    (unitId, previous) => {
         const selected = (props.options.problem_categories ?? []).find(
             (category) => String(category.id) === String(ticketForm.problem_category_id),
         );
         if (selected && String(selected.unit_id) !== String(unitId)) {
             ticketForm.problem_category_id = '';
         }
+        if (previous !== undefined || unitId) {
+            loadUnitWizard();
+        }
     },
+    { immediate: true },
 );
 
 watch(
     () => ticketForm.problem_category_id,
-    () => {
+    (categoryId, previous) => {
         // Kategori berganti = pengisian form baru: kunci idempotensi baru.
         ticketForm.idempotency_key = newIdempotencyKey();
-        ticketForm.answers = {};
-        externalSchema.value = null;
         externalLoadError.value = '';
+        if (wizardMode.value) {
+            // Wizard: isian berkey sama dipertahankan saat kategori berganti
+            // (kontrak §3.2); form lama tetap tampil sampai form baru dimuat.
+            if (!categoryId) {
+                externalSchema.value = null;
+                externalSchemaCategoryId.value = '';
+                ticketForm.answers = carryAnswers(unitWizard.value?.schema?.fields ?? [], ticketForm.answers);
+            } else {
+                loadExternalSchema({ carry: true });
+            }
+
+            return;
+        }
+
+        ticketForm.answers = {};
+        // Pilihan badan usaha sistem tujuan mulai lagi dari pilihan awal form
+        // baru (isian lama dipertahankan hanya saat halaman dimuat ulang).
+        // Pilihan badan usaha helpdesk tidak disentuh.
+        if (previous !== undefined) {
+            ticketForm.external_business_entity = '';
+        }
+        externalSchema.value = null;
+        externalSchemaCategoryId.value = '';
         if (isExternal.value) {
             loadExternalSchema();
         }
@@ -152,7 +418,53 @@ watch(
     { immediate: true },
 );
 
-async function loadExternalSchema() {
+async function loadUnitWizard() {
+    const unit = selectedUnit.value;
+    const requestId = ++unitRequestId;
+    unitWizard.value = null;
+    if (!unit?.is_external || !props.urls.externalUnitForm) {
+        unitLoading.value = false;
+
+        return;
+    }
+
+    unitLoading.value = true;
+    try {
+        const response = await fetch(props.urls.externalUnitForm.replace('{unit}', encodeURIComponent(unit.id)), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        });
+        const body = await response.json().catch(() => ({}));
+        if (requestId !== unitRequestId) {
+            return;
+        }
+        // Gagal dimuat: alur satu halaman (dropdown kategori) yang
+        // menampilkan pesannya sendiri.
+        if (!response.ok || !body?.data) {
+            return;
+        }
+
+        unitWizard.value = { schema: body.data, categoryId: body.category_id ?? '' };
+        if (hasSteps(body.data)) {
+            const chosenId = String(ticketForm.problem_category_id || '');
+            if (!chosenId || String(externalSchemaCategoryId.value) !== chosenId) {
+                ticketForm.answers = carryAnswers(body.data.fields ?? [], ticketForm.answers);
+            }
+            ticketForm.external_business_entity = externalEntityDefault(
+                activeSchema.value ?? body.data,
+                ticketForm.external_business_entity,
+            );
+        }
+    } catch {
+        // Lihat di atas: tetap memakai alur satu halaman.
+    } finally {
+        if (requestId === unitRequestId) {
+            unitLoading.value = false;
+        }
+    }
+}
+
+async function loadExternalSchema({ carry = false } = {}) {
     const category = selectedCategory.value;
     if (!category?.is_external || !props.urls.externalForm) {
         return;
@@ -179,8 +491,18 @@ async function loadExternalSchema() {
             return;
         }
 
-        externalSchema.value = body.data;
-        ticketForm.answers = initialValues(body.data.fields ?? []);
+        if (!unitWizard.value && hasSteps(body.data)) {
+            unitWizard.value = { schema: body.data, categoryId: String(category.id) };
+        }
+
+        // Wizard: form kategori tanpa `steps` memakai langkah form pembuka.
+        const schema = wizardMode.value ? asWizardSchema(body.data, unitWizard.value?.schema) : body.data;
+        externalSchema.value = schema;
+        externalSchemaCategoryId.value = String(category.id);
+        ticketForm.answers = carry
+            ? carryAnswers(schema.fields ?? [], ticketForm.answers)
+            : initialValues(schema.fields ?? []);
+        ticketForm.external_business_entity = externalEntityDefault(schema, ticketForm.external_business_entity);
     } catch {
         if (requestId === externalRequestId) {
             externalLoadError.value = 'Form sistem tujuan belum dapat dimuat. Periksa koneksi lalu coba lagi.';
@@ -208,14 +530,116 @@ function submitIdentity() {
     identityForm.post(props.urls.identify);
 }
 
+function entityErrors() {
+    const entity = externalEntity.value;
+    if (entity ? entity.required && !ticketForm.external_business_entity : !ticketForm.business_entities_id) {
+        return { [entity ? 'external_business_entity' : 'business_entities_id']: 'Badan usaha wajib dipilih.' };
+    }
+
+    return {};
+}
+
+// Tombol Lanjut: error langkah yang dibuka diganti hasil validasinya; error
+// server (422) langkah lain tetap sampai pelapor sampai di langkahnya.
+function onWizardErrors(errors, context = null) {
+    const next = context ? keepOtherStepErrors(ticketForm.errors, errors, context.steps, context.index) : errors;
+    ticketForm.clearErrors();
+    if (Object.keys(next).length) {
+        ticketForm.setError(next);
+    }
+}
+
+function selectWizardCategory(id) {
+    ticketForm.clearErrors('problem_category_id');
+    ticketForm.problem_category_id = id;
+}
+
+function submitWizardTicket() {
+    const blocker = wizardSubmitBlocker({
+        categoryId: ticketForm.problem_category_id,
+        ready: wizardChosen.value && Boolean(externalFormView.value),
+        loadError: externalLoadError.value,
+    });
+    if (blocker) {
+        ticketForm.setError('problem_category_id', blocker);
+        nextTick(() => wizard.value?.jumpToErrors(ticketForm.errors));
+        return;
+    }
+
+    const view = externalFormView.value;
+    const fields = view.fields ?? [];
+    // Validasi semua langkah yang tampil; langkah pertama yang bermasalah dibuka.
+    const errors = {
+        ...validateAnswers(
+            visibleSteps(view, ticketForm.answers).flatMap((step) => step.fields),
+            ticketForm.answers,
+            [levelScope(fields, ticketForm.answers)],
+        ),
+        ...entityErrors(),
+    };
+    ticketForm.clearErrors();
+    if (Object.keys(errors).length) {
+        ticketForm.setError(errors);
+        nextTick(() => wizard.value?.jumpToErrors(errors));
+        return;
+    }
+
+    const entity = externalEntity.value;
+    ticketForm
+        .transform((data) => ({
+            submission_token: data.submission_token,
+            website: data.website,
+            ...(entity
+                ? { external_business_entity: data.external_business_entity }
+                : { business_entities_id: data.business_entities_id }),
+            unit_id: data.unit_id,
+            problem_category_id: data.problem_category_id,
+            // Judul tidak ditanyakan: diturunkan server dari isian.
+            idempotency_key: data.idempotency_key,
+            answers: pruneAnswers(fields, data.answers),
+        }))
+        .post(props.urls.store, {
+            forceFormData: true,
+            preserveScroll: (page) => Object.keys(page.props.errors ?? {}).length > 0,
+            onError: () => {
+                notifySubmitError();
+                // Error 422 dari server: buka langkah pertama yang memuat error,
+                // atau scroll ke banner error umum bila tidak terikat ke field.
+                nextTick(() => {
+                    const stepIndex = wizard.value?.jumpToErrors(ticketForm.errors) ?? -1;
+                    if (stepIndex < 0) {
+                        document
+                            .querySelector('[data-testid="external-wizard"] [role="alert"], .fi-callout')
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                });
+            },
+            onSuccess: (page) => {
+                if (page.props.flash?.ticket_success) {
+                    dismissedSuccess.value = false;
+                    notifyTicketSuccess(page.props.flash.ticket_success);
+                    ticketForm.idempotency_key = newIdempotencyKey();
+                    ticketForm.problem_category_id = '';
+                    ticketForm.answers = {};
+                    externalSchema.value = null;
+                    externalSchemaCategoryId.value = '';
+                    ticketForm.external_business_entity = externalEntityDefault(unitWizard.value?.schema);
+                    wizard.value?.reset();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            },
+        });
+}
+
 function submitExternalTicket() {
     if (!externalSchema.value) {
         ticketForm.setError('external', externalLoadError.value || 'Form sistem tujuan belum dimuat.');
         return;
     }
 
-    const fields = externalSchema.value.fields ?? [];
-    const errors = validateAnswers(fields, ticketForm.answers);
+    const fields = externalFormView.value?.fields ?? [];
+    const errors = { ...validateAnswers(fields, ticketForm.answers), ...entityErrors() };
+    const entity = externalEntity.value;
     if (!ticketForm.title?.trim()) {
         errors.title = 'Judul laporan wajib diisi.';
     }
@@ -230,7 +654,10 @@ function submitExternalTicket() {
         .transform((data) => ({
             submission_token: data.submission_token,
             website: data.website,
-            business_entities_id: data.business_entities_id,
+            // Hanya satu pertanyaan badan usaha yang dikirim.
+            ...(entity
+                ? { external_business_entity: data.external_business_entity }
+                : { business_entities_id: data.business_entities_id }),
             unit_id: data.unit_id,
             problem_category_id: data.problem_category_id,
             title: data.title,
@@ -240,23 +667,39 @@ function submitExternalTicket() {
         .post(props.urls.store, {
             forceFormData: true,
             preserveScroll: (page) => Object.keys(page.props.errors ?? {}).length > 0,
+            onError: () => {
+                notifySubmitError();
+            },
             onSuccess: (page) => {
                 if (page.props.flash?.ticket_success) {
+                    dismissedSuccess.value = false;
+                    notifyTicketSuccess(page.props.flash.ticket_success);
                     ticketForm.idempotency_key = newIdempotencyKey();
-                    ticketForm.answers = initialValues(fields);
+                    ticketForm.title = '';
+                    ticketForm.answers = initialValues(externalSchema.value?.fields ?? []);
+                    ticketForm.external_business_entity = externalEntityDefault(externalSchema.value);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 }
             },
         });
 }
 
 function submitTicket() {
+    if (wizardMode.value) {
+        // Tombol Enter di dalam input wizard memicu langkah berikutnya / kirim.
+        wizard.value?.next();
+        return;
+    }
+    if (unitPending.value) {
+        return;
+    }
     if (isExternal.value) {
         submitExternalTicket();
         return;
     }
 
     // Alur non-eksternal: payload sama persis seperti sebelum ada integrasi.
-    ticketForm.transform(({ idempotency_key, answers, ...data }) => data);
+    ticketForm.transform(({ idempotency_key, answers, external_business_entity, ...data }) => data);
 
     if (attachmentsOverLimit.value) {
         ticketForm.setError(
@@ -266,7 +709,22 @@ function submitTicket() {
         return;
     }
 
-    ticketForm.post(props.urls.store, { forceFormData: true });
+    ticketForm.post(props.urls.store, {
+        forceFormData: true,
+        onError: () => {
+            notifySubmitError();
+        },
+        onSuccess: (page) => {
+            if (page.props.flash?.ticket_success) {
+                dismissedSuccess.value = false;
+                notifyTicketSuccess(page.props.flash.ticket_success);
+                ticketForm.title = '';
+                ticketForm.description = '';
+                ticketForm.supporting_attachments = [];
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        },
+    });
 }
 
 function changeReporter() {
@@ -278,6 +736,7 @@ function changeReporter() {
     <Head :title="reporter ? 'Kirim laporan' : 'Buat laporan'" />
 
     <SimpleLayout>
+    <ToastRegion />
     <template #header>
         <a
             :href="urls.login"
@@ -301,16 +760,15 @@ function changeReporter() {
 
             <template v-if="reporter">
                 <div
-                    v-if="flash.ticket_success || flash.status || ticketErrors.length || changeErrors.length"
+                    v-if="visibleTicketSuccess || (!flash.ticket_success && flash.status) || ticketErrors.length || changeErrors.length"
                     class="space-y-4"
                 >
-                    <Callout
-                        v-if="flash.ticket_success"
-                        color="success"
-                        :heading="`Laporan ${flash.ticket_success.number} berhasil dibuat`"
-                        :description="`${flash.ticket_success.title} sudah diteruskan ke unit ${flash.ticket_success.unit || 'tujuan'}.`"
+                    <TicketSuccessCard
+                        v-if="visibleTicketSuccess"
+                        :ticket="visibleTicketSuccess"
+                        @dismiss="dismissedSuccess = true"
                     />
-                    <Callout v-else-if="flash.status" color="info" :heading="flash.status" />
+                    <Callout v-else-if="!flash.ticket_success && flash.status" color="info" :heading="flash.status" />
                     <Callout
                         v-if="ticketErrors.length || changeErrors.length"
                         color="danger"
@@ -334,7 +792,7 @@ function changeReporter() {
                     </form>
                 </div>
 
-                <form class="space-y-6" @submit.prevent="submitTicket">
+                <form class="space-y-6" novalidate @submit.prevent="submitTicket">
                     <input type="hidden" name="submission_token" :value="ticketForm.submission_token" />
                     <div class="fi-sr-only" aria-hidden="true">
                         <label for="website">Website</label>
@@ -344,28 +802,12 @@ function changeReporter() {
                     <Section heading="Kirim ke" icon="paper-airplane">
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
                             <Field
-                                id="business_entities_id"
-                                label="Badan Usaha yang Dilaporkan"
-                                required
-                                :error="ticketForm.errors.business_entities_id"
-                                hint="Badan usaha tempat kendala terjadi. Ganti bila bukan badan usaha kontrak Anda."
-                            >
-                                <SelectInput
-                                    id="business_entities_id"
-                                    v-model="ticketForm.business_entities_id"
-                                    required
-                                    placeholder="Pilih badan usaha"
-                                    :options="options.business_entities"
-                                    :invalid="Boolean(ticketForm.errors.business_entities_id)"
-                                />
-                            </Field>
-
-                            <Field
                                 id="unit_id"
                                 label="Unit / Divisi Tujuan"
                                 required
+                                :class="{ 'sm:col-span-2': wizardMode || unitPending }"
                                 :error="ticketForm.errors.unit_id"
-                                hint="Divisi yang akan menangani tiket ini."
+                                :hint="wizardMode ? `Pengajuan ${selectedUnit?.name ?? ''} diisi lewat langkah di bawah.` : 'Divisi yang akan menangani tiket ini.'"
                             >
                                 <SelectInput
                                     id="unit_id"
@@ -377,7 +819,16 @@ function changeReporter() {
                                 />
                             </Field>
 
+                            <p
+                                v-if="unitPending"
+                                class="flex items-center gap-2 self-end text-sm text-gray-500 dark:text-gray-400"
+                                role="status"
+                            >
+                                Memuat form divisi…
+                            </p>
+
                             <Field
+                                v-else-if="!wizardMode"
                                 id="problem_category_id"
                                 label="Kategori Tiket"
                                 required
@@ -396,7 +847,43 @@ function changeReporter() {
                             </Field>
 
                             <Field
-                                v-if="!isExternal"
+                                v-if="!wizardMode && !unitPending && showInternalEntity"
+                                id="business_entities_id"
+                                label="Badan Usaha yang Dilaporkan"
+                                required
+                                :error="ticketForm.errors.business_entities_id"
+                                hint="Badan usaha tempat kendala terjadi. Ganti bila bukan badan usaha kontrak Anda."
+                            >
+                                <SelectInput
+                                    id="business_entities_id"
+                                    v-model="ticketForm.business_entities_id"
+                                    required
+                                    placeholder="Pilih badan usaha"
+                                    :options="options.business_entities"
+                                    :invalid="Boolean(ticketForm.errors.business_entities_id)"
+                                />
+                            </Field>
+
+                            <Field
+                                v-else-if="!wizardMode && !unitPending && externalEntity"
+                                id="external_business_entity"
+                                label="Badan Usaha yang Dilaporkan"
+                                :required="externalEntity.required"
+                                :error="ticketForm.errors.external_business_entity"
+                                hint="Badan usaha tempat kendala terjadi. Ganti bila bukan badan usaha kontrak Anda."
+                            >
+                                <SelectInput
+                                    id="external_business_entity"
+                                    v-model="ticketForm.external_business_entity"
+                                    :required="externalEntity.required"
+                                    placeholder="Pilih badan usaha"
+                                    :options="externalEntityOptions"
+                                    :invalid="Boolean(ticketForm.errors.external_business_entity)"
+                                />
+                            </Field>
+
+                            <Field
+                                v-if="!externalActive && !unitPending"
                                 id="priority_id"
                                 label="Prioritas"
                                 required
@@ -415,7 +902,67 @@ function changeReporter() {
                         </div>
                     </Section>
 
-                    <Section heading="Kendala" icon="chat-bubble-left-right">
+                    <!-- Unit berintegrasi dengan form wizard (kontrak §3.2 "Langkah"):
+                         kategori, badan usaha, dan isian mengikuti form asli sistem tujuan. -->
+                    <ExternalWizard
+                        v-if="wizardMode"
+                        ref="wizard"
+                        :schema="externalFormView"
+                        :categories="wizardCategories"
+                        :category-id="ticketForm.problem_category_id"
+                        :chosen="wizardShowsCategory"
+                        :unit-name="selectedUnit?.name ?? ''"
+                        :values="ticketForm.answers"
+                        :errors="ticketForm.errors"
+                        :general-error="wizardGeneralError"
+                        :loading="externalLoading"
+                        :load-error="externalLoadError"
+                        :processing="ticketForm.processing"
+                        :validate-entity="entityErrors"
+                        @select-category="selectWizardCategory"
+                        @errors="onWizardErrors"
+                        @retry="loadExternalSchema({ carry: true })"
+                        @submit="submitWizardTicket"
+                    >
+                        <template #entity>
+                            <!-- Mengikuti label form sistem tujuan, di posisi aslinya. -->
+                            <Field
+                                v-if="externalEntity"
+                                id="external_business_entity"
+                                :label="externalEntity.label || 'Badan usaha'"
+                                :required="externalEntity.required"
+                                :error="ticketForm.errors.external_business_entity"
+                            >
+                                <SelectInput
+                                    id="external_business_entity"
+                                    v-model="ticketForm.external_business_entity"
+                                    :required="externalEntity.required"
+                                    placeholder="Pilih badan usaha"
+                                    :options="externalEntityOptions"
+                                    :invalid="Boolean(ticketForm.errors.external_business_entity)"
+                                />
+                            </Field>
+                            <Field
+                                v-else
+                                id="business_entities_id"
+                                label="Badan Usaha yang Dilaporkan"
+                                required
+                                :error="ticketForm.errors.business_entities_id"
+                                hint="Badan usaha tempat kendala terjadi. Ganti bila bukan badan usaha kontrak Anda."
+                            >
+                                <SelectInput
+                                    id="business_entities_id"
+                                    v-model="ticketForm.business_entities_id"
+                                    required
+                                    placeholder="Pilih badan usaha"
+                                    :options="options.business_entities"
+                                    :invalid="Boolean(ticketForm.errors.business_entities_id)"
+                                />
+                            </Field>
+                        </template>
+                    </ExternalWizard>
+
+                    <Section v-if="!wizardMode && !unitPending" heading="Kendala" icon="chat-bubble-left-right">
                         <div class="space-y-6">
                             <Field id="title" label="Judul" required :error="ticketForm.errors.title">
                                 <Input
@@ -450,13 +997,15 @@ function changeReporter() {
                         </div>
                     </Section>
 
+                    <template v-if="wizardMode || unitPending" />
+
                     <Section
-                        v-if="isExternal"
+                        v-else-if="isExternal"
                         :heading="externalSchema?.title || selectedCategory?.name || 'Detail permintaan'"
                         icon="paper-clip"
                     >
                         <ExternalForm
-                            :schema="externalSchema"
+                            :schema="externalFormView"
                             :values="ticketForm.answers"
                             :errors="ticketForm.errors"
                             :loading="externalLoading"
@@ -511,6 +1060,7 @@ function changeReporter() {
 
                     <!-- Formulirnya panjang, jadi tombol kirim menempel di bawah layar agar selalu terjangkau. -->
                     <div
+                        v-if="!wizardMode && !unitPending"
                         class="sticky bottom-0 z-10 -mx-4 bg-linear-to-t from-gray-50 from-70% to-gray-50/0 px-4 pt-6 pb-[max(1rem,env(safe-area-inset-bottom))] dark:from-gray-950 dark:to-gray-950/0"
                     >
                         <Button type="submit" block :processing="ticketForm.processing">
@@ -533,13 +1083,13 @@ function changeReporter() {
                 </header>
 
                 <div class="mt-8 space-y-6">
-                    <Callout
-                        v-if="flash.ticket_success"
-                        color="success"
-                        :heading="`Laporan ${flash.ticket_success.number} berhasil dibuat`"
-                        :description="`${flash.ticket_success.title} sudah diteruskan ke unit ${flash.ticket_success.unit || 'tujuan'}.`"
+                    <TicketSuccessCard
+                        v-if="visibleTicketSuccess"
+                        :ticket="visibleTicketSuccess"
+                        compact
+                        @dismiss="dismissedSuccess = true"
                     />
-                    <Callout v-else-if="flash.status" color="info" :heading="flash.status" />
+                    <Callout v-else-if="!flash.ticket_success && flash.status" color="info" :heading="flash.status" />
                     <Callout
                         v-if="identityErrors.length"
                         color="danger"

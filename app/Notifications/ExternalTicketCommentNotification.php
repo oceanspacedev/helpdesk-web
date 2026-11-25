@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Channels\WhatsAppChannel;
 use App\Models\Ticket;
 use App\Notifications\Concerns\ResolvesHelpdeskNotificationChannels;
+use App\Services\Integrations\External\ExternalTicketSnapshot;
 use App\Support\HelpdeskWhatsAppMessage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
@@ -40,13 +41,20 @@ class ExternalTicketCommentNotification extends Notification implements ShouldQu
     public function toMail(object $notifiable): MailMessage
     {
         $number = HelpdeskWhatsAppMessage::ticketNumber($this->ticket);
+        $trackUrl = ExternalTicketSnapshot::trackUrl($this->ticket);
 
-        return (new MailMessage)
+        $mail = (new MailMessage)
             ->subject('Komentar baru: '.$number)
             ->greeting('Halo '.$notifiable->name.',')
-            ->line('Ada komentar baru pada tiket **'.$number.'**.')
+            ->line('Ada komentar baru pada tiket **'.$number.'**.');
+
+        if (filled($this->ticket->external_ref)) {
+            $mail->line('**Referensi:** '.$this->ticket->external_ref);
+        }
+
+        return $mail
             ->line($this->latestText())
-            ->action('Buka tiket', url('/admin/tickets/'.$this->ticket->id));
+            ->action($trackUrl !== null ? 'Lacak progres' : 'Buka tiket', $trackUrl ?? url('/admin/tickets/'.$this->ticket->id));
     }
 
     /**

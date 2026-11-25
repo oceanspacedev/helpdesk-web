@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\ProblemCategory;
 use App\Models\Ticket;
+use App\Models\Unit;
 use App\Models\User;
 use App\Services\Integrations\External\ExternalFormSchema;
 use App\Services\Integrations\External\ExternalNotFoundException;
 use App\Services\Integrations\External\ExternalTicketService;
+use App\Services\Integrations\External\ExternalTicketSnapshot;
 use App\Services\Integrations\External\ExternalUnavailableException;
 use App\Services\Integrations\External\ExternalValidationException;
 use App\Services\Integrations\HelpdeskFormOptionsService;
@@ -27,6 +29,7 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use InvalidArgumentException;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 use Throwable;
 
 class PublicTicketController extends Controller
@@ -76,6 +79,8 @@ class PublicTicketController extends Controller
                 // Isian awal badan usaha kontrak pelapor; bisa diganti bila
                 // laporannya untuk badan usaha lain.
                 'business_entities_id' => old('business_entities_id', $reporter?->business_entity_id ?? ''),
+                // Opsi badan usaha dari form sistem tujuan (unit berintegrasi).
+                'external_business_entity' => old('external_business_entity', ''),
                 'unit_id' => old('unit_id', ''),
                 'problem_category_id' => old('problem_category_id', ''),
                 'priority_id' => old('priority_id', $defaultPriorityId),
@@ -90,6 +95,12 @@ class PublicTicketController extends Controller
                     '0000000000',
                     '{category}',
                     route('public-tickets.external-form', ['category' => '0000000000'], absolute: false),
+                ),
+                // {unit} diganti id unit di browser.
+                'externalUnitForm' => str_replace(
+                    '0000000000',
+                    '{unit}',
+                    route('public-tickets.external-unit-form', ['unit' => '0000000000'], absolute: false),
                 ),
                 'changeReporter' => route('public-reporter.change', absolute: false),
                 'login' => route('filament.admin.auth.login', absolute: false),
@@ -125,6 +136,7 @@ class PublicTicketController extends Controller
 
         $user = $result['user'] ?? null;
         if (($result['ok'] ?? false) && $user instanceof User) {
+            $registrations->completeFromTalenta($user);
             $request->session()->regenerate(true);
             $reporterIdentities->rotateDeviceToken($request);
 
@@ -165,6 +177,7 @@ class PublicTicketController extends Controller
         int $category,
         PublicReporterIdentityService $reporterIdentities,
         ExternalFormSchema $schemas,
+        HelpdeskReporterRegistrationService $registrations,
     ): JsonResponse {
         $reporter = $reporterIdentities->current($request);
         if (! $reporter) {
@@ -172,6 +185,8 @@ class PublicTicketController extends Controller
                 'message' => 'Masukkan nomor WhatsApp pelapor terlebih dahulu.',
             ], 401);
         }
+
+        $registrations->completeFromTalenta($reporter);
 
         $problemCategory = ProblemCategory::query()->with('unit.integration')->find($category);
         if (! $problemCategory || ! $problemCategory->unit || ! $problemCategory->isExternal()) {
@@ -194,14 +209,84 @@ class PublicTicketController extends Controller
             ], 503);
         }
 
-        return response()->json(['data' => $form]);
+        return response()->json(['data' => $this->withCategoryCards($form, $problemCategory->unit, $schemas)]);
+    }
+
+    /**
+     * Form pembuka unit berintegrasi (kontrak §3.2 "Langkah"): form kategori
+     * terpetakan pertama, dipakai browser untuk menentukan apakah unit
+     * memakai wizard dan untuk merender langkah sebelum pilihan kategori.
+     * `category_id` = kategori yang formnya dipakai (belum dipilih pelapor).
+     */
+    public function externalUnitForm(
+        Request $request,
+        int $unit,
+        PublicReporterIdentityService $reporterIdentities,
+        ExternalFormSchema $schemas,
+        HelpdeskReporterRegistrationService $registrations,
+    ): JsonResponse {
+        $reporter = $reporterIdentities->current($request);
+        if (! $reporter) {
+            return response()->json([
+                'message' => 'Masukkan nomor WhatsApp pelapor terlebih dahulu.',
+            ], 401);
+        }
+
+        $registrations->completeFromTalenta($reporter);
+
+        $model = Unit::query()->acceptingTickets()->with('integration')->find($unit);
+        if (! $model || ! $model->isExternal()) {
+            return response()->json([
+                'message' => 'Divisi ini tidak memakai form sistem tujuan.',
+            ], 404);
+        }
+
+        try {
+            $opening = $schemas->unitForm($model);
+        } catch (ExternalNotFoundException) {
+            $opening = null;
+        } catch (ExternalUnavailableException|InvalidArgumentException $exception) {
+            report($exception);
+
+            return response()->json([
+                'message' => ExternalUnavailableException::USER_MESSAGE,
+            ], 503);
+        }
+
+        if ($opening === null) {
+            return response()->json([
+                'message' => 'Belum ada kategori divisi ini yang tersedia di sistem tujuan.',
+            ], 404);
+        }
+
+        $form = $schemas->withPrefill($opening['form'], $reporter, reveal: false);
+
+        return response()->json([
+            'data' => $this->withCategoryCards($form, $model, $schemas),
+            'category_id' => (int) $opening['category']->getKey(),
+        ]);
+    }
+
+    /**
+     * Form wizard dengan pilihan kategori: tambahkan kartu kategori unit.
+     *
+     * @param  array<string, mixed>  $form
+     * @return array<string, mixed>
+     */
+    private function withCategoryCards(array $form, ?Unit $unit, ExternalFormSchema $schemas): array
+    {
+        if ($unit && ExternalFormSchema::hasCategoryPicker($form)) {
+            $form['categories'] = $schemas->unitCategories($unit);
+        }
+
+        return $form;
     }
 
     public function store(
         Request $request,
         PublicReporterIdentityService $reporterIdentities,
         PublicTicketSubmissionService $tickets,
-    ): RedirectResponse {
+    ): HttpResponse {
         $reporter = $reporterIdentities->current($request);
         if (! $reporter) {
             return redirect()
@@ -330,15 +415,19 @@ class PublicTicketController extends Controller
         Request $request,
         User $reporter,
         PublicTicketSubmissionService $tickets,
-    ): RedirectResponse {
+    ): HttpResponse {
         $validator = Validator::make($request->all(), [
             'submission_token' => ['required', 'string', 'size:40'],
             'website' => ['nullable', 'string', 'max:0'],
+            // Wajib atau tidaknya bergantung pada form sistem tujuan: bila
+            // form punya field badan usaha, pertanyaan ini memakai opsinya
+            // (external_business_entity). Diperiksa createExternal.
             'business_entities_id' => [
-                'required',
+                'nullable',
                 'integer',
                 Rule::exists('business_entities', 'id')->whereNull('deleted_at'),
             ],
+            'external_business_entity' => ['nullable', 'string', 'max:255'],
             'unit_id' => [
                 'required',
                 'integer',
@@ -351,11 +440,13 @@ class PublicTicketController extends Controller
                     ->where('unit_id', (int) $request->input('unit_id'))
                     ->whereNull('deleted_at'),
             ],
-            'title' => ['required', 'string', 'max:255'],
+            // Form wizard tidak menanyakan judul: judul diturunkan server dari
+            // isian (createExternal). Form satu halaman tetap wajib berjudul.
+            'title' => ['nullable', 'string', 'max:255'],
             'idempotency_key' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/D'],
             'answers' => ['nullable', 'array'],
         ], [
-            'business_entities_id.required' => 'Badan usaha wajib dipilih.',
+            'external_business_entity.*' => 'Pilihan badan usaha tidak valid. Muat ulang halaman.',
             'unit_id.required' => 'Divisi wajib dipilih.',
             'problem_category_id.required' => 'Kategori tiket wajib dipilih.',
             'problem_category_id.exists' => 'Kategori tidak sesuai dengan divisi yang dipilih.',
@@ -392,7 +483,7 @@ class PublicTicketController extends Controller
         $files = $request->file('answers', []);
 
         try {
-            $ticket = $tickets->createExternal(
+            $submission = $tickets->createExternal(
                 $reporter,
                 $validated,
                 is_array($answers) ? $answers : [],
@@ -426,7 +517,13 @@ class PublicTicketController extends Controller
 
         return redirect()
             ->route('public-tickets.create')
-            ->with('ticket_success', $this->successPayload($ticket));
+            ->with('ticket_success', [
+                'number' => null,
+                'title' => $submission['title'],
+                'unit' => $submission['unit'],
+                'external_ref' => $submission['ref'],
+                'track_url' => $submission['track_url'],
+            ]);
     }
 
     /**
@@ -477,7 +574,7 @@ class PublicTicketController extends Controller
     }
 
     /**
-     * @return array{number: string, title: string, unit: ?string}
+     * @return array{number: string, title: string, unit: ?string, external_ref: ?string, track_url: ?string}
      */
     private function successPayload(Ticket $ticket): array
     {
@@ -495,10 +592,19 @@ class PublicTicketController extends Controller
             $year = null;
         }
 
+        $externalRef = $ticket->isExternal() && filled($ticket->external_ref)
+            ? (string) $ticket->external_ref
+            : null;
+        $trackUrl = $ticket->isExternal()
+            ? ExternalTicketSnapshot::trackUrl($ticket)
+            : null;
+
         return [
             'number' => $this->ticketNumber((int) $ticket->id, $year),
             'title' => (string) $ticket->title,
             'unit' => $unitName,
+            'external_ref' => $externalRef,
+            'track_url' => $trackUrl,
         ];
     }
 

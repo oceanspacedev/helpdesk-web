@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\User;
 use Illuminate\Support\Str;
 
 final class HelpdeskReporterName
@@ -32,5 +33,28 @@ final class HelpdeskReporterName
         }
 
         return Str::limit($name, self::MAX_LENGTH, '');
+    }
+
+    /**
+     * Nama sementara akun pelapor yang dibuat form publik dari nomor saja.
+     */
+    public static function placeholder(string $phone): string
+    {
+        return 'Pelapor WhatsApp '.substr($phone, -4);
+    }
+
+    /**
+     * Akun belum punya nama sungguhan: bukan karyawan Talenta dan namanya
+     * masih nama sementara dari nomor WhatsApp.
+     */
+    public static function isPlaceholder(User $user): bool
+    {
+        if (filled($user->identity)) {
+            return false;
+        }
+
+        $phone = PhoneNumber::canonical($user->phone) ?? (string) $user->phone;
+
+        return trim((string) $user->name) === '' || $user->name === self::placeholder($phone);
     }
 }

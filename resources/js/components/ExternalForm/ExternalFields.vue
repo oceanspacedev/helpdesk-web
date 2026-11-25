@@ -1,5 +1,5 @@
 <script setup>
-import { computed, toRaw } from 'vue';
+import { computed, reactive, toRaw, useSlots, watch } from 'vue';
 import Button from '../Button.vue';
 import Field from '../Field.vue';
 import Input from '../Input.vue';
@@ -8,9 +8,12 @@ import TextareaInput from '../TextareaInput.vue';
 import {
     acceptAttribute,
     errorFor,
+    fileErrors,
     formatKb,
     initialRow,
+    isSingleRow,
     isVisible,
+    levelScope,
     minDate,
     rulesHint,
 } from '../../support/externalForm.js';
@@ -26,7 +29,39 @@ const props = defineProps({
     path: { type: String, default: 'answers' },
     errors: { type: Object, default: () => ({}) },
     idPrefix: { type: String, default: 'answers' },
+    // 2 = isian pendek berdampingan di layar lebar (seperti form asli sistem tujuan).
+    columns: { type: Number, default: 1 },
 });
+
+// Tipe yang tetap selebar form saat dua kolom.
+const wideTypes = ['textarea', 'repeater', 'radio', 'info', 'file', 'files'];
+
+// Isian pendek berpasangan dua-dua; yang tidak punya pasangan tetap selebar form.
+const spans = computed(() => {
+    const result = {};
+    let run = [];
+    const flush = () => {
+        if (run.length % 2 === 1) {
+            result[run[run.length - 1]] = true;
+        }
+        run = [];
+    };
+    for (const field of visibleFields.value) {
+        if (wideTypes.includes(field.type)) {
+            flush();
+            result[field.key] = true;
+        } else {
+            run.push(field.key);
+        }
+    }
+    flush();
+
+    return result;
+});
+
+function span(field) {
+    return props.columns > 1 && spans.value[field.key] ? 'sm:col-span-2' : '';
+}
 
 const inputTypes = {
     text: 'text',
@@ -36,9 +71,41 @@ const inputTypes = {
     date: 'date',
 };
 
-const scopes = computed(() => [props.values, ...props.parentScopes]);
+const scopes = computed(() => [levelScope(props.fields, props.values), ...props.parentScopes]);
 
-const visibleFields = computed(() => props.fields.filter((field) => isVisible(field, scopes.value)));
+// Field yang diisi helpdesk saat dikirim tidak ditampilkan: identitas
+// otomatis (labelnya disebut di catatan ringkas ExternalForm) dan badan
+// usaha (`ticket`, dijawab lewat pertanyaan badan usaha di form tiket).
+const slots = useSlots();
+
+// Pertanyaan badan usaha helpdesk (slot `entity`) dirender di posisi field
+// badan usaha form sistem tujuan, agar urutannya sama dengan form aslinya.
+function isEntitySlot(field) {
+    return Boolean(field.business_entity && slots.entity);
+}
+
+// Pertanyaan badan usaha selalu tampil (wajib dijawab), apa pun visible_if-nya.
+const visibleFields = computed(() =>
+    props.fields.filter(
+        (field) => isEntitySlot(field) || (!field.auto && !field.ticket && isVisible(field, scopes.value)),
+    ),
+);
+
+// Form tanpa field badan usaha: pertanyaan badan usaha helpdesk di awal seksi.
+const entityFirst = computed(() => Boolean(slots.entity) && !props.fields.some((field) => field.business_entity));
+
+// Repeater satu baris selalu punya barisnya (mis. setelah ganti kategori).
+watch(
+    visibleFields,
+    (list) => {
+        for (const field of list) {
+            if (isSingleRow(field) && !rows(field).length) {
+                props.values[field.key] = [initialRow(field.fields)];
+            }
+        }
+    },
+    { immediate: true },
+);
 
 // Kunci stabil per baris repeater agar input file tidak tertukar saat baris dihapus.
 const rowKeys = new WeakMap();
@@ -62,11 +129,18 @@ function fieldPath(field) {
     return `${props.path}.${field.key}`;
 }
 
+const localFileErrors = reactive({});
+
 function fieldError(field) {
-    return errorFor(props.errors, fieldPath(field), field);
+    return errorFor(props.errors, fieldPath(field), field) || localFileErrors[field.key] || '';
 }
 
 function hint(field) {
+    // Repeater: teks bantuan sistem tujuan biasanya sudah menyebut batas baris.
+    if (field.type === 'repeater' && field.help) {
+        return field.help;
+    }
+
     return [field.help, rulesHint(field)].filter(Boolean).join(' · ');
 }
 
@@ -139,10 +213,21 @@ function filesOf(field) {
 
 function onFilesSelected(field, event) {
     const picked = Array.from(event.target.files ?? []);
+    let next;
     if (field.type === 'file') {
-        props.values[field.key] = picked[0] ?? null;
+        next = picked[0] ?? null;
     } else {
-        props.values[field.key] = [...filesOf(field), ...picked];
+        const existing = filesOf(field);
+        const seen = new Set(existing.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+        next = [...existing, ...picked.filter((file) => !seen.has(`${file.name}:${file.size}:${file.lastModified}`))];
+    }
+    props.values[field.key] = next;
+    const list = field.type === 'file' ? (next ? [next] : []) : next;
+    const message = list.length ? fileErrors(field, list) : null;
+    if (message) {
+        localFileErrors[field.key] = message;
+    } else {
+        delete localFileErrors[field.key];
     }
     event.target.value = '';
 }
@@ -150,6 +235,7 @@ function onFilesSelected(field, event) {
 function removeFile(field, index) {
     if (field.type === 'file') {
         props.values[field.key] = null;
+        delete localFileErrors[field.key];
 
         return;
     }
@@ -157,6 +243,17 @@ function removeFile(field, index) {
     const files = [...filesOf(field)];
     files.splice(index, 1);
     props.values[field.key] = files;
+    const message = files.length ? fileErrors(field, files) : null;
+    if (message) {
+        localFileErrors[field.key] = message;
+    } else {
+        delete localFileErrors[field.key];
+    }
+}
+
+function applySuggestion(field, chip) {
+    const current = String(props.values[field.key] ?? '').trim();
+    props.values[field.key] = current ? `${current}, ${chip.toLowerCase()}` : chip;
 }
 
 function pickFiles(field) {
@@ -169,33 +266,21 @@ function formatSize(bytes) {
 </script>
 
 <template>
-    <div class="space-y-6">
-        <template v-for="field in visibleFields" :key="field.key">
+    <div :class="columns > 1 ? 'grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2' : 'space-y-6'">
+        <div v-if="entityFirst" :class="columns > 1 ? 'sm:col-span-2' : ''">
+            <slot name="entity" />
+        </div>
+        <div v-for="field in visibleFields" :key="field.key" :class="span(field)">
+            <slot v-if="isEntitySlot(field)" name="entity" />
+
             <!-- info: hanya label + teks bantuan -->
             <div
-                v-if="field.type === 'info'"
+                v-else-if="field.type === 'info'"
                 class="rounded-lg bg-gray-50 px-3 py-2.5 text-sm ring-1 ring-gray-200 dark:bg-white/5 dark:ring-white/10"
             >
                 <p class="font-medium text-gray-950 dark:text-white">{{ field.label }}</p>
                 <p v-if="field.help" class="mt-1 whitespace-pre-line text-gray-600 dark:text-gray-300">{{ field.help }}</p>
             </div>
-
-            <!-- Diisi server dari identitas pelapor; nilainya tidak dikirim ke browser. -->
-            <Field
-                v-else-if="field.auto"
-                :id="fieldId(field)"
-                :label="field.label"
-                :required="field.required"
-                :error="fieldError(field)"
-                :hint="field.help"
-            >
-                <div
-                    :id="fieldId(field)"
-                    class="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
-                >
-                    Diisi otomatis dari data pelapor terdaftar.
-                </div>
-            </Field>
 
             <Field
                 v-else-if="inputTypes[field.type]"
@@ -214,6 +299,17 @@ function formatSize(bytes) {
                     :invalid="Boolean(fieldError(field))"
                     v-bind="textAttributes(field)"
                 />
+                <div v-if="field.suggestions?.length" class="mt-2 flex flex-wrap gap-1.5">
+                    <button
+                        v-for="chip in field.suggestions"
+                        :key="chip"
+                        type="button"
+                        class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-950/10 transition hover:bg-gray-200 dark:bg-white/10 dark:text-gray-200 dark:ring-white/10 dark:hover:bg-white/15"
+                        @click="applySuggestion(field, chip)"
+                    >
+                        {{ chip }}
+                    </button>
+                </div>
             </Field>
 
             <Field
@@ -233,6 +329,17 @@ function formatSize(bytes) {
                     :invalid="Boolean(fieldError(field))"
                     v-bind="textAttributes(field)"
                 />
+                <div v-if="field.suggestions?.length" class="mt-2 flex flex-wrap gap-1.5">
+                    <button
+                        v-for="chip in field.suggestions"
+                        :key="chip"
+                        type="button"
+                        class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-950/10 transition hover:bg-gray-200 dark:bg-white/10 dark:text-gray-200 dark:ring-white/10 dark:hover:bg-white/15"
+                        @click="applySuggestion(field, chip)"
+                    >
+                        {{ chip }}
+                    </button>
+                </div>
             </Field>
 
             <Field
@@ -259,11 +366,11 @@ function formatSize(bytes) {
                         {{ field.label }}<sup v-if="field.required" class="fi-fo-field-label-required-mark">*</sup>
                     </span>
                 </legend>
-                <div class="mt-2 flex flex-col gap-2">
+                <div class="mt-2 flex gap-2" :class="(field.options ?? []).length <= 5 ? 'flex-wrap' : 'flex-col'">
                     <label
                         v-for="option in field.options"
                         :key="option.value"
-                        class="flex items-center gap-2 text-sm text-gray-950 dark:text-white"
+                        class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-950 ring-1 ring-gray-950/10 has-checked:bg-primary-50 has-checked:ring-primary-600 dark:text-white dark:ring-white/10 dark:has-checked:bg-primary-500/10 dark:has-checked:ring-primary-500"
                     >
                         <input
                             v-model="values[field.key]"
@@ -328,6 +435,23 @@ function formatSize(bytes) {
                 </ul>
             </Field>
 
+            <!-- Repeater satu baris: isian baris itu langsung, tanpa kartu. -->
+            <div v-else-if="isSingleRow(field)" class="space-y-3">
+                <ExternalFields
+                    v-if="rows(field)[0]"
+                    :fields="field.fields ?? []"
+                    :values="rows(field)[0]"
+                    :parent-scopes="scopes"
+                    :path="`${fieldPath(field)}.0`"
+                    :errors="errors"
+                    :id-prefix="`${fieldId(field)}_0`"
+                    :columns="columns"
+                />
+                <p v-if="fieldError(field)" class="fi-fo-field-wrp-error-message" data-validation-error>
+                    {{ fieldError(field) }}
+                </p>
+            </div>
+
             <div v-else-if="field.type === 'repeater'" class="space-y-3">
                 <div>
                     <p class="fi-fo-field-label">
@@ -361,16 +485,17 @@ function formatSize(bytes) {
                         :path="`${fieldPath(field)}.${index}`"
                         :errors="errors"
                         :id-prefix="`${fieldId(field)}_${rowKey(row)}`"
+                        :columns="columns"
                     />
                 </div>
 
                 <Button v-if="canAddRow(field)" color="gray" outlined @click="addRow(field)">
-                    Tambah {{ field.label }}
+                    + Tambah {{ field.label.charAt(0).toLowerCase() + field.label.slice(1) }}
                 </Button>
                 <p v-if="fieldError(field)" class="fi-fo-field-wrp-error-message" data-validation-error>
                     {{ fieldError(field) }}
                 </p>
             </div>
-        </template>
+        </div>
     </div>
 </template>

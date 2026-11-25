@@ -86,16 +86,17 @@ class ExternalIntegrationTest extends TestCase
     {
         Http::fake([
             self::BASE.'/categories' => Http::response(['data' => [
-                ['key' => 'IK', 'name' => 'Instruksi Kerja', 'active' => true],
-                ['key' => 'SOP', 'name' => 'SOP', 'active' => false],
+                ['key' => 'IK', 'name' => 'Instruksi Kerja', 'active' => true, 'description' => ' Panduan kerja. ', 'needs_observation' => true, 'has_template' => true],
+                ['key' => 'SOP', 'name' => 'SOP', 'active' => false, 'needs_observation' => 'ya'],
             ]]),
         ]);
 
         $categories = ExternalSystemClient::for($this->integration)->categories();
 
         $this->assertSame([
-            ['key' => 'IK', 'name' => 'Instruksi Kerja', 'active' => true],
-            ['key' => 'SOP', 'name' => 'SOP', 'active' => false],
+            ['key' => 'IK', 'name' => 'Instruksi Kerja', 'active' => true, 'description' => 'Panduan kerja.', 'needs_observation' => true],
+            // Hanya boolean true yang dianggap observasi.
+            ['key' => 'SOP', 'name' => 'SOP', 'active' => false, 'description' => '', 'needs_observation' => false],
         ], $categories);
         Http::assertSent(fn (HttpRequest $request): bool => $request->url() === self::BASE.'/categories'
             && $request->hasHeader('Authorization', 'Bearer rahasia-token-od')
@@ -141,7 +142,7 @@ class ExternalIntegrationTest extends TestCase
         );
     }
 
-    public function test_submit_creates_thin_ticket_without_internal_routing(): void
+    public function test_submit_forwards_to_external_without_creating_helpdesk_ticket(): void
     {
         $pic = User::query()->create([
             'name' => 'PIC OD',
@@ -161,9 +162,13 @@ class ExternalIntegrationTest extends TestCase
             'business_entity_id' => $entity->id,
         ])->save();
 
-        Http::fake([self::BASE.'/tickets' => Http::response(['data' => $this->snapshot('in_progress', 'Drafting')], 201)]);
+        Http::fake([
+            self::BASE.'/tickets' => Http::response([
+                'data' => ['track_url' => 'https://od.test/lacak?kode=IK-20261125-AB3D'] + $this->snapshot('in_progress', 'Drafting'),
+            ], 201),
+        ]);
 
-        $ticket = app(ExternalTicketService::class)->submit(
+        $submission = app(ExternalTicketService::class)->submit(
             $this->category,
             $reporter,
             'IK Penerimaan Barang',
@@ -172,33 +177,22 @@ class ExternalIntegrationTest extends TestCase
             'idem-001',
         );
 
-        $this->assertTrue($ticket->isExternal());
-        $this->assertSame($this->integration->id, $ticket->integration_id);
-        $this->assertSame('IK-20261125-AB3D', $ticket->external_ref);
-        $this->assertSame('in_progress', $ticket->external_status_code);
-        $this->assertSame('Drafting', $ticket->external_status_label);
-        $this->assertSame(TicketStatus::IN_PROGRESS, $ticket->ticket_statuses_id);
-        $this->assertSame($this->unit->id, $ticket->unit_id);
-        $this->assertSame($this->category->id, $ticket->problem_category_id);
-        $this->assertSame($reporter->id, $ticket->owner_id);
-        $this->assertSame($reporterUnit->id, $ticket->reporter_unit_id);
-        $this->assertSame('Staff Finance', $ticket->reporter_job_title);
-        $this->assertSame($entity->id, $ticket->business_entities_id);
-        $this->assertSame('idem-001', $ticket->external_idempotency_key);
-        $this->assertNull($ticket->responsible_id, 'Tiket eksternal tidak boleh ditugaskan ke PIC helpdesk.');
-        $this->assertStringContainsString('Ref IK-20261125-AB3D', $ticket->description);
-        // Ringkasan snapshot yang bisa berubah tidak dibekukan ke deskripsi.
-        $this->assertStringNotContainsString('<ul>', $ticket->description);
-        $this->assertSame('Drafting', data_get($ticket->external_snapshot, 'status.label'));
-        $this->assertNotNull($ticket->external_synced_at);
+        $this->assertSame('IK-20261125-AB3D', $submission['ref']);
+        $this->assertSame('IK Penerimaan Barang', $submission['title']);
+        $this->assertSame('BUSDEV', $submission['unit']);
+        $this->assertSame('Modul OD', $submission['integration']);
+        $this->assertSame('in_progress', $submission['status_code']);
+        $this->assertSame('Drafting', $submission['status_label']);
+        $this->assertSame('https://od.test/lacak?kode=IK-20261125-AB3D', $submission['track_url']);
+        $this->assertSame(0, Ticket::query()->withTrashed()->count(), 'Tiket eksternal tidak boleh disimpan ganda di Helpdesk.');
 
-        Http::assertSent(function (HttpRequest $request) use ($ticket): bool {
+        Http::assertSent(function (HttpRequest $request): bool {
             $fields = collect($request->data())->mapWithKeys(fn (array $part) => [$part['name'] => $part['contents']]);
 
             return $request->method() === 'POST'
                 && $request->isMultipart()
                 && $fields['idempotency_key'] === 'idem-001'
-                && $fields['helpdesk_ticket_number'] === HelpdeskTicketNumber::format($ticket)
+                && ! $fields->has('helpdesk_ticket_number')
                 && $fields['category_key'] === 'IK'
                 && $fields['reporter[nik]'] === '3201001'
                 && $fields['reporter[name]'] === 'Apri'
@@ -210,28 +204,16 @@ class ExternalIntegrationTest extends TestCase
                 && $request->hasFile('answers[dokumen][]', null, 'draft.pdf');
         });
 
-        Notification::assertNotSentTo($pic, NewTicketNotification::class);
-        Notification::assertSentToTimes($reporter, TicketSubmittedNotification::class, 1);
-        // Snapshot pertama "in_progress" bukan perubahan status: tidak ada
-        // notifikasi "sedang diproses" dan hanya satu riwayat (aktor pelapor).
-        Notification::assertNotSentTo($reporter, TicketStatusChangedNotification::class);
-        $history = TicketHistory::query()->where('ticket_id', $ticket->id)->get();
-        $this->assertCount(1, $history);
-        $this->assertSame(TicketStatus::IN_PROGRESS, (int) $history->first()->ticket_statuses_id);
-        $this->assertSame($reporter->id, (int) $history->first()->user_id);
+        Notification::assertNothingSent();
+        $this->assertSame(0, TicketHistory::query()->count());
     }
 
-    public function test_retry_after_timeout_reuses_the_reserved_ticket_number(): void
+    public function test_retry_after_timeout_succeeds_without_creating_helpdesk_ticket(): void
     {
-        $numbers = [];
         $calls = 0;
-        Http::fake([self::BASE.'/tickets' => function (HttpRequest $request) use (&$numbers, &$calls) {
-            $fields = collect($request->data())->mapWithKeys(fn (array $part) => [$part['name'] => $part['contents']]);
-            $numbers[] = $fields['helpdesk_ticket_number'];
+        Http::fake([self::BASE.'/tickets' => function (HttpRequest $request) use (&$calls) {
             $calls++;
 
-            // Percobaan pertama: sistem eksternal menyimpan tiket tetapi
-            // helpdesk kehabisan waktu menunggu respons.
             if ($calls === 1) {
                 throw new ConnectionException('timeout');
             }
@@ -245,21 +227,16 @@ class ExternalIntegrationTest extends TestCase
             fn () => $service->submit($this->category, $reporter, 'IK', ['a' => 'b'], [], 'idem-timeout'),
             ExternalUnavailableException::class,
         );
-        $this->assertSame(0, Ticket::query()->count(), 'Baris cadangan tidak boleh tampil sebelum diterima.');
-        $this->assertSame(0, Ticket::query()->withTrashed()->withoutPendingExternal()->count());
+        $this->assertSame(0, Ticket::query()->withTrashed()->count());
         $this->assertSame(0, TicketHistory::query()->count());
         Notification::assertNothingSent();
 
-        $ticket = $service->submit($this->category, $reporter, 'IK', ['a' => 'b'], [], 'idem-timeout');
+        $submission = $service->submit($this->category, $reporter, 'IK', ['a' => 'b'], [], 'idem-timeout');
 
-        $this->assertCount(2, $numbers);
-        $this->assertSame($numbers[0], $numbers[1], 'Nomor helpdesk harus sama saat dikirim ulang.');
-        $this->assertSame(HelpdeskTicketNumber::format($ticket), $numbers[0]);
-        $this->assertSame(1, Ticket::query()->count());
-        $this->assertSame(1, Ticket::query()->withTrashed()->count());
-        $this->assertSame('IK-20261125-AB3D', $ticket->external_ref);
-        $this->assertSame(1, TicketHistory::query()->where('ticket_id', $ticket->id)->count());
-        Notification::assertSentToTimes($reporter, TicketSubmittedNotification::class, 1);
+        $this->assertSame('IK-20261125-AB3D', $submission['ref']);
+        $this->assertSame(0, Ticket::query()->withTrashed()->count());
+        $this->assertSame(0, TicketHistory::query()->count());
+        Notification::assertNothingSent();
     }
 
     public function test_submit_is_replay_safe_for_the_same_idempotency_key(): void
@@ -271,12 +248,12 @@ class ExternalIntegrationTest extends TestCase
         $first = $service->submit($this->category, $reporter, 'IK', ['a' => 'b'], [], 'idem-replay');
         $second = $service->submit($this->category, $reporter, 'IK', ['a' => 'b'], [], 'idem-replay');
 
-        $this->assertSame($first->id, $second->id);
-        $this->assertSame(1, Ticket::query()->count());
+        $this->assertSame($first['ref'], $second['ref']);
+        $this->assertSame(0, Ticket::query()->withTrashed()->count());
         Http::assertSentCount(1);
     }
 
-    public function test_submit_rolls_back_on_validation_error_and_unavailability(): void
+    public function test_submit_leaves_no_helpdesk_row_on_validation_error_or_unavailability(): void
     {
         Http::fakeSequence(self::BASE.'/tickets')
             ->push(['message' => 'invalid', 'errors' => ['answers.tujuan' => ['Tujuan wajib diisi.']]], 422)
@@ -296,11 +273,7 @@ class ExternalIntegrationTest extends TestCase
             ExternalUnavailableException::class,
         );
 
-        // 422 menghapus cadangan; 503 menyimpannya tersembunyi (soft delete)
-        // agar percobaan ulang memakai nomor yang sama.
-        $this->assertSame(0, Ticket::query()->count());
-        $this->assertSame(0, Ticket::query()->withTrashed()->where('external_idempotency_key', 'idem-422')->count());
-        $this->assertSame(1, Ticket::query()->onlyTrashed()->where('external_idempotency_key', 'idem-503')->whereNull('external_ref')->count());
+        $this->assertSame(0, Ticket::query()->withTrashed()->count());
         $this->assertSame(0, TicketHistory::query()->count());
         Notification::assertNothingSent();
     }
@@ -524,7 +497,6 @@ class ExternalIntegrationTest extends TestCase
             ['proses' => [['judul' => 'A'], ['judul' => 'B'], ['judul' => 'C']]],
             ['proses' => [2 => ['lampiran' => $fileC], 1 => ['lampiran' => $fileB]]],
             $reporter,
-            autoPrefill: false,
         );
 
         $this->assertSame([['judul' => 'A'], ['judul' => 'B'], ['judul' => 'C']], $answers['proses']);
@@ -538,7 +510,6 @@ class ExternalIntegrationTest extends TestCase
             ['proses' => ['uuid-a' => ['judul' => 'A'], 'uuid-b' => ['judul' => 'B']]],
             ['proses' => ['uuid-b' => ['lampiran' => $fileB]]],
             $reporter,
-            autoPrefill: false,
         );
 
         $this->assertSame([['judul' => 'A'], ['judul' => 'B']], $answers['proses']);
@@ -567,8 +538,18 @@ class ExternalIntegrationTest extends TestCase
         ]);
 
         $reporter = $this->helpdeskUser();
-        Http::fake([self::BASE.'/tickets' => Http::response(['data' => $this->snapshot('in_progress', 'Drafting')], 201)]);
-        $ticket = app(ExternalTicketService::class)->submit($this->category, $reporter, 'IK', ['a' => 'b'], [], 'idem-sla');
+        $ticket = Ticket::query()->create([
+            'priority_id' => Priority::query()->value('id'),
+            'unit_id' => $this->unit->id,
+            'owner_id' => $reporter->id,
+            'problem_category_id' => $this->category->id,
+            'integration_id' => $this->integration->id,
+            'title' => 'IK',
+            'description' => 'x',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+        app(ExternalTicketService::class)->applySnapshot($ticket, $this->snapshot('in_progress', 'Drafting'));
+        $ticket->refresh();
 
         $this->assertSame(TicketStatus::IN_PROGRESS, $ticket->ticket_statuses_id);
         $this->assertNotNull($ticket->approved_at);
@@ -606,20 +587,21 @@ class ExternalIntegrationTest extends TestCase
 
     private function externalTicket(): Ticket
     {
-        Http::fake([self::BASE.'/tickets' => Http::response(['data' => $this->snapshot()], 201)]);
-
-        $ticket = app(ExternalTicketService::class)->submit(
-            $this->category,
-            $this->helpdeskUser(),
-            'IK Penerimaan Barang',
-            ['tujuan' => 'Standarisasi'],
-            [],
-            'idem-fixture',
-        );
+        $ticket = Ticket::query()->create([
+            'priority_id' => Priority::query()->value('id'),
+            'unit_id' => $this->unit->id,
+            'owner_id' => $this->helpdeskUser()->id,
+            'problem_category_id' => $this->category->id,
+            'integration_id' => $this->integration->id,
+            'title' => 'IK Penerimaan Barang',
+            'description' => '<p>Diteruskan ke Modul OD · Ref IK-20261125-AB3D</p>',
+            'ticket_statuses_id' => TicketStatus::OPEN,
+        ]);
+        app(ExternalTicketService::class)->applySnapshot($ticket, $this->snapshot());
 
         Notification::fake();
 
-        return $ticket;
+        return $ticket->refresh();
     }
 
     /**

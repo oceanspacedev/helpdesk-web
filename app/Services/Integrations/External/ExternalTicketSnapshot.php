@@ -2,8 +2,10 @@
 
 namespace App\Services\Integrations\External;
 
+use App\Models\Ticket;
 use App\Models\TicketStatus;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -50,6 +52,7 @@ final class ExternalTicketSnapshot
         return [
             'ref' => $ref,
             'url' => is_string($data['url'] ?? null) ? $data['url'] : null,
+            'track_url' => self::httpUrl($data['track_url'] ?? null),
             'status' => [
                 'code' => $code,
                 'label' => $label !== '' ? mb_substr($label, 0, 150) : $code,
@@ -61,6 +64,43 @@ final class ExternalTicketSnapshot
             'files' => self::listOf($data['files'] ?? []),
             'updated_at' => (string) $data['updated_at'],
         ];
+    }
+
+    /**
+     * Halaman lacak untuk pelapor (kontrak §3.4 `track_url`), hanya bila
+     * berada di host yang sama dengan base_url integrasi tiket itu, agar
+     * helpdesk tidak bisa dipakai mengalihkan pelapor ke situs lain.
+     */
+    public static function trackUrl(Ticket $ticket): ?string
+    {
+        return self::resolveTrackUrl(
+            data_get($ticket->external_snapshot, 'track_url'),
+            $ticket->integration?->base_url,
+        );
+    }
+
+    public static function resolveTrackUrl(mixed $trackUrl, ?string $baseUrl): ?string
+    {
+        $url = self::httpUrl($trackUrl);
+        if ($url === null || ! is_string($baseUrl) || trim($baseUrl) === '') {
+            return null;
+        }
+
+        $host = static fn (string $value): ?string => ($part = parse_url($value, PHP_URL_HOST)) ? Str::lower($part) : null;
+
+        return $host($url) !== null && $host($url) === $host($baseUrl) ? $url : null;
+    }
+
+    private static function httpUrl(mixed $value): ?string
+    {
+        if (! is_string($value) || mb_strlen($value) > 2000) {
+            return null;
+        }
+
+        $value = trim($value);
+        $scheme = Str::lower((string) parse_url($value, PHP_URL_SCHEME));
+
+        return in_array($scheme, ['http', 'https'], true) && filter_var($value, FILTER_VALIDATE_URL) !== false ? $value : null;
     }
 
     public static function statusId(string $code): int
