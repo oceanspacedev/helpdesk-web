@@ -10,6 +10,8 @@ use App\Models\Ticket;
 use App\Models\TicketStatus;
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\Integrations\External\ExternalFormSchema;
+use App\Services\Integrations\External\ExternalTicketService;
 use App\Support\HelpdeskIntegrationClient;
 use App\Support\PhoneNumber;
 use App\Support\SafeUploadedFile;
@@ -206,6 +208,70 @@ class PublicTicketSubmissionService
         }
 
         return $ticket;
+    }
+
+    /**
+     * Laporan untuk kategori unit berintegrasi: isian dirapikan sesuai form
+     * sistem eksternal (field tersembunyi dibuang, prefill identitas diisi
+     * server) lalu diteruskan secara sinkron lewat ExternalTicketService.
+     *
+     * Kunci idempotensi dibuat browser sekali per pengisian form dan dipakai
+     * ulang saat mencoba lagi. Kunci yang diteruskan diturunkan dari id
+     * pelapor agar pelapor lain tidak bisa memakai kunci yang sama untuk
+     * melihat tiket orang lain.
+     *
+     * @param  array<string, mixed>  $data  hasil validasi (title, unit_id, problem_category_id, business_entities_id, idempotency_key)
+     * @param  array<string, mixed>  $answers  isian non-file
+     * @param  array<string, mixed>  $files  pohon UploadedFile berbentuk sama dengan answers
+     *
+     * @throws External\ExternalValidationException|External\ExternalUnavailableException|External\ExternalNotFoundException|ValidationException
+     */
+    public function createExternal(User $reporter, array $data, array $answers, array $files): Ticket
+    {
+        $expectedPhone = PhoneNumber::canonical($reporter->phone);
+        if (! $reporter->is_active || $reporter->trashed() || $expectedPhone === null) {
+            throw ValidationException::withMessages([
+                'reporter' => 'Identitas pelapor sudah tidak aktif atau tidak valid.',
+            ]);
+        }
+
+        $category = ProblemCategory::query()
+            ->with('unit.integration')
+            ->whereKey((int) $data['problem_category_id'])
+            ->where('unit_id', (int) $data['unit_id'])
+            ->first();
+        if (! $category || ! $category->unit?->isExternal()) {
+            throw ValidationException::withMessages([
+                'ticket' => 'Pilihan divisi atau kategori sudah tidak tersedia. Muat ulang halaman.',
+            ]);
+        }
+
+        $schemas = app(ExternalFormSchema::class);
+        [$cleanAnswers, $cleanFiles] = $schemas->prepareAnswers(
+            $schemas->form($category),
+            $answers,
+            $files,
+            $reporter,
+            autoPrefill: true,
+        );
+
+        return app(ExternalTicketService::class)->submit(
+            $category,
+            $reporter,
+            (string) $data['title'],
+            $cleanAnswers,
+            $cleanFiles,
+            self::externalIdempotencyKey('public', $reporter, (string) $data['idempotency_key']),
+            ['business_entities_id' => $data['business_entities_id'] ?? null],
+        );
+    }
+
+    /**
+     * Kunci idempotensi yang dikirim ke sistem eksternal (64 karakter hex).
+     */
+    public static function externalIdempotencyKey(string $channel, User $reporter, string $clientKey): string
+    {
+        return hash('sha256', $channel.':'.$reporter->getKey().':'.$clientKey);
     }
 
     public function findCommitted(User $reporter, string $submissionToken): ?Ticket

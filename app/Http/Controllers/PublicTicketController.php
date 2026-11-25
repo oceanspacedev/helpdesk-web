@@ -2,27 +2,43 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ProblemCategory;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Services\Integrations\External\ExternalFormSchema;
+use App\Services\Integrations\External\ExternalNotFoundException;
+use App\Services\Integrations\External\ExternalTicketService;
+use App\Services\Integrations\External\ExternalUnavailableException;
+use App\Services\Integrations\External\ExternalValidationException;
 use App\Services\Integrations\HelpdeskFormOptionsService;
 use App\Services\Integrations\HelpdeskReporterRegistrationService;
 use App\Services\Integrations\PublicReporterIdentityService;
 use App\Services\Integrations\PublicTicketSubmissionService;
 use App\Support\PhoneNumber;
 use App\Support\SafeUploadedFile;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use InvalidArgumentException;
 use Throwable;
 
 class PublicTicketController extends Controller
 {
     private const SESSION_SUBMISSION_TOKEN = 'helpdesk.public_ticket.submission_token';
+
+    /** Batas pengaman unggahan form eksternal; aturan rinci divalidasi sistem tujuan. */
+    private const EXTERNAL_MAX_FILES = ExternalTicketService::MAX_FILES;
+
+    private const EXTERNAL_MAX_FILE_BYTES = ExternalTicketService::MAX_FILE_KB * 1024;
+
+    private const EXTERNAL_MAX_TOTAL_BYTES = ExternalTicketService::MAX_TOTAL_KB * 1024;
 
     public function create(
         Request $request,
@@ -69,6 +85,12 @@ class PublicTicketController extends Controller
             'urls' => [
                 'identify' => route('public-reporter.identify', absolute: false),
                 'store' => route('public-tickets.store', absolute: false),
+                // {category} diganti id kategori di browser.
+                'externalForm' => str_replace(
+                    '0000000000',
+                    '{category}',
+                    route('public-tickets.external-form', ['category' => '0000000000'], absolute: false),
+                ),
                 'changeReporter' => route('public-reporter.change', absolute: false),
                 'login' => route('filament.admin.auth.login', absolute: false),
             ],
@@ -133,6 +155,48 @@ class PublicTicketController extends Controller
             ->with('status', 'Nomor WhatsApp di perangkat ini sudah dilepas.');
     }
 
+    /**
+     * Definisi form sistem eksternal untuk kategori unit berintegrasi. Hanya
+     * untuk pelapor yang sudah dikenali di perangkat ini; server helpdesk yang
+     * menghubungi sistem eksternal (token tidak pernah sampai ke browser).
+     */
+    public function externalForm(
+        Request $request,
+        int $category,
+        PublicReporterIdentityService $reporterIdentities,
+        ExternalFormSchema $schemas,
+    ): JsonResponse {
+        $reporter = $reporterIdentities->current($request);
+        if (! $reporter) {
+            return response()->json([
+                'message' => 'Masukkan nomor WhatsApp pelapor terlebih dahulu.',
+            ], 401);
+        }
+
+        $problemCategory = ProblemCategory::query()->with('unit.integration')->find($category);
+        if (! $problemCategory || ! $problemCategory->unit || ! $problemCategory->isExternal()) {
+            return response()->json([
+                'message' => 'Kategori ini tidak memakai form sistem tujuan.',
+            ], 404);
+        }
+
+        try {
+            $form = $schemas->withPrefill($schemas->form($problemCategory), $reporter, reveal: false);
+        } catch (ExternalNotFoundException) {
+            return response()->json([
+                'message' => 'Form kategori ini tidak tersedia di sistem tujuan. Pilih kategori lain.',
+            ], 404);
+        } catch (ExternalUnavailableException|InvalidArgumentException $exception) {
+            report($exception);
+
+            return response()->json([
+                'message' => ExternalUnavailableException::USER_MESSAGE,
+            ], 503);
+        }
+
+        return response()->json(['data' => $form]);
+    }
+
     public function store(
         Request $request,
         PublicReporterIdentityService $reporterIdentities,
@@ -143,6 +207,10 @@ class PublicTicketController extends Controller
             return redirect()
                 ->route('public-tickets.create')
                 ->withErrors(['reporter' => 'Masukkan nomor WhatsApp pelapor terlebih dahulu.']);
+        }
+
+        if ($this->isExternalCategory($request)) {
+            return $this->storeExternal($request, $reporter, $tickets);
         }
 
         $validator = Validator::make($request->all(), [
@@ -235,6 +303,151 @@ class PublicTicketController extends Controller
         return redirect()
             ->route('public-tickets.create')
             ->with('ticket_success', $this->successPayload($ticket));
+    }
+
+    /**
+     * Kategori yang dipilih milik unit berintegrasi: laporan diteruskan ke
+     * sistem eksternal (lihat docs/integrations/README.md §5).
+     */
+    private function isExternalCategory(Request $request): bool
+    {
+        $categoryId = $request->input('problem_category_id');
+        $unitId = $request->input('unit_id');
+        if (! is_numeric($categoryId) || ! is_numeric($unitId)) {
+            return false;
+        }
+
+        $category = ProblemCategory::query()
+            ->with('unit')
+            ->whereKey((int) $categoryId)
+            ->where('unit_id', (int) $unitId)
+            ->first();
+
+        return (bool) $category?->unit?->isExternal();
+    }
+
+    private function storeExternal(
+        Request $request,
+        User $reporter,
+        PublicTicketSubmissionService $tickets,
+    ): RedirectResponse {
+        $validator = Validator::make($request->all(), [
+            'submission_token' => ['required', 'string', 'size:40'],
+            'website' => ['nullable', 'string', 'max:0'],
+            'business_entities_id' => [
+                'required',
+                'integer',
+                Rule::exists('business_entities', 'id')->whereNull('deleted_at'),
+            ],
+            'unit_id' => [
+                'required',
+                'integer',
+                Rule::exists('units', 'id')->whereNull('deleted_at'),
+            ],
+            'problem_category_id' => [
+                'required',
+                'integer',
+                Rule::exists('problem_categories', 'id')
+                    ->where('unit_id', (int) $request->input('unit_id'))
+                    ->whereNull('deleted_at'),
+            ],
+            'title' => ['required', 'string', 'max:255'],
+            'idempotency_key' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/D'],
+            'answers' => ['nullable', 'array'],
+        ], [
+            'business_entities_id.required' => 'Badan usaha wajib dipilih.',
+            'unit_id.required' => 'Divisi wajib dipilih.',
+            'problem_category_id.required' => 'Kategori tiket wajib dipilih.',
+            'problem_category_id.exists' => 'Kategori tidak sesuai dengan divisi yang dipilih.',
+            'title.required' => 'Judul laporan wajib diisi.',
+            'idempotency_key.*' => 'Sesi form sudah berubah. Muat ulang halaman sebelum mengirim.',
+            'answers.array' => 'Isian form tidak valid. Muat ulang halaman.',
+        ]);
+        $validator->after(function ($validator) use ($request): void {
+            $expectedToken = (string) $request->session()->get(self::SESSION_SUBMISSION_TOKEN, '');
+            $providedToken = (string) $request->input('submission_token', '');
+            if ($expectedToken === '' || ! hash_equals($expectedToken, $providedToken)) {
+                $validator->errors()->add('submission_token', 'Sesi form sudah berubah. Muat ulang halaman sebelum mengirim.');
+            }
+
+            $files = $this->uploadedFiles($request->file('answers', []));
+            $sizes = array_map(function (UploadedFile $file): int {
+                try {
+                    return SafeUploadedFile::size($file) ?? 0;
+                } catch (Throwable) {
+                    return 0;
+                }
+            }, $files);
+            if (count($files) > self::EXTERNAL_MAX_FILES) {
+                $validator->errors()->add('answers', 'Lampiran maksimal '.self::EXTERNAL_MAX_FILES.' file per laporan.');
+            } elseif ($sizes !== [] && max($sizes) > self::EXTERNAL_MAX_FILE_BYTES) {
+                $validator->errors()->add('answers', 'Ukuran setiap lampiran maksimal 20 MB.');
+            } elseif (array_sum($sizes) > self::EXTERNAL_MAX_TOTAL_BYTES) {
+                $validator->errors()->add('answers', 'Total ukuran seluruh lampiran maksimal 50 MB.');
+            }
+        });
+        $validated = $validator->validate();
+
+        $answers = $request->input('answers', []);
+        $files = $request->file('answers', []);
+
+        try {
+            $ticket = $tickets->createExternal(
+                $reporter,
+                $validated,
+                is_array($answers) ? $answers : [],
+                is_array($files) ? $files : [],
+            );
+        } catch (ExternalValidationException $exception) {
+            // Kunci error kontrak ("answers.proses.0.judul") dipakai apa
+            // adanya agar tampil di bawah field terkait.
+            throw $exception->toValidationException();
+        } catch (ExternalNotFoundException) {
+            return back()
+                ->withInput($request->except(['answers']))
+                ->withErrors(['problem_category_id' => 'Kategori ini sudah tidak tersedia di sistem tujuan. Pilih kategori lain.']);
+        } catch (ExternalUnavailableException $exception) {
+            report($exception);
+
+            return back()
+                ->withInput($request->except(['answers']))
+                ->withErrors(['external' => $exception->userMessage()]);
+        } catch (ValidationException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return back()
+                ->withInput($request->except(['answers']))
+                ->withErrors(['ticket' => 'Laporan belum dapat disimpan. Coba lagi atau hubungi administrator Helpdesk.']);
+        }
+
+        $request->session()->forget(self::SESSION_SUBMISSION_TOKEN);
+
+        return redirect()
+            ->route('public-tickets.create')
+            ->with('ticket_success', $this->successPayload($ticket));
+    }
+
+    /**
+     * @return list<UploadedFile>
+     */
+    private function uploadedFiles(mixed $value): array
+    {
+        if ($value instanceof UploadedFile) {
+            return [$value];
+        }
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $files = [];
+        foreach ($value as $item) {
+            array_push($files, ...$this->uploadedFiles($item));
+        }
+
+        return $files;
     }
 
     private function finishReporterIdentification(

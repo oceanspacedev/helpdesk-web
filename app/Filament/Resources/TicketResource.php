@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Resources\TicketResource\ExternalTicketForm;
 use App\Filament\Resources\TicketResource\Pages;
 use App\Filament\Resources\TicketResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\TicketResource\RelationManagers\TicketHistoriesRelationManager;
@@ -17,6 +18,7 @@ use Carbon\Carbon;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -46,8 +48,12 @@ class TicketResource extends Resource
                 Section::make()->schema([
                     Forms\Components\Select::make('unit_id')
                         ->label('Unit / Divisi Tujuan')
-                        ->options(fn (?Ticket $record): array => Unit::query()
+                        ->options(fn (?Ticket $record, string $operation): array => Unit::query()
                             ->acceptingTickets()
+                            // Tiket yang sudah ada tidak bisa dipindah ke unit
+                            // berintegrasi; unit itu hanya menerima tiket baru
+                            // lewat form sistem eksternal.
+                            ->when($operation !== 'create', fn (Builder $query) => $query->internal())
                             ->when($record?->unit_id, fn (Builder $query, int $unitId) => $query->orWhere('units.id', $unitId))
                             ->orderBy('name')
                             ->pluck('name', 'id')
@@ -84,12 +90,45 @@ class TicketResource extends Resource
                         ->searchable()
                         ->required()
                         ->placeholder('Pilih kategori')
-                        ->helperText('Jenis tiket yang akan ditangani.'),
+                        ->helperText('Jenis tiket yang akan ditangani.')
+                        ->live()
+                        ->afterStateUpdated(function (Forms\Components\Select $component, Set $set, string $operation): void {
+                            if ($operation !== 'create') {
+                                return;
+                            }
+
+                            // Kategori berganti = form sistem eksternal baru;
+                            // isi ulang state dan default field dinamisnya.
+                            $set('answers', []);
+                            $group = $component->getContainer()->getComponent(ExternalTicketForm::GROUP_KEY);
+                            if ($group instanceof Group) {
+                                $group->clearCachedDefaultChildSchemas();
+                                $group->getChildSchema()?->fill();
+                            }
+
+                            $livewire = $component->getLivewire();
+                            if ($livewire instanceof Pages\CreateTicket) {
+                                $livewire->resetExternalIdempotencyKey();
+                            }
+                        }),
 
                     Forms\Components\TextInput::make('title')
                         ->label(__('Title'))
                         ->required()
                         ->maxLength(255)
+                        ->columnSpan([
+                            'sm' => 2,
+                        ]),
+
+                    // Form dinamis sistem eksternal untuk kategori unit
+                    // berintegrasi (lihat docs/integrations/README.md §5).
+                    Group::make()
+                        ->key(ExternalTicketForm::GROUP_KEY)
+                        ->statePath('answers')
+                        ->schema(fn (Get $get): array => ExternalTicketForm::components($get('problem_category_id')))
+                        ->visible(fn (Get $get, string $operation): bool => $operation === 'create'
+                            && ExternalTicketForm::isExternalCategory($get('problem_category_id')))
+                        ->columns(['sm' => 2])
                         ->columnSpan([
                             'sm' => 2,
                         ]),
@@ -100,6 +139,7 @@ class TicketResource extends Resource
                         ->fileAttachmentsVisibility('public')
                         ->label(__('Description'))
                         ->required()
+                        ->hidden(fn (Get $get, string $operation): bool => self::isExternalCreate($get, $operation))
                         ->maxLength(65535)
                         ->columnSpan([
                             'sm' => 2,
@@ -107,6 +147,7 @@ class TicketResource extends Resource
 
                     Forms\Components\FileUpload::make('supporting_attachments')
                         ->label(__('Supporting Attachments'))
+                        ->hidden(fn (Get $get, string $operation): bool => self::isExternalCreate($get, $operation))
                         ->multiple()
                         ->disk('public')
                         ->directory('ticket-supporting/'.date('m-y'))
@@ -161,6 +202,8 @@ class TicketResource extends Resource
                         ->options(Priority::all()
                             ->pluck('name', 'id'))
                         ->searchable()
+                        // Tiket eksternal tidak memakai SLA helpdesk; prioritas default.
+                        ->hidden(fn (Get $get, string $operation): bool => self::isExternalCreate($get, $operation))
                         ->required(),
 
                     Forms\Components\Select::make('business_entities_id')
@@ -241,7 +284,25 @@ class TicketResource extends Resource
                         ): string => $record && $record->is_sla_met !== null ? ($record->is_sla_met ? __('Yes') : __('No')) : '-')
                         ->hiddenOn('create'),
                 ])->columnSpan(1),
+
+                // Snapshot terakhir dari sistem eksternal (tiket tipis).
+                Section::make('Sistem tujuan')
+                    ->description('Tiket ini diproses di sistem eksternal. Status hanya berubah lewat sinkronisasi atau tombol muat ulang.')
+                    ->icon('heroicon-o-arrow-top-right-on-square')
+                    ->schema(ExternalTicketForm::snapshotEntries())
+                    ->visible(fn (?Ticket $record, string $operation): bool => $operation === 'view' && (bool) $record?->isExternal())
+                    ->columns(['sm' => 3])
+                    ->columnSpan(2),
             ])->columns(3);
+    }
+
+    /**
+     * Halaman buat tiket dengan kategori unit berintegrasi: field internal
+     * (uraian, lampiran, prioritas) disembunyikan.
+     */
+    private static function isExternalCreate(Get $get, string $operation): bool
+    {
+        return $operation === 'create' && ExternalTicketForm::isExternalCategory($get('problem_category_id'));
     }
 
     public static function table(Table $table): Table
@@ -287,6 +348,10 @@ class TicketResource extends Resource
                 Tables\Columns\TextColumn::make('ticketStatus.name')
                     ->label(__('Status'))
                     ->badge()
+                    // Tiket eksternal: label status dari sistem tujuan (mis. "Drafting").
+                    ->description(fn (Ticket $record): ?string => $record->isExternal() && filled($record->external_status_label)
+                        ? $record->external_status_label
+                        : null)
                     ->sortable()
                     ->color(fn (?string $state): string => match ($state) {
                         'In Progress' => 'warning',
@@ -404,7 +469,8 @@ class TicketResource extends Resource
             ])
             ->actions([
                 Actions\ViewAction::make(),
-                Actions\EditAction::make(),
+                Actions\EditAction::make()
+                    ->hidden(fn (Ticket $record): bool => $record->isExternal()),
                 Actions\ForceDeleteAction::make(),
             ])
             ->bulkActions([
@@ -437,7 +503,10 @@ class TicketResource extends Resource
     {
         $query = parent::getEloquentQuery()
             ->with(['owner', 'unit', 'businessEntity', 'responsible', 'problemCategory', 'ticketStatus', 'priority'])
-            ->withoutGlobalScopes([SoftDeletingScope::class]);
+            ->withoutGlobalScopes([SoftDeletingScope::class])
+            // Cadangan nomor tiket eksternal yang belum diterima sistem
+            // tujuan bukan tiket; jangan tampil walau filter terhapus aktif.
+            ->withoutPendingExternal();
 
         $user = auth()->user();
 

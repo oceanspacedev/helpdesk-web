@@ -40,6 +40,14 @@ use Illuminate\Support\Facades\Auth;
  * @property null|Carbon $updated_at
  * @property null|Carbon $approved_at
  * @property null|Carbon $solved_at
+ * @property null|int $integration_id
+ * @property null|string $external_ref
+ * @property null|string $external_status_code
+ * @property null|string $external_status_label
+ * @property null|array $external_snapshot
+ * @property null|Carbon $external_synced_at
+ * @property null|string $external_idempotency_key
+ * @property null|Integration $integration
  * @property null|string $deleted_at
  * @property Priority $priority
  * @property Unit $unit
@@ -73,6 +81,9 @@ class Ticket extends Model
         'sla_due_at' => 'datetime',
         'is_sla_met' => 'boolean',
         'sla_warning_sent_at' => 'datetime',
+        'integration_id' => 'int',
+        'external_snapshot' => 'array',
+        'external_synced_at' => 'datetime',
     ];
 
     protected $fillable = [
@@ -94,6 +105,13 @@ class Ticket extends Model
         'sla_due_at',
         'is_sla_met',
         'sla_warning_sent_at',
+        'integration_id',
+        'external_ref',
+        'external_status_code',
+        'external_status_label',
+        'external_snapshot',
+        'external_synced_at',
+        'external_idempotency_key',
     ];
 
     // Preventif error in migration
@@ -162,6 +180,76 @@ class Ticket extends Model
         return $responsible?->isActiveTicketProcessorForUnit((int) $this->unit_id)
             ? $responsible
             : null;
+    }
+
+    /**
+     * Sistem eksternal pemilik tiket ini (tiket tipis). Kosong untuk tiket
+     * yang seluruh datanya ada di helpdesk.
+     */
+    public function integration(): BelongsTo
+    {
+        return $this->belongsTo(Integration::class);
+    }
+
+    /**
+     * Tiket tipis: form, proses, dan statusnya dimiliki sistem eksternal.
+     * Status hanya berubah lewat webhook atau muat ulang, tidak dari helpdesk.
+     */
+    public function isExternal(): bool
+    {
+        return $this->integration_id !== null;
+    }
+
+    /**
+     * Baris tiket eksternal yang nomornya sudah dicadangkan tetapi belum
+     * diterima sistem eksternal (belum punya external_ref).
+     */
+    public function isPendingExternal(): bool
+    {
+        return $this->isExternal() && blank($this->external_ref);
+    }
+
+    /**
+     * Kecualikan baris cadangan tiket eksternal yang belum aktif.
+     */
+    public function scopeWithoutPendingExternal(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $query): Builder => $query
+            ->whereNull($query->qualifyColumn('integration_id'))
+            ->orWhereNotNull($query->qualifyColumn('external_ref')));
+    }
+
+    /**
+     * Riwayat awal dan notifikasi tiket baru. Dipanggil saat tiket dibuat,
+     * atau saat tiket eksternal yang dicadangkan diaktifkan.
+     */
+    public function announceCreation(): void
+    {
+        try {
+            TicketHistory::create([
+                'ticket_id' => $this->id,
+                'ticket_statuses_id' => $this->ticket_statuses_id,
+                'user_id' => Auth::id(),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        $staffIds = [];
+
+        // Tiket eksternal ditangani sistem eksternal; anggota divisi
+        // helpdesk tidak dikabari seolah-olah mereka yang mengerjakan.
+        $recipients = $this->isExternal() ? [] : $this->newTicketRecipients();
+        foreach ($recipients as $receiver) {
+            HelpdeskNotifier::send($receiver, new NewTicketNotification($this));
+            $staffIds[] = (int) $receiver->id;
+        }
+
+        $owner = User::query()->find($this->owner_id);
+        if ($owner && ! in_array((int) $owner->id, $staffIds, true)) {
+            HelpdeskNotifier::send($owner, new TicketSubmittedNotification($this));
+        }
     }
 
     /**
@@ -304,7 +392,13 @@ class Ticket extends Model
             // tiket aktifnya paling sedikit. Bila kosong, pakai pemetaan lama
             // dokumen BUSDEV ke akun OD. Kategori tanpa PIC tetap masuk antrean
             // divisi dan dinotifikasi ke semua anggotanya.
-            if (! self::$isSeeding && $ticket->isDirty('problem_category_id')) {
+            // Tiket eksternal dikerjakan di sistem eksternal: tidak ada PIC
+            // helpdesk dan tidak ada SLA helpdesk.
+            if ($ticket->isExternal()) {
+                if ($ticket->responsible_id !== null) {
+                    $ticket->responsible_id = null;
+                }
+            } elseif (! self::$isSeeding && $ticket->isDirty('problem_category_id')) {
                 try {
                     $ticket->responsible_id = self::defaultResponsibleIdForCategory($ticket);
                 } catch (\Throwable $exception) {
@@ -313,6 +407,7 @@ class Ticket extends Model
             }
 
             if (! self::$isSeeding
+                && ! $ticket->isExternal()
                 && $ticket->responsible_id
                 && ($ticket->isDirty('responsible_id') || $ticket->isDirty('unit_id'))) {
                 $responsible = User::find($ticket->responsible_id);
@@ -348,7 +443,12 @@ class Ticket extends Model
             }
 
             // Hitung SLA Due At jika tiket sudah di-approve dan unit tersebut memiliki aturan UnitSla
-            if ($ticket->approved_at && ($ticket->isDirty('approved_at') || $ticket->isDirty('priority_id') || $ticket->isDirty('unit_id'))) {
+            if ($ticket->isExternal()) {
+                if ($ticket->sla_due_at !== null) {
+                    $ticket->sla_due_at = null;
+                    $ticket->is_sla_met = null;
+                }
+            } elseif ($ticket->approved_at && ($ticket->isDirty('approved_at') || $ticket->isDirty('priority_id') || $ticket->isDirty('unit_id'))) {
                 if (SchemaPresence::has('unit_slas')) {
                     $sla = UnitSla::where('unit_id', $ticket->unit_id)
                         ->where('priority_id', $ticket->priority_id)
@@ -369,33 +469,31 @@ class Ticket extends Model
                 return;
             }
 
-            try {
-                TicketHistory::create([
-                    'ticket_id' => $ticket->id,
-                    'ticket_statuses_id' => $ticket->ticket_statuses_id,
-                    'user_id' => Auth::id(),
-                    'created_at' => now(),
-                ]);
-            } catch (\Throwable $exception) {
-                report($exception);
+            // Tiket eksternal yang masih dicadangkan (belum diterima sistem
+            // eksternal) belum diumumkan; riwayat dan notifikasi dikirim saat
+            // diaktifkan dengan status dari snapshot pertama.
+            if ($ticket->isPendingExternal()) {
+                return;
             }
 
-            $staffIds = [];
-
-            foreach ($ticket->newTicketRecipients() as $receiver) {
-                HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
-                $staffIds[] = (int) $receiver->id;
-            }
-
-            $owner = User::query()->find($ticket->owner_id);
-            if ($owner && ! in_array((int) $owner->id, $staffIds, true)) {
-                HelpdeskNotifier::send($owner, new TicketSubmittedNotification($ticket));
-            }
+            $ticket->announceCreation();
         });
 
         // Event listener untuk event 'updated'
         static::updated(function ($ticket) {
-            if (! self::$isSeeding && $ticket->wasChanged('unit_id')) {
+            // Aktivasi tiket eksternal yang dicadangkan: inilah "tiket dibuat"
+            // bagi pelapor, bukan perubahan status (satu riwayat, satu notifikasi).
+            if (! self::$isSeeding
+                && $ticket->isExternal()
+                && $ticket->wasChanged('external_ref')
+                && blank($ticket->getOriginal('external_ref'))
+                && filled($ticket->external_ref)) {
+                $ticket->announceCreation();
+
+                return;
+            }
+
+            if (! self::$isSeeding && ! $ticket->isExternal() && $ticket->wasChanged('unit_id')) {
                 foreach ($ticket->newTicketRecipients() as $receiver) {
                     HelpdeskNotifier::send($receiver, new NewTicketNotification($ticket));
                 }
@@ -407,6 +505,7 @@ class Ticket extends Model
             // di atas, dan transisi workflow menunjuk aktornya sendiri sebagai
             // PIC sehingga tidak perlu dikabari atas tindakannya sendiri.
             if (! self::$isSeeding
+                && ! $ticket->isExternal()
                 && $ticket->wasChanged('responsible_id')
                 && ! $ticket->wasChanged('unit_id')
                 && $ticket->responsible_id
@@ -427,6 +526,22 @@ class Ticket extends Model
                         HelpdeskNotifier::send($owner, new TicketStatusChangedNotification($ticket, $status));
                     }
                 }
+            }
+
+            // Tiket eksternal hanya dicatat saat status cerminnya berubah;
+            // pembaruan snapshot saja bukan riwayat. Perubahan itu datang dari
+            // sistem eksternal, jadi tidak ada aktor helpdesk.
+            if ($ticket->isExternal()) {
+                if ($ticket->wasChanged('ticket_statuses_id')) {
+                    TicketHistory::create([
+                        'ticket_id' => $ticket->id,
+                        'ticket_statuses_id' => $ticket->ticket_statuses_id,
+                        'user_id' => null,
+                        'created_at' => now(),
+                    ]);
+                }
+
+                return;
             }
 
             TicketHistory::create([

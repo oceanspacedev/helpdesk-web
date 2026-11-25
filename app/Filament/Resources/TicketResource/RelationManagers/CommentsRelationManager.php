@@ -98,7 +98,10 @@ class CommentsRelationManager extends RelationManager
                     ->modalDescription('Komentar terlihat oleh pelapor dan petugas tiket ini.')
                     ->modalSubmitActionLabel('Kirim')
                     ->createAnother(false)
+                    // Komentar tiket eksternal datang dari snapshot sistem
+                    // eksternal; komentar lokal tidak akan sampai ke sana.
                     ->authorize(fn (): bool => ! $this->isReadOnly()
+                        && ! $this->getOwnerRecord()->isExternal()
                         && (bool) auth()->user()?->can('create', Comment::class)
                         && (bool) auth()->user()?->can('view', $this->getOwnerRecord()))
                     ->mutateFormDataUsing(function (array $data): array {

@@ -17,6 +17,7 @@ trait CreatesHelpdeskIntegrationSchema
             'comments',
             'ticket_histories',
             'tickets',
+            'integration_events',
             'helpdesk_mcp_settings',
             'helpdesk_identity_assertion_uses',
             'helpdesk_reporter_bindings',
@@ -26,6 +27,7 @@ trait CreatesHelpdeskIntegrationSchema
             'business_entities',
             'priorities',
             'ticket_statuses',
+            'integrations',
             'model_has_roles',
             'roles',
             'activity_log',
@@ -133,8 +135,31 @@ trait CreatesHelpdeskIntegrationSchema
             $table->softDeletes();
         });
 
+        Schema::create('integrations', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name', 100);
+            $table->string('base_url', 500);
+            $table->text('token')->nullable();
+            $table->text('webhook_secret')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->unsignedSmallInteger('timeout_seconds')->default(15);
+            $table->timestamp('last_checked_at')->nullable();
+            $table->boolean('last_check_ok')->nullable();
+            $table->string('last_check_message', 500)->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('integration_events', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('integration_id');
+            $table->string('event_id', 191);
+            $table->timestamp('received_at');
+            $table->unique(['integration_id', 'event_id']);
+        });
+
         Schema::create('units', function (Blueprint $table): void {
             $table->id();
+            $table->unsignedBigInteger('integration_id')->nullable();
             $table->string('name');
             $table->timestamps();
             $table->softDeletes();
@@ -144,6 +169,7 @@ trait CreatesHelpdeskIntegrationSchema
             $table->id();
             $table->unsignedBigInteger('unit_id');
             $table->string('name');
+            $table->string('external_key', 100)->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -174,7 +200,16 @@ trait CreatesHelpdeskIntegrationSchema
             $table->timestamps();
             $table->timestamp('approved_at')->nullable();
             $table->timestamp('solved_at')->nullable();
+            $table->unsignedBigInteger('integration_id')->nullable();
+            $table->string('external_ref', 100)->nullable();
+            $table->string('external_status_code', 20)->nullable();
+            $table->string('external_status_label', 150)->nullable();
+            $table->json('external_snapshot')->nullable();
+            $table->timestamp('external_synced_at')->nullable();
+            $table->string('external_idempotency_key', 64)->nullable();
             $table->softDeletes();
+            $table->unique(['integration_id', 'external_ref']);
+            $table->unique(['integration_id', 'external_idempotency_key']);
         });
 
         Schema::create('mcp_ticket_creation_requests', function (Blueprint $table): void {
@@ -192,7 +227,7 @@ trait CreatesHelpdeskIntegrationSchema
             $table->id();
             $table->unsignedBigInteger('ticket_id');
             $table->unsignedBigInteger('ticket_statuses_id');
-            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('user_id')->nullable();
             $table->timestamps();
         });
 

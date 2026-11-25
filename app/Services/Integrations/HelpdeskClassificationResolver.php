@@ -152,7 +152,7 @@ class HelpdeskClassificationResolver
             }
         }
 
-        $formOptions = $this->formOptionsService->formOptions($unit?->id);
+        $formOptions = $this->formOptionsService->formOptions($unit?->id, internalOnly: true);
         $nextField = $this->nextMissingCreateField($filled, $owner);
 
         return [
@@ -177,7 +177,7 @@ class HelpdeskClassificationResolver
         $field = $this->normalizeField($field);
         $providedValue = $this->text($value);
         $unitHint = $this->resolveUnit($ticketContext, $owner);
-        $formOptions = $this->formOptionsService->formOptions($unitHint?->id);
+        $formOptions = $this->formOptionsService->formOptions($unitHint?->id, internalOnly: true);
         $listChoice = $this->resolveNumberedListChoice($field, $providedValue, $formOptions);
         if ($listChoice !== null) {
             $ticketData = array_merge($ticketContext, $this->resolvedPatch($field, $listChoice));
@@ -187,7 +187,7 @@ class HelpdeskClassificationResolver
             $ticketData = array_merge($ticketContext, $this->patchForField($field, $providedValue));
         }
         $unit = $this->resolveUnit($ticketData, $owner);
-        $formOptions = $this->formOptionsService->formOptions($unit?->id);
+        $formOptions = $this->formOptionsService->formOptions($unit?->id, internalOnly: true);
 
         if ($providedValue === '') {
             return [
@@ -220,6 +220,24 @@ class HelpdeskClassificationResolver
                 'message' => $this->buildFieldValidationMessage($this->fieldIssue($field, $providedValue), $formOptions),
                 'form_options' => $formOptions,
                 'next_field' => $field,
+            ];
+        }
+
+        if ($resolved instanceof Unit && $resolved->isExternal()) {
+            // Divisi berintegrasi memakai form dinamis sistem eksternal yang
+            // tidak bisa diisi lewat chat: tolak sekarang, bukan saat konfirmasi.
+            $notice = HelpdeskTicketCreationService::externalUnitNotice($resolved);
+
+            return [
+                'ok' => false,
+                'field' => $field,
+                'reason' => 'external_unit',
+                'provided_value' => $providedValue,
+                'resolved' => null,
+                'message' => $notice['message'],
+                'form_options' => $formOptions,
+                'next_field' => $field,
+                'form_url' => $notice['form_url'],
             ];
         }
 
@@ -311,8 +329,9 @@ class HelpdeskClassificationResolver
 
         if ($owner) {
             try {
-                // Divisi asal pelapor hanya dipakai bila divisi itu memang menerima laporan.
-                $ownerUnits = $owner->units()->acceptingTickets()->get();
+                // Divisi asal pelapor hanya dipakai bila divisi itu memang menerima laporan
+                // lewat chat; divisi berintegrasi wajib lewat form web.
+                $ownerUnits = $owner->units()->acceptingTickets()->internal()->get();
                 if ($ownerUnits->count() === 1) {
                     return $ownerUnits->first();
                 }
@@ -570,7 +589,7 @@ class HelpdeskClassificationResolver
 
         $unit = $this->resolveUnit($ticketData, $owner);
 
-        return $this->formOptionsService->formOptions($unit?->id);
+        return $this->formOptionsService->formOptions($unit?->id, internalOnly: true);
     }
 
     private function nextMissingField(array $ticketData, ?User $owner): ?string

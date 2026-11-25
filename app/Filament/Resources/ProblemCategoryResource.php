@@ -6,6 +6,8 @@ use App\Filament\Resources\ProblemCategoryResource\Pages;
 use App\Filament\Resources\ProblemCategoryResource\RelationManagers\TicketsRelationManager;
 use App\Models\ProblemCategory;
 use App\Models\Unit;
+use App\Services\Integrations\External\ExternalSystemClient;
+use App\Services\Integrations\External\ExternalSystemException;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Resources\Resource;
@@ -16,6 +18,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Cache;
 
 class ProblemCategoryResource extends Resource
 {
@@ -42,6 +45,26 @@ class ProblemCategoryResource extends Resource
                     ->translateLabel()
                     ->required()
                     ->maxLength(255),
+                // Kode kategori di sistem eksternal. Dipilih dari daftar
+                // GET {base}/categories bila sistemnya bisa dihubungi; bila
+                // tidak, diisi manual.
+                Forms\Components\Select::make('external_key')
+                    ->label('Kode kategori eksternal')
+                    ->options(fn (Get $get, ?ProblemCategory $record): array => static::externalCategoryOptions(
+                        static::externalCategories((int) $get('unit_id')) ?? [],
+                        $record?->external_key,
+                    ))
+                    ->searchable()
+                    ->required()
+                    ->visible(fn (Get $get): bool => static::externalCategories((int) $get('unit_id')) !== null)
+                    ->helperText('Unit ini berintegrasi: form dan proses tiket kategori ini ada di sistem eksternal.'),
+                Forms\Components\TextInput::make('external_key')
+                    ->label('Kode kategori eksternal')
+                    ->required()
+                    ->maxLength(100)
+                    ->visible(fn (Get $get): bool => static::unitIsExternal((int) $get('unit_id'))
+                        && static::externalCategories((int) $get('unit_id')) === null)
+                    ->helperText('Daftar kategori sistem eksternal tidak dapat dimuat. Isi kodenya secara manual.'),
                 static::defaultResponsiblesSelect(),
             ]);
     }
@@ -134,6 +157,65 @@ class ProblemCategoryResource extends Resource
             ->orderBy('name')
             ->pluck('name', 'id')
             ->all();
+    }
+
+    public static function unitIsExternal(int $unitId): bool
+    {
+        return $unitId > 0 && Unit::query()->whereKey($unitId)->whereNotNull('integration_id')->exists();
+    }
+
+    /**
+     * Kategori sistem eksternal untuk unit berintegrasi, disimpan sebentar
+     * agar render ulang form tidak memanggil sistem eksternal berkali-kali.
+     * Null bila unit tidak berintegrasi atau sistemnya tidak bisa dihubungi.
+     *
+     * @return list<array{key: string, name: string, active: bool}>|null
+     */
+    public static function externalCategories(int $unitId): ?array
+    {
+        if ($unitId <= 0) {
+            return null;
+        }
+
+        $integration = Unit::query()->with('integration')->find($unitId)?->integration;
+        if (! $integration) {
+            return null;
+        }
+
+        $cacheKey = 'integration-categories:'.$integration->id.':'.$integration->updated_at?->getTimestamp();
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        try {
+            $categories = ExternalSystemClient::for($integration)->categories();
+        } catch (ExternalSystemException) {
+            return null;
+        }
+
+        Cache::put($cacheKey, $categories, now()->addMinute());
+
+        return $categories;
+    }
+
+    /**
+     * @param  list<array{key: string, name: string, active: bool}>  $categories
+     * @return array<string, string>
+     */
+    public static function externalCategoryOptions(array $categories, ?string $current = null): array
+    {
+        $options = [];
+        foreach ($categories as $category) {
+            $options[$category['key']] = $category['key'].' — '.$category['name']
+                .($category['active'] ? '' : ' (nonaktif)');
+        }
+
+        if (filled($current) && ! array_key_exists((string) $current, $options)) {
+            $options[(string) $current] = $current.' (tidak ditemukan di sistem eksternal)';
+        }
+
+        return $options;
     }
 
     /**

@@ -5,6 +5,7 @@ import Brand from '../../components/Brand.vue';
 import Button from '../../components/Button.vue';
 import Callout from '../../components/Callout.vue';
 import Card from '../../components/Card.vue';
+import ExternalForm from '../../components/ExternalForm/ExternalForm.vue';
 import Field from '../../components/Field.vue';
 import Icon from '../../components/Icon.vue';
 import Input from '../../components/Input.vue';
@@ -13,6 +14,12 @@ import SelectInput from '../../components/SelectInput.vue';
 import SimpleLayout from '../../components/SimpleLayout.vue';
 import TextareaInput from '../../components/TextareaInput.vue';
 import TextLink from '../../components/TextLink.vue';
+import {
+    initialValues,
+    newIdempotencyKey,
+    pruneAnswers,
+    validateAnswers,
+} from '../../support/externalForm.js';
 
 const props = defineProps({
     screen: { type: String, required: true },
@@ -47,7 +54,16 @@ const ticketForm = useForm({
     title: props.old.title ?? '',
     description: props.old.description ?? '',
     supporting_attachments: [],
+    // Hanya untuk kategori unit berintegrasi (form sistem eksternal).
+    idempotency_key: newIdempotencyKey(),
+    answers: {},
 });
+
+// Form dinamis sistem eksternal untuk kategori yang dipilih.
+const externalSchema = ref(null);
+const externalLoading = ref(false);
+const externalLoadError = ref('');
+let externalRequestId = 0;
 
 const changeForm = useForm({});
 
@@ -61,6 +77,14 @@ const categoriesForUnit = computed(() => {
         (category) => String(category.unit_id) === unitId,
     );
 });
+
+const selectedCategory = computed(() =>
+    (props.options.problem_categories ?? []).find(
+        (category) => String(category.id) === String(ticketForm.problem_category_id),
+    ) ?? null,
+);
+
+const isExternal = computed(() => Boolean(selectedCategory.value?.is_external));
 
 const attachmentTotalBytes = computed(() =>
     ticketForm.supporting_attachments.reduce((sum, file) => sum + (file.size ?? 0), 0),
@@ -113,6 +137,61 @@ watch(
     },
 );
 
+watch(
+    () => ticketForm.problem_category_id,
+    () => {
+        // Kategori berganti = pengisian form baru: kunci idempotensi baru.
+        ticketForm.idempotency_key = newIdempotencyKey();
+        ticketForm.answers = {};
+        externalSchema.value = null;
+        externalLoadError.value = '';
+        if (isExternal.value) {
+            loadExternalSchema();
+        }
+    },
+    { immediate: true },
+);
+
+async function loadExternalSchema() {
+    const category = selectedCategory.value;
+    if (!category?.is_external || !props.urls.externalForm) {
+        return;
+    }
+
+    const requestId = ++externalRequestId;
+    externalLoading.value = true;
+    externalLoadError.value = '';
+
+    try {
+        const response = await fetch(props.urls.externalForm.replace('{category}', encodeURIComponent(category.id)), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        });
+        const body = await response.json().catch(() => ({}));
+        if (requestId !== externalRequestId) {
+            return;
+        }
+        if (!response.ok || !body?.data) {
+            externalLoadError.value =
+                response.status === 429
+                    ? 'Terlalu banyak permintaan. Tunggu sebentar lalu coba lagi.'
+                    : body?.message || 'Form sistem tujuan belum dapat dimuat.';
+            return;
+        }
+
+        externalSchema.value = body.data;
+        ticketForm.answers = initialValues(body.data.fields ?? []);
+    } catch {
+        if (requestId === externalRequestId) {
+            externalLoadError.value = 'Form sistem tujuan belum dapat dimuat. Periksa koneksi lalu coba lagi.';
+        }
+    } finally {
+        if (requestId === externalRequestId) {
+            externalLoading.value = false;
+        }
+    }
+}
+
 function formatSize(bytes) {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
@@ -129,7 +208,56 @@ function submitIdentity() {
     identityForm.post(props.urls.identify);
 }
 
+function submitExternalTicket() {
+    if (!externalSchema.value) {
+        ticketForm.setError('external', externalLoadError.value || 'Form sistem tujuan belum dimuat.');
+        return;
+    }
+
+    const fields = externalSchema.value.fields ?? [];
+    const errors = validateAnswers(fields, ticketForm.answers);
+    if (!ticketForm.title?.trim()) {
+        errors.title = 'Judul laporan wajib diisi.';
+    }
+    ticketForm.clearErrors();
+    if (Object.keys(errors).length) {
+        ticketForm.setError(errors);
+        return;
+    }
+
+    // Kunci idempotensi yang sama dipakai ulang bila pengiriman gagal dan dicoba lagi.
+    ticketForm
+        .transform((data) => ({
+            submission_token: data.submission_token,
+            website: data.website,
+            business_entities_id: data.business_entities_id,
+            unit_id: data.unit_id,
+            problem_category_id: data.problem_category_id,
+            title: data.title,
+            idempotency_key: data.idempotency_key,
+            answers: pruneAnswers(fields, data.answers),
+        }))
+        .post(props.urls.store, {
+            forceFormData: true,
+            preserveScroll: (page) => Object.keys(page.props.errors ?? {}).length > 0,
+            onSuccess: (page) => {
+                if (page.props.flash?.ticket_success) {
+                    ticketForm.idempotency_key = newIdempotencyKey();
+                    ticketForm.answers = initialValues(fields);
+                }
+            },
+        });
+}
+
 function submitTicket() {
+    if (isExternal.value) {
+        submitExternalTicket();
+        return;
+    }
+
+    // Alur non-eksternal: payload sama persis seperti sebelum ada integrasi.
+    ticketForm.transform(({ idempotency_key, answers, ...data }) => data);
+
     if (attachmentsOverLimit.value) {
         ticketForm.setError(
             'supporting_attachments',
@@ -268,6 +396,7 @@ function changeReporter() {
                             </Field>
 
                             <Field
+                                v-if="!isExternal"
                                 id="priority_id"
                                 label="Prioritas"
                                 required
@@ -301,7 +430,13 @@ function changeReporter() {
                                 />
                             </Field>
 
-                            <Field id="description" label="Uraian" required :error="ticketForm.errors.description">
+                            <Field
+                                v-if="!isExternal"
+                                id="description"
+                                label="Uraian"
+                                required
+                                :error="ticketForm.errors.description"
+                            >
                                 <TextareaInput
                                     id="description"
                                     v-model="ticketForm.description"
@@ -315,7 +450,22 @@ function changeReporter() {
                         </div>
                     </Section>
 
-                    <Section heading="Lampiran" icon="paper-clip">
+                    <Section
+                        v-if="isExternal"
+                        :heading="externalSchema?.title || selectedCategory?.name || 'Detail permintaan'"
+                        icon="paper-clip"
+                    >
+                        <ExternalForm
+                            :schema="externalSchema"
+                            :values="ticketForm.answers"
+                            :errors="ticketForm.errors"
+                            :loading="externalLoading"
+                            :load-error="externalLoadError"
+                            @retry="loadExternalSchema"
+                        />
+                    </Section>
+
+                    <Section v-else heading="Lampiran" icon="paper-clip">
                         <label class="fi-sr-only" for="supporting_attachments">Lampiran</label>
                         <input
                             id="supporting_attachments"

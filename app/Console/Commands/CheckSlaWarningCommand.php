@@ -37,7 +37,9 @@ class CheckSlaWarningCommand extends Command
         $threshold = Carbon::now()->addHours(2);
 
         // Cari tiket aktif yang mendekati SLA (sisa <= 2 jam) dan belum dikirimi peringatan
+        // Tiket eksternal dikerjakan di sistem eksternal: tanpa SLA helpdesk.
         $tickets = Ticket::whereNotIn('ticket_statuses_id', [3, 4])
+            ->whereNull('integration_id')
             ->whereNotNull('sla_due_at')
             ->where('sla_due_at', '>', $now)
             ->where('sla_due_at', '<=', $threshold)

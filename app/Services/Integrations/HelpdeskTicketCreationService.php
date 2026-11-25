@@ -5,6 +5,7 @@ namespace App\Services\Integrations;
 use App\Models\McpTicketCreationRequest;
 use App\Models\Ticket;
 use App\Models\TicketStatus;
+use App\Models\Unit;
 use App\Models\User;
 use App\Services\EmployeeService;
 use App\Support\HelpdeskIntegrationClient;
@@ -228,7 +229,7 @@ class HelpdeskTicketCreationService
                 'Judul tiket wajib diisi.',
                 'MISSING_TICKET_FIELD',
                 ['title'],
-                $this->formOptions->formOptions(),
+                $this->formOptions->formOptions(internalOnly: true),
                 $this->classificationResolver->nextQuestionForField('title'),
             );
         }
@@ -239,7 +240,7 @@ class HelpdeskTicketCreationService
                 'Deskripsi tiket belum tersedia.',
                 'MISSING_TICKET_DESCRIPTION',
                 ['description'],
-                $this->formOptions->formOptions(),
+                $this->formOptions->formOptions(internalOnly: true),
                 $this->classificationResolver->nextQuestionForField('description'),
             );
         }
@@ -252,7 +253,7 @@ class HelpdeskTicketCreationService
                 'Konfirmasi pembuatan tiket belum tersedia.',
                 'MISSING_CREATE_CONSENT',
                 ['consent_to_create'],
-                $this->formOptions->formOptions(),
+                $this->formOptions->formOptions(internalOnly: true),
                 $this->classificationResolver->nextQuestionForField('consent_to_create'),
             );
         }
@@ -260,7 +261,7 @@ class HelpdeskTicketCreationService
         $classification = $this->classificationResolver->evaluate($ticketData, $owner);
         if ($classification['issues'] !== []) {
             $firstIssue = $classification['issues'][0];
-            $formOptions = $this->formOptions->formOptions($classification['unit']?->id);
+            $formOptions = $this->formOptions->formOptions($classification['unit']?->id, internalOnly: true);
             $message = $this->classificationResolver->buildFieldValidationMessage($firstIssue, $formOptions);
             $code = $firstIssue['reason'] === 'not_found'
                 ? 'HELPDESK_VALUE_NOT_FOUND'
@@ -280,6 +281,11 @@ class HelpdeskTicketCreationService
         $unit = $classification['unit'];
         $category = $classification['category'];
         $priority = $classification['priority'];
+
+        $externalUnit = $category->unit_id ? Unit::query()->find($category->unit_id) : $unit;
+        if ($unit->isExternal() || $externalUnit?->isExternal()) {
+            return $this->externalUnitError($externalUnit?->isExternal() ? $externalUnit : $unit);
+        }
 
         $description = $this->buildTicketDescription($ticketData, $actor, $payload);
 
@@ -360,6 +366,46 @@ class HelpdeskTicketCreationService
             'Identitas untuk nomor WhatsApp ini berubah selama laporan diisi. Verifikasi ulang sebelum membuat tiket.',
             'HELPDESK_ACTOR_CHANGED',
         );
+    }
+
+    /**
+     * Unit berintegrasi memakai form dinamis milik sistem eksternal yang
+     * tidak didukung lewat chat; pelapor diarahkan ke form web.
+     */
+    private function externalUnitError(Unit $unit): array
+    {
+        $notice = self::externalUnitNotice($unit);
+
+        return $this->error(
+            'external_unit',
+            $notice['message'],
+            'HELPDESK_EXTERNAL_UNIT',
+            [
+                'unit_id' => $unit->id,
+                'unit' => $unit->name,
+                'form_url' => $notice['form_url'],
+            ],
+        );
+    }
+
+    /**
+     * Pesan pengalihan ke form web untuk divisi berintegrasi; dipakai juga
+     * oleh alur chat agar pelapor diarahkan sebelum mengisi rincian lain.
+     *
+     * @return array{message: string, form_url: string}
+     */
+    public static function externalUnitNotice(Unit $unit): array
+    {
+        $unit->loadMissing('integration');
+        $system = $unit->integration?->name;
+        $url = route('public-tickets.create');
+
+        return [
+            'message' => 'Laporan untuk divisi '.$unit->name.' memakai form khusus'
+                .($system ? ' sistem '.$system : ' sistem eksternal')
+                .' yang tidak bisa diisi lewat chat. Silakan buat laporan melalui form web: '.$url,
+            'form_url' => $url,
+        ];
     }
 
     private function validationError(

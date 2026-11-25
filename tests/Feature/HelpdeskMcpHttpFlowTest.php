@@ -3,8 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\HelpdeskReporterBinding;
+use App\Models\Integration;
+use App\Models\ProblemCategory;
 use App\Models\Ticket;
 use App\Models\TicketStatus;
+use App\Models\Unit;
 use App\Models\User;
 use App\Services\EmployeeService;
 use App\Services\Integrations\HelpdeskReporterIdentityService;
@@ -436,6 +439,54 @@ class HelpdeskMcpHttpFlowTest extends TestCase
         $this->assertSame('phone_otp', $replayedIntoAnotherIntake['step']);
         $this->assertCount(1, $this->whatsAppGateway->messages);
         $this->travelBack();
+    }
+
+    public function test_chat_intake_redirects_document_requests_for_integrated_unit_to_web_form(): void
+    {
+        config()->set('services.helpdesk_mcp.identity_assertion_secret', 'trusted-gateway-secret');
+        config()->set('services.helpdesk_mcp.identity_assertion_leeway_seconds', 300);
+        $integration = Integration::query()->create([
+            'name' => 'Modul OD',
+            'base_url' => 'https://od.test/api/helpdesk/v1',
+            'token' => 'rahasia',
+            'webhook_secret' => 'rahasia-webhook',
+            'is_active' => true,
+            'timeout_seconds' => 10,
+        ]);
+        $busdev = Unit::create(['name' => 'BUSDEV', 'integration_id' => $integration->id]);
+        ProblemCategory::create(['unit_id' => $busdev->id, 'name' => 'Standard Operating Procedure (SOP)', 'external_key' => 'SOP']);
+        $phone = '6281234567098';
+        User::create([
+            'name' => 'Pelapor Dokumen',
+            'email' => 'doc-reporter@example.test',
+            'password' => 'secret',
+            'phone' => $phone,
+            'is_active' => true,
+        ]);
+        $externalUserId = 'wa-jid-7098';
+        $externalMessageId = 'wa-webhook-event-7098';
+        $timestamp = now()->timestamp;
+        $clientKey = hash('sha256', (string) config('services.helpdesk_mcp.token'));
+        $payload = implode("\n", ['v1', (string) $timestamp, $clientKey, 'whatsapp', $externalUserId, $phone, $externalMessageId]);
+        $assertion = 'v1.'.$timestamp.'.'.strtoupper(hash_hmac('sha256', $payload, 'trusted-gateway-secret'));
+
+        $result = $this->intake([
+            'channel' => 'whatsapp',
+            'external_conversation_id' => 'wa-thread-doc',
+            'external_user_id' => $externalUserId,
+            'external_message_id' => $externalMessageId,
+            'phone' => $phone,
+            'identity_assertion' => $assertion,
+            'message' => 'minta buat SOP penerimaan barang',
+            'start' => true,
+        ]);
+
+        // Diarahkan ke form web sebelum rekap/konfirmasi; tidak ada tiket IT.
+        $this->assertSame('cancelled', $result['status']);
+        $this->assertSame('idle', $result['step']);
+        $this->assertStringContainsString('form web', $result['user_reply']);
+        $this->assertStringContainsString('BUSDEV', $result['user_reply']);
+        $this->assertSame(0, Ticket::query()->withTrashed()->count());
     }
 
     public function test_v2_whatsapp_assertion_binds_the_inbound_message_digest(): void

@@ -2,13 +2,16 @@
 
 namespace App\Filament\Resources\TicketResource\Pages;
 
-use App\Filament\Resources\TicketResource;
 use App\Enums\TicketWorkflowAction;
+use App\Filament\Resources\TicketResource;
 use App\Models\ProblemCategory;
-use App\Models\Ticket;
 use App\Models\TicketStatus;
 use App\Models\Unit;
+use App\Services\Integrations\External\ExternalNotFoundException;
+use App\Services\Integrations\External\ExternalTicketService;
+use App\Services\Integrations\External\ExternalUnavailableException;
 use App\Services\TicketWorkflowService;
+use App\Support\HelpdeskTicketNumber;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Notifications\Notification;
@@ -31,6 +34,13 @@ class ViewTicket extends ViewRecord
         }
 
         $actions = [];
+
+        // Tiket eksternal diproses di sistem tujuan: tidak ada aksi alur kerja
+        // helpdesk (proses/selesai/batal/pindah unit/ubah kategori), hanya
+        // muat ulang snapshot.
+        if ($record->isExternal()) {
+            return [$this->refreshExternalAction()];
+        }
 
         if ($user->can('update', $record)) {
             $actions[] = Actions\EditAction::make()
@@ -98,6 +108,43 @@ class ViewTicket extends ViewRecord
         return $actions;
     }
 
+    private function refreshExternalAction(): Actions\Action
+    {
+        return Actions\Action::make('muat_ulang_eksternal')
+            ->label('Muat ulang dari sistem tujuan')
+            ->icon('heroicon-o-arrow-path')
+            ->color('gray')
+            ->authorize('view')
+            ->visible(fn (): bool => filled($this->getRecord()->external_ref) && ! $this->getRecord()->trashed())
+            ->action(function (): void {
+                try {
+                    $applied = app(ExternalTicketService::class)->refresh($this->getRecord());
+                } catch (ExternalNotFoundException) {
+                    Notification::make()
+                        ->title('Tiket tidak ditemukan di sistem tujuan.')
+                        ->warning()
+                        ->send();
+
+                    return;
+                } catch (ExternalUnavailableException $exception) {
+                    report($exception);
+                    Notification::make()
+                        ->title('Sistem tujuan sedang tidak tersedia. Coba muat ulang beberapa saat lagi.')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->title($applied ? 'Data tiket diperbarui dari sistem tujuan.' : 'Data di helpdesk sudah yang terbaru.')
+                    ->success()
+                    ->send();
+
+                $this->redirect($this->getResource()::getUrl('view', ['record' => $this->getRecord()->getKey()]));
+            });
+    }
+
     private function reclassifyAction(): Actions\Action
     {
         return Actions\Action::make('ubah_kategori')
@@ -137,8 +184,11 @@ class ViewTicket extends ViewRecord
             ->form([
                 Forms\Components\Select::make('unit_id')
                     ->label('Unit tujuan')
+                    // Unit berintegrasi hanya menerima tiket lewat form
+                    // sistem eksternal, bukan pindahan tiket helpdesk.
                     ->options(fn (): array => Unit::query()
                         ->acceptingTickets()
+                        ->internal()
                         ->orderBy('name')
                         ->pluck('name', 'id')
                         ->all())
@@ -162,6 +212,15 @@ class ViewTicket extends ViewRecord
                 $record = $this->getRecord();
                 $unitId = (int) $data['unit_id'];
                 $category = ProblemCategory::query()->find($data['problem_category_id']);
+                if (! Unit::query()->internal()->whereKey($unitId)->exists()) {
+                    Notification::make()
+                        ->title('Unit tujuan memakai sistem eksternal; tiket tidak bisa dipindah ke sana.')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
                 if (! $category || (int) $category->unit_id !== $unitId) {
                     Notification::make()
                         ->title('Kategori tidak termasuk unit tujuan.')
@@ -213,7 +272,7 @@ class ViewTicket extends ViewRecord
     {
         $user = Auth::user();
         $result = app(TicketWorkflowService::class)->transition(
-            \App\Support\HelpdeskTicketNumber::format($this->getRecord()),
+            HelpdeskTicketNumber::format($this->getRecord()),
             $user,
             $action,
         );

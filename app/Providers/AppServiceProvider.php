@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Filament\Auth\Pages\EmailLogin;
 use App\Filament\Auth\Pages\PhoneLogin;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Policies\ActivityPolicy;
 use App\Policies\ExceptionPolicy;
@@ -38,8 +39,23 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Activity::class, ActivityPolicy::class);
         Gate::policy(Exception::class, ExceptionPolicy::class);
 
-        Gate::before(function (User $user): ?bool {
-            return $user->isSuperAdmin() ? true : null;
+        Gate::before(function (User $user, string $ability, array $arguments = []): ?bool {
+            if (! $user->isSuperAdmin()) {
+                return null;
+            }
+
+            // Tiket eksternal dikelola sistem tujuan (kontrak §5): Super Admin
+            // pun tidak boleh mengubah/memindah/memproses dari helpdesk, jadi
+            // keputusan diserahkan ke TicketPolicy.
+            $subject = $arguments[0] ?? null;
+
+            if ($subject instanceof Ticket
+                && $subject->isExternal()
+                && in_array($ability, ['update', 'process'], true)) {
+                return null;
+            }
+
+            return true;
         });
     }
 
@@ -54,6 +70,12 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
+        // Webhook sistem eksternal bisa mengirim banyak event sekaligus
+        // (mis. setelah retry); batasnya per integrasi dan per IP.
+        RateLimiter::for('integration-events', function (Request $request) {
+            return Limit::perMinute(600)->by('integration-events:'.(string) $request->route('integration').':'.$request->ip());
         });
 
         RateLimiter::for('mcp', function (Request $request) {
@@ -82,6 +104,20 @@ class AppServiceProvider extends ServiceProvider
             return [
                 Limit::perMinute(3)->by('public-ticket-device:'.$deviceKey),
                 Limit::perMinute(30)->by('public-ticket-ip:'.$request->ip()),
+            ];
+        });
+
+        // Definisi form sistem eksternal untuk form publik; dimuat setiap
+        // pelapor memilih kategori unit berintegrasi.
+        RateLimiter::for('public-external-form', function (Request $request) {
+            $deviceToken = (string) $request->cookie(PublicReporterIdentityService::COOKIE_NAME, '');
+            $deviceKey = preg_match('/^[A-Za-z0-9]{64}$/D', $deviceToken)
+                ? hash('sha256', $deviceToken)
+                : hash('sha256', (string) $request->ip()."\0".(string) $request->userAgent());
+
+            return [
+                Limit::perMinute(30)->by('public-external-form-device:'.$deviceKey),
+                Limit::perMinute(120)->by('public-external-form-ip:'.$request->ip()),
             ];
         });
 
