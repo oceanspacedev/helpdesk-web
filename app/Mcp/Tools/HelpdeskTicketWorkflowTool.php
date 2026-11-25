@@ -69,6 +69,15 @@ class HelpdeskTicketWorkflowTool extends Tool
             $actor,
             $command['action'],
         );
+        if (! $result['ok'] && $result['code'] === 'external_ticket') {
+            return $this->error(
+                'not_allowed',
+                'Perintah tidak dijalankan. Tiket ini dikelola sistem eksternal; statusnya hanya berubah dari sistem tersebut.',
+                'WORKFLOW_EXTERNAL_TICKET',
+                $command['action'],
+            );
+        }
+
         if (! $result['ok']) {
             return $this->error(
                 'not_allowed',

@@ -72,6 +72,7 @@ class RoleSeeder extends Seeder
             'ViewAny:User', 'View:User', 'Create:User', 'Update:User', 'Delete:User',
             'ViewAny:UnitSla', 'View:UnitSla', 'Create:UnitSla', 'Update:UnitSla', 'Delete:UnitSla',
             'ViewAny:Comment', 'View:Comment', 'Create:Comment', 'Update:Comment', 'Delete:Comment',
+            'ViewAny:Integration', 'View:Integration', 'Create:Integration', 'Update:Integration', 'Delete:Integration',
         ];
         $existingMasterAdminPerms = Permission::whereIn('name', $masterAdminPermissions)->get();
         $masterAdmin->syncPermissions($existingMasterAdminPerms);

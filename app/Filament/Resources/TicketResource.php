@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Resources\TicketResource\ExternalTicketForm;
 use App\Filament\Resources\TicketResource\Pages;
 use App\Filament\Resources\TicketResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\TicketResource\RelationManagers\TicketHistoriesRelationManager;
@@ -12,20 +13,25 @@ use App\Models\Ticket;
 use App\Models\TicketStatus;
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\Integrations\External\ExternalFormSchema;
 use App\Support\SafeUploadedFile;
 use Carbon\Carbon;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\Wizard;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\HtmlString;
 
 class TicketResource extends Resource
 {
@@ -46,8 +52,12 @@ class TicketResource extends Resource
                 Section::make()->schema([
                     Forms\Components\Select::make('unit_id')
                         ->label('Unit / Divisi Tujuan')
-                        ->options(fn (?Ticket $record): array => Unit::query()
+                        ->options(fn (?Ticket $record, string $operation): array => Unit::query()
                             ->acceptingTickets()
+                            // Tiket yang sudah ada tidak bisa dipindah ke unit
+                            // berintegrasi; unit itu hanya menerima tiket baru
+                            // lewat form sistem eksternal.
+                            ->when($operation !== 'create', fn (Builder $query) => $query->internal())
                             ->when($record?->unit_id, fn (Builder $query, int $unitId) => $query->orWhere('units.id', $unitId))
                             ->orderBy('name')
                             ->pluck('name', 'id')
@@ -58,7 +68,7 @@ class TicketResource extends Resource
                         ->helperText('Divisi yang akan menangani tiket ini.')
                         ->disabled(fn (string $operation): bool => $operation === 'edit'
                             && ! auth()->user()?->hasGlobalTicketAccess())
-                        ->afterStateUpdated(function (?int $state, Get $get, Set $set): void {
+                        ->afterStateUpdated(function (?int $state, Forms\Components\Field $component, Get $get, Set $set, string $operation): void {
                             $unit = Unit::find($state);
                             if ($unit) {
                                 $problemCategoryId = (int) $get('problem_category_id');
@@ -67,6 +77,12 @@ class TicketResource extends Resource
                                         $set('problem_category_id', null);
                                     }
                                 }
+                            }
+
+                            // Unit wizard: isi awal form pembuka (default field,
+                            // baris repeater, pilihan badan usaha).
+                            if (self::isWizardCreate($get, $operation)) {
+                                self::categoryChanged($component, $get, $set, $operation);
                             }
                         })
                         ->live(),
@@ -84,12 +100,70 @@ class TicketResource extends Resource
                         ->searchable()
                         ->required()
                         ->placeholder('Pilih kategori')
-                        ->helperText('Jenis tiket yang akan ditangani.'),
+                        ->helperText('Jenis tiket yang akan ditangani.')
+                        // Unit berintegrasi dengan form wizard: kategori dipilih
+                        // sebagai kartu di langkah category_picker.
+                        ->hidden(fn (Get $get, string $operation): bool => self::isWizardCreate($get, $operation))
+                        ->live()
+                        ->afterStateUpdated(fn (Forms\Components\Field $component, Get $get, Set $set, string $operation) => self::categoryChanged($component, $get, $set, $operation)),
+
+                    // Urutan: unit → kategori → badan usaha → prioritas.
+                    self::businessEntityQuestion(wizard: false),
+
+                    // Pertanyaan badan usaha untuk form sistem tujuan yang
+                    // punya field badan usaha (prefill ticket.business_entity):
+                    // opsinya dari sistem tujuan, satu pertanyaan saja.
+                    self::externalBusinessEntityQuestion(wizard: false),
+
+                    Forms\Components\Select::make('priority_id')
+                        ->label(__('Priority'))
+                        ->options(Priority::all()
+                            ->pluck('name', 'id'))
+                        ->searchable()
+                        // Tiket eksternal tidak memakai SLA helpdesk; prioritas default.
+                        ->hidden(fn (Get $get, string $operation): bool => self::isExternalCreate($get, $operation))
+                        ->required(),
 
                     Forms\Components\TextInput::make('title')
                         ->label(__('Title'))
                         ->required()
+                        // Form wizard: judul diturunkan dari isian (kontrak §5).
+                        ->hidden(fn (Get $get, string $operation): bool => self::isWizardCreate($get, $operation))
                         ->maxLength(255)
+                        ->columnSpan([
+                            'sm' => 2,
+                        ]),
+
+                    // Form dinamis sistem eksternal untuk kategori unit
+                    // berintegrasi (lihat docs/integrations/README.md §5).
+                    Group::make()
+                        ->key(ExternalTicketForm::GROUP_KEY)
+                        ->statePath('answers')
+                        ->schema(fn (Get $get): array => ExternalTicketForm::components($get('problem_category_id')))
+                        ->visible(fn (Get $get, string $operation): bool => $operation === 'create'
+                            && ! self::isWizardCreate($get, $operation)
+                            && ExternalTicketForm::isExternalCategory($get('problem_category_id')))
+                        ->columns(['sm' => 2])
+                        ->columnSpan([
+                            'sm' => 2,
+                        ]),
+
+                    // Form sistem tujuan yang disusun sebagai wizard (kontrak
+                    // §3.2 "Langkah"): langkah, seksi, kartu kategori, dan
+                    // pertanyaan badan usaha di seksi identitas.
+                    Wizard::make(fn (Get $get): array => ExternalTicketForm::wizardSteps(
+                        $get('unit_id'),
+                        $get('problem_category_id'),
+                        fn (): array => [self::businessEntityQuestion(wizard: true), self::externalBusinessEntityQuestion(wizard: true)],
+                        fn (Forms\Components\Field $component, Get $get, Set $set, string $operation) => self::categoryChanged($component, $get, $set, $operation),
+                    ))
+                        ->key(ExternalTicketForm::WIZARD_KEY)
+                        // Tombol kirim di langkah terakhir (tombol "Buat" halaman
+                        // disembunyikan untuk wizard, lihat CreateTicket).
+                        ->submitAction(new HtmlString(Blade::render(
+                            '<x-filament::button type="submit" size="sm" wire:loading.attr="disabled" wire:target="create">Kirim pengajuan</x-filament::button>',
+                        )))
+                        ->visible(fn (Get $get, string $operation): bool => self::isWizardCreate($get, $operation))
                         ->columnSpan([
                             'sm' => 2,
                         ]),
@@ -100,6 +174,7 @@ class TicketResource extends Resource
                         ->fileAttachmentsVisibility('public')
                         ->label(__('Description'))
                         ->required()
+                        ->hidden(fn (Get $get, string $operation): bool => self::isExternalCreate($get, $operation))
                         ->maxLength(65535)
                         ->columnSpan([
                             'sm' => 2,
@@ -107,6 +182,7 @@ class TicketResource extends Resource
 
                     Forms\Components\FileUpload::make('supporting_attachments')
                         ->label(__('Supporting Attachments'))
+                        ->hidden(fn (Get $get, string $operation): bool => self::isExternalCreate($get, $operation))
                         ->multiple()
                         ->disk('public')
                         ->directory('ticket-supporting/'.date('m-y'))
@@ -156,23 +232,6 @@ class TicketResource extends Resource
                 ])->columnSpan(2),
 
                 Section::make()->schema([
-                    Forms\Components\Select::make('priority_id')
-                        ->label(__('Priority'))
-                        ->options(Priority::all()
-                            ->pluck('name', 'id'))
-                        ->searchable()
-                        ->required(),
-
-                    Forms\Components\Select::make('business_entities_id')
-                        ->label('Badan Usaha yang Dilaporkan')
-                        ->options(BusinessEntity::all()
-                            ->pluck('name', 'id'))
-                        ->searchable()
-                        ->placeholder('Pilih badan usaha')
-                        ->helperText('Badan usaha tempat kendala terjadi. Ganti bila bukan badan usaha kontrak pelapor.')
-                        ->default(fn (): ?int => auth()->user()?->business_entity_id)
-                        ->required(fn (string $operation): bool => $operation === 'create'),
-
                     Forms\Components\Select::make('ticket_statuses_id')
                         ->label(__('Status'))
                         ->options(TicketStatus::all()
@@ -241,7 +300,161 @@ class TicketResource extends Resource
                         ): string => $record && $record->is_sla_met !== null ? ($record->is_sla_met ? __('Yes') : __('No')) : '-')
                         ->hiddenOn('create'),
                 ])->columnSpan(1),
+
+                // Snapshot terakhir dari sistem eksternal (tiket tipis).
+                Section::make('Sistem tujuan')
+                    ->description('Tiket ini diproses di sistem eksternal. Status hanya berubah lewat sinkronisasi atau tombol muat ulang.')
+                    ->icon('heroicon-o-arrow-top-right-on-square')
+                    ->schema(ExternalTicketForm::snapshotEntries())
+                    ->visible(fn (?Ticket $record, string $operation): bool => $operation === 'view' && (bool) $record?->isExternal())
+                    ->columns(['sm' => 3])
+                    ->columnSpan(2),
             ])->columns(3);
+    }
+
+    /**
+     * Halaman buat tiket dengan kategori unit berintegrasi (atau unit wizard):
+     * field internal (uraian, lampiran, prioritas) disembunyikan.
+     */
+    private static function isExternalCreate(Get $get, string $operation): bool
+    {
+        return $operation === 'create'
+            && (ExternalTicketForm::isExternalCategory($get('problem_category_id')) || ExternalTicketForm::isWizardUnit($get('unit_id')));
+    }
+
+    /**
+     * Halaman buat tiket untuk unit berintegrasi yang formnya wizard.
+     */
+    public static function isWizardCreate(Get $get, string $operation): bool
+    {
+        return $operation === 'create' && ExternalTicketForm::isWizardUnit($get('data.unit_id', isAbsolute: true));
+    }
+
+    /**
+     * "Badan Usaha yang Dilaporkan" versi daftar badan usaha helpdesk. Versi
+     * wizard dirender di seksi identitas (key berbeda, state sama).
+     */
+    private static function businessEntityQuestion(bool $wizard): Forms\Components\Select
+    {
+        $select = Forms\Components\Select::make('business_entities_id')
+            ->label('Badan Usaha yang Dilaporkan')
+            ->options(BusinessEntity::all()
+                ->pluck('name', 'id'))
+            ->searchable()
+            ->placeholder('Pilih badan usaha')
+            ->helperText('Badan usaha tempat kendala terjadi. Ganti bila bukan badan usaha kontrak pelapor.')
+            ->default(fn (): ?int => auth()->user()?->business_entity_id)
+            ->live()
+            ->required(fn (string $operation): bool => $operation === 'create');
+
+        if ($wizard) {
+            // Form sistem tujuan tanpa field badan usaha: daftar helpdesk.
+            return $select
+                ->key('external_wizard_business_entities_id')
+                ->visible(fn (Get $get): bool => ExternalTicketForm::currentBusinessEntity($get) === null);
+        }
+
+        // Form sistem tujuan yang punya field badan usaha memakai pertanyaan
+        // external_business_entity; form wizard memakai versi di wizard.
+        return $select->hidden(fn (Get $get, string $operation): bool => $operation === 'create'
+            && (self::isWizardCreate($get, $operation)
+                || ExternalTicketForm::businessEntity($get('problem_category_id')) !== null));
+    }
+
+    /**
+     * "Badan Usaha yang Dilaporkan" dengan opsi field badan usaha form
+     * sistem tujuan.
+     */
+    private static function externalBusinessEntityQuestion(bool $wizard): Forms\Components\Select
+    {
+        $entity = fn (Get $get): ?array => $wizard
+            ? ExternalTicketForm::currentBusinessEntity($get)
+            : ExternalTicketForm::businessEntity($get('problem_category_id'));
+        $options = fn (Get $get): array => collect($entity($get)['options'] ?? [])
+            ->mapWithKeys(fn (array $option): array => [(string) $option['value'] => (string) $option['label']])
+            ->all();
+
+        $select = Forms\Components\Select::make('external_business_entity')
+            ->label('Badan Usaha yang Dilaporkan')
+            ->options($options)
+            ->in(fn (Get $get): array => array_map('strval', array_keys($options($get))))
+            ->searchable()
+            ->placeholder('Pilih badan usaha')
+            ->helperText('Badan usaha tempat kendala terjadi. Ganti bila bukan badan usaha kontrak pelapor.')
+            ->required(fn (Get $get): bool => (bool) ($entity($get)['required'] ?? false))
+            ->live();
+
+        if ($wizard) {
+            return $select
+                ->key('external_wizard_external_business_entity')
+                ->visible(fn (Get $get): bool => $entity($get) !== null);
+        }
+
+        return $select->visible(fn (Get $get, string $operation): bool => $operation === 'create'
+            && ! self::isWizardCreate($get, $operation)
+            && $entity($get) !== null);
+    }
+
+    /**
+     * Kategori berganti (dropdown atau kartu wizard) = form sistem eksternal
+     * baru: kunci idempotensi baru, state dan default field dinamis diisi
+     * ulang. Form wizard mempertahankan isian berkey sama (kontrak §3.2).
+     * Juga dipanggil saat unit wizard dipilih (isi awal form pembuka).
+     */
+    private static function categoryChanged(Forms\Components\Field $component, Get $get, Set $set, string $operation): void
+    {
+        if ($operation !== 'create') {
+            return;
+        }
+
+        $previous = $get('data.answers', isAbsolute: true);
+        $previous = is_array($previous) ? $previous : [];
+        $set('data.answers', [], isAbsolute: true);
+
+        $root = $component->getRootContainer();
+        $group = $root->getComponent(fn (mixed $item): bool => $item instanceof Group
+            && str_ends_with('.'.$item->getKey(), '.'.ExternalTicketForm::GROUP_KEY), withHidden: true);
+        if ($group instanceof Group) {
+            $group->clearCachedDefaultChildSchemas();
+            $group->getChildSchema()?->fill();
+        }
+
+        if (self::isWizardCreate($get, $operation)) {
+            $wizard = $root->getComponent(fn (mixed $item): bool => $item instanceof Wizard, withHidden: true);
+            if ($wizard instanceof Wizard) {
+                $wizard->clearCachedDefaultChildSchemas();
+                foreach ($wizard->getChildSchema()?->getFlatComponents(withActions: false, withHidden: true) ?? [] as $item) {
+                    if ($item instanceof Group && str_contains((string) $item->getKey(), ExternalTicketForm::WIZARD_GROUP_PREFIX)) {
+                        $item->getChildSchema()?->fill();
+                    }
+                }
+            }
+
+            $fresh = $get('data.answers', isAbsolute: true);
+            $form = ExternalTicketForm::wizardForm($get('data.unit_id', isAbsolute: true), $get('data.problem_category_id', isAbsolute: true))['form'] ?? null;
+            $set('data.answers', ExternalTicketForm::carryAnswers(
+                is_array($fresh) ? $fresh : [],
+                $previous,
+                (array) ($form['fields'] ?? []),
+            ), isAbsolute: true);
+        }
+
+        $livewire = $component->getLivewire();
+        if ($livewire instanceof Pages\CreateTicket) {
+            $livewire->resetExternalIdempotencyKey();
+        }
+
+        // Pertanyaan badan usaha versi sistem tujuan mulai lagi dari pilihan
+        // awal form yang baru (wizard: dipertahankan bila masih valid);
+        // pilihan badan usaha helpdesk (business_entities_id) tidak disentuh
+        // agar kembali utuh bila kategori internal dipilih lagi.
+        $entity = ExternalTicketForm::currentBusinessEntity($get);
+        $current = $get('data.external_business_entity', isAbsolute: true);
+        $keep = self::isWizardCreate($get, $operation) && $entity !== null && filled($current)
+            && ExternalFormSchema::businessEntityOption($entity, $current) !== null;
+        if (! $keep) {
+            $set('data.external_business_entity', $entity['default'] ?? null, isAbsolute: true);
+        }
     }
 
     public static function table(Table $table): Table
@@ -287,6 +500,10 @@ class TicketResource extends Resource
                 Tables\Columns\TextColumn::make('ticketStatus.name')
                     ->label(__('Status'))
                     ->badge()
+                    // Tiket eksternal: label status dari sistem tujuan (mis. "Drafting").
+                    ->description(fn (Ticket $record): ?string => $record->isExternal() && filled($record->external_status_label)
+                        ? $record->external_status_label
+                        : null)
                     ->sortable()
                     ->color(fn (?string $state): string => match ($state) {
                         'In Progress' => 'warning',
@@ -404,7 +621,8 @@ class TicketResource extends Resource
             ])
             ->actions([
                 Actions\ViewAction::make(),
-                Actions\EditAction::make(),
+                Actions\EditAction::make()
+                    ->hidden(fn (Ticket $record): bool => $record->isExternal()),
                 Actions\ForceDeleteAction::make(),
             ])
             ->bulkActions([
@@ -437,7 +655,10 @@ class TicketResource extends Resource
     {
         $query = parent::getEloquentQuery()
             ->with(['owner', 'unit', 'businessEntity', 'responsible', 'problemCategory', 'ticketStatus', 'priority'])
-            ->withoutGlobalScopes([SoftDeletingScope::class]);
+            ->withoutGlobalScopes([SoftDeletingScope::class])
+            // Cadangan nomor tiket eksternal yang belum diterima sistem
+            // tujuan bukan tiket; jangan tampil walau filter terhapus aktif.
+            ->withoutPendingExternal();
 
         $user = auth()->user();
 

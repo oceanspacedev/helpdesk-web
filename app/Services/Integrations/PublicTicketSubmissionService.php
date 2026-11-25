@@ -10,6 +10,9 @@ use App\Models\Ticket;
 use App\Models\TicketStatus;
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\Integrations\External\ExternalFormSchema;
+use App\Services\Integrations\External\ExternalTicketService;
+use App\Services\Integrations\External\ExternalValidationException;
 use App\Support\HelpdeskIntegrationClient;
 use App\Support\PhoneNumber;
 use App\Support\SafeUploadedFile;
@@ -206,6 +209,182 @@ class PublicTicketSubmissionService
         }
 
         return $ticket;
+    }
+
+    /**
+     * Laporan untuk kategori unit berintegrasi: isian dirapikan sesuai form
+     * sistem eksternal (field tersembunyi dibuang, field yang diketahui
+     * helpdesk — identitas pelapor, badan usaha — diisi server) lalu
+     * diteruskan secara sinkron lewat ExternalTicketService tanpa membuat
+     * baris Ticket baru di database Helpdesk.
+     *
+     * Badan usaha: bila form punya field `ticket.business_entity` select/radio,
+     * pertanyaan "Badan Usaha yang Dilaporkan" memakai opsinya
+     * (`external_business_entity`, divalidasi terhadap form terbaru).
+     * Bila tidak, `business_entities_id` wajib seperti biasa.
+     *
+     * Kunci idempotensi dibuat browser sekali per pengisian form dan dipakai
+     * ulang saat mencoba lagi. Kunci yang diteruskan diturunkan dari id
+     * pelapor agar pelapor lain tidak bisa memakai kunci yang sama untuk
+     * melihat tiket orang lain.
+     *
+     * @param  array<string, mixed>  $data  hasil validasi (title, unit_id, problem_category_id, business_entities_id, external_business_entity, idempotency_key)
+     * @param  array<string, mixed>  $answers  isian non-file
+     * @param  array<string, mixed>  $files  pohon UploadedFile berbentuk sama dengan answers
+     * @return array{
+     *     ref: string,
+     *     title: string,
+     *     unit: string,
+     *     integration: string,
+     *     status_code: string,
+     *     status_label: string,
+     *     track_url: ?string,
+     *     snapshot: array<string, mixed>,
+     * }
+     *
+     * @throws ExternalValidationException|External\ExternalUnavailableException|External\ExternalNotFoundException|ValidationException
+     */
+    public function createExternal(User $reporter, array $data, array $answers, array $files): array
+    {
+        $expectedPhone = PhoneNumber::canonical($reporter->phone);
+        if (! $reporter->is_active || $reporter->trashed() || $expectedPhone === null) {
+            throw ValidationException::withMessages([
+                'reporter' => 'Identitas pelapor sudah tidak aktif atau tidak valid.',
+            ]);
+        }
+
+        $category = ProblemCategory::query()
+            ->with('unit.integration')
+            ->whereKey((int) $data['problem_category_id'])
+            ->where('unit_id', (int) $data['unit_id'])
+            ->first();
+        if (! $category || ! $category->unit?->isExternal()) {
+            throw ValidationException::withMessages([
+                'ticket' => 'Pilihan divisi atau kategori sudah tidak tersedia. Muat ulang halaman.',
+            ]);
+        }
+
+        $schemas = app(ExternalFormSchema::class);
+        $form = $schemas->form($category);
+        [$businessEntityId, $option] = self::externalBusinessEntity($form, $data);
+        [$cleanAnswers, $cleanFiles] = $schemas->prepareAnswers(
+            $form,
+            $answers,
+            $files,
+            $reporter,
+            $businessEntityId,
+            $option,
+        );
+
+        $title = self::externalTitle(
+            $form,
+            $cleanAnswers,
+            $category,
+            $data['title'] ?? null,
+            wizardUnit: ! ExternalFormSchema::hasSteps($form) && $schemas->unitHasSteps($category->unit),
+        );
+
+        try {
+            return app(ExternalTicketService::class)->submit(
+                $category,
+                $reporter,
+                $title,
+                $cleanAnswers,
+                $cleanFiles,
+                self::externalIdempotencyKey('public', $reporter, (string) $data['idempotency_key']),
+                [
+                    'business_entities_id' => $businessEntityId,
+                    'reporter_name' => ExternalFormSchema::reporterNameAnswer($form, $cleanAnswers),
+                ],
+            );
+        } catch (ExternalValidationException $exception) {
+            // Error field badan usaha ditampilkan di pertanyaan badan usaha helpdesk.
+            $errors = [];
+            foreach ($exception->errors() as $path => $messages) {
+                $key = ExternalFormSchema::businessEntityErrorKey($form, (string) $path) ?? (string) $path;
+                $errors[$key] = [...($errors[$key] ?? []), ...$messages];
+            }
+
+            throw new ExternalValidationException($exception->getMessage(), $errors);
+        }
+    }
+
+    /**
+     * Jawaban "Badan Usaha yang Dilaporkan" untuk form eksternal:
+     * [business_entities_id tiket, nilai opsi field badan usaha eksternal].
+     *
+     * @param  array<string, mixed>  $form
+     * @param  array<string, mixed>  $data
+     * @return array{0: ?int, 1: ?string}
+     *
+     * @throws ValidationException
+     */
+    public static function externalBusinessEntity(array $form, array $data, string $prefix = ''): array
+    {
+        $field = ExternalFormSchema::businessEntityField($form);
+        if ($field === null) {
+            $id = $data['business_entities_id'] ?? null;
+            if (! is_numeric($id) || ! BusinessEntity::query()->whereKey((int) $id)->exists()) {
+                throw ValidationException::withMessages([
+                    $prefix.'business_entities_id' => 'Badan usaha wajib dipilih.',
+                ]);
+            }
+
+            return [(int) $id, null];
+        }
+
+        $value = $data['external_business_entity'] ?? null;
+        $option = ExternalFormSchema::businessEntityOption($field, $value);
+        if ($option === null && filled($value)) {
+            throw ValidationException::withMessages([
+                $prefix.'external_business_entity' => 'Pilihan badan usaha tidak valid. Muat ulang halaman.',
+            ]);
+        }
+
+        if ($option === null && ($field['required'] ?? false)) {
+            throw ValidationException::withMessages([
+                $prefix.'external_business_entity' => 'Badan usaha wajib dipilih.',
+            ]);
+        }
+
+        return [ExternalFormSchema::matchingBusinessEntityId($option), $option['value'] ?? null];
+    }
+
+    /**
+     * Judul tiket untuk form eksternal: wizard tidak menanyakan judul, jadi
+     * judul selalu diturunkan dari isian (ExternalFormSchema::deriveTitle,
+     * kontrak §5); form satu halaman memakai judul isian pelapor yang wajib
+     * diisi. Wizard ditentukan dari unit (form pembuka punya `steps`), bukan
+     * hanya dari form kategori terpilih: kategori tanpa `steps` di unit
+     * wizard juga diajukan lewat wizard tanpa pertanyaan judul.
+     *
+     * @param  array<string, mixed>  $form
+     * @param  array<string, mixed>  $cleanAnswers
+     *
+     * @throws ValidationException
+     */
+    public static function externalTitle(array $form, array $cleanAnswers, ProblemCategory $category, mixed $title, string $prefix = '', bool $wizardUnit = false): string
+    {
+        if ($wizardUnit || ExternalFormSchema::hasSteps($form)) {
+            return ExternalFormSchema::deriveTitle($form, $cleanAnswers, $category);
+        }
+
+        $title = is_scalar($title) ? trim((string) $title) : '';
+        if ($title === '') {
+            throw ValidationException::withMessages([
+                $prefix.'title' => 'Judul laporan wajib diisi.',
+            ]);
+        }
+
+        return $title;
+    }
+
+    /**
+     * Kunci idempotensi yang dikirim ke sistem eksternal (64 karakter hex).
+     */
+    public static function externalIdempotencyKey(string $channel, User $reporter, string $clientKey): string
+    {
+        return hash('sha256', $channel.':'.$reporter->getKey().':'.$clientKey);
     }
 
     public function findCommitted(User $reporter, string $submissionToken): ?Ticket

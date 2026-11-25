@@ -11,6 +11,15 @@ class EditTicket extends EditRecord
 {
     protected static string $resource = TicketResource::class;
 
+    protected function authorizeAccess(): void
+    {
+        // Tiket eksternal (tiket tipis) tidak bisa diubah atau dipindah dari
+        // helpdesk, termasuk oleh Super Admin.
+        abort_if($this->getRecord()->isExternal(), 403);
+
+        parent::authorizeAccess();
+    }
+
     public function save(bool $shouldRedirect = true, bool $shouldSendSavedNotification = true): void
     {
         SafeUploadedFile::wrapValidation(
@@ -34,6 +43,8 @@ class EditTicket extends EditRecord
      */
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        abort_if($this->getRecord()->isExternal(), 403);
+
         if (! auth()->user()?->hasGlobalTicketAccess()) {
             $data['unit_id'] = $this->getRecord()->unit_id;
         }

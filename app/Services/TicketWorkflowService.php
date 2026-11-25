@@ -53,6 +53,21 @@ class TicketWorkflowService
             }
 
             $previousStatus = (int) $ticket->ticket_statuses_id;
+
+            // Status tiket eksternal hanya berubah lewat webhook atau muat
+            // ulang dari sistem eksternal, tidak dari helpdesk.
+            if ($ticket->isExternal()) {
+                return $this->result(
+                    false,
+                    'external_ticket',
+                    $action,
+                    null,
+                    $reference['canonical'],
+                    $previousStatus,
+                    $previousStatus,
+                );
+            }
+
             if (! $actor->isActiveTicketProcessorForUnit((int) $ticket->unit_id)) {
                 return $this->result(
                     false,

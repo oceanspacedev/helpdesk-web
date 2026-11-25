@@ -6,6 +6,7 @@ use App\Channels\WhatsAppChannel;
 use App\Models\Ticket;
 use App\Models\TicketStatus;
 use App\Notifications\Concerns\ResolvesHelpdeskNotificationChannels;
+use App\Services\Integrations\External\ExternalTicketSnapshot;
 use App\Support\HelpdeskWhatsAppMessage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
@@ -39,12 +40,26 @@ class TicketStatusChangedNotification extends Notification implements ShouldQueu
             : '#'.($this->ticket->id ?? '');
         [$heading, $footer] = $this->copy();
 
-        return (new MailMessage)
+        $mail = (new MailMessage)
             ->subject($heading.': '.$number)
             ->greeting('Halo '.$notifiable->name.',')
-            ->line('**Nomor:** '.$number)
-            ->line('**Judul:** '.($this->ticket->title ?? ''))
+            ->line('**Nomor:** '.$number);
+
+        if ($this->ticket instanceof Ticket && $this->ticket->isExternal() && filled($this->ticket->external_ref)) {
+            $mail->line('**Referensi:** '.$this->ticket->external_ref);
+        }
+
+        $mail->line('**Judul:** '.($this->ticket->title ?? ''))
             ->line($footer);
+
+        $trackUrl = $this->ticket instanceof Ticket && $this->ticket->isExternal()
+            ? ExternalTicketSnapshot::trackUrl($this->ticket)
+            : null;
+        if ($trackUrl !== null) {
+            $mail->action('Lacak progres', $trackUrl);
+        }
+
+        return $mail;
     }
 
     /**

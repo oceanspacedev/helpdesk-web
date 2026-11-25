@@ -4,19 +4,65 @@ namespace App\Services\Integrations;
 
 use App\Models\User;
 use App\Services\EmployeeService;
+use App\Services\TalentaEmployeeSync;
 use App\Support\HelpdeskReporterName;
 use App\Support\PhoneNumber;
+use App\Support\TalentaEmployee;
 use DomainException;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class HelpdeskReporterRegistrationService
 {
     public function __construct(
         private readonly EmployeeService $employees,
+        private readonly ?TalentaEmployeeSync $talenta = null,
     ) {}
+
+    /**
+     * Lengkapi pelapor yang belum punya data karyawan dari data Talenta yang
+     * nomornya sama, tanpa menunggu helpdesk:sync-employees (yang juga
+     * mencocokkan lewat nomor HP). Dipakai form publik agar isian identitas
+     * form sistem tujuan (divisi, email, jabatan, badan usaha) terisi
+     * otomatis; nilainya tetap hanya di server.
+     *
+     * Dilewati bila pelapor sudah punya NIK, nomornya cocok dengan lebih dari
+     * satu karyawan, atau NIK karyawan itu sudah dipakai akun lain. Kegagalan
+     * tidak menghalangi laporan.
+     *
+     * @return bool true bila profil pelapor dilengkapi
+     */
+    public function completeFromTalenta(User $user): bool
+    {
+        if (filled($user->identity) || $user->trashed() || ! $user->is_active) {
+            return false;
+        }
+
+        $phone = PhoneNumber::canonical($user->phone);
+        $matches = $phone === null ? [] : $this->employees->findAllByPhone($phone);
+        if (count($matches) !== 1) {
+            return false;
+        }
+
+        $nik = TalentaEmployee::identity($matches[0]);
+        if ($nik === null || User::query()->withTrashed()->where('identity', $nik)->whereKeyNot($user->getKey())->exists()) {
+            return false;
+        }
+
+        try {
+            DB::transaction(fn () => ($this->talenta ?? app(TalentaEmployeeSync::class))->applyProfile($user, $matches[0]));
+        } catch (Throwable $exception) {
+            report($exception);
+            $user->refresh();
+
+            return false;
+        }
+
+        return filled($user->identity);
+    }
 
     /**
      * Resolve a public-form identity from a submitted phone number without
@@ -65,7 +111,7 @@ class HelpdeskReporterRegistrationService
                     }
 
                     $user = User::query()->create([
-                        'name' => 'Pelapor WhatsApp '.substr($phone, -4),
+                        'name' => HelpdeskReporterName::placeholder($phone),
                         'email' => null,
                         'phone' => $phone,
                         'password' => null,

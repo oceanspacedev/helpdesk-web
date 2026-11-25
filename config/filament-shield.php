@@ -86,7 +86,11 @@ return [
                 'delete',
             ],
         ],
-        'exclude' => [],
+        // "Pengajuan Saya" hanya baca dan terbuka untuk semua pengguna panel
+        // (dibatasi ke pengajuan miliknya sendiri), jadi tanpa permission.
+        'exclude' => [
+            App\Filament\Resources\ExternalSubmissionResource::class,
+        ],
     ],
 
     'pages' => [

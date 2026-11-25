@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $id
  * @property int $unit_id
  * @property string $name
+ * @property null|string $external_key
  * @property Unit $unit
  * @property Collection|User[] $defaultResponsibles
  * @property Collection|Ticket[] $tickets
@@ -37,11 +38,25 @@ class ProblemCategory extends Model
     protected $fillable = [
         'unit_id',
         'name',
+        'external_key',
     ];
 
     public function unit()
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    /**
+     * Kategori milik divisi berintegrasi: form dan prosesnya ada di sistem
+     * eksternal, dipetakan lewat external_key.
+     */
+    public function isExternal(): bool
+    {
+        $unit = $this->relationLoaded('unit')
+            ? $this->unit
+            : $this->unit()->withTrashed()->first();
+
+        return (bool) $unit?->isExternal();
     }
 
     /**

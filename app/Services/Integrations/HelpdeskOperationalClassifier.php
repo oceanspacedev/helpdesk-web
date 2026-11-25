@@ -208,6 +208,7 @@ class HelpdeskOperationalClassifier
             'affected_system' => $route['system'] ?? $normalized['affected_system'],
             'category_uncertain' => false,
             'unit_assumed' => false,
+            'unit_external' => false,
             'priority_assumed' => false,
             'entity_assumed' => false,
             'entity_source' => '',
@@ -215,7 +216,14 @@ class HelpdeskOperationalClassifier
 
         if ($route !== null) {
             $unit = $this->findUnit($route['unit']);
-            if ($unit) {
+            if ($unit?->isExternal()) {
+                // Divisi berintegrasi tetap dikenali agar pelapor diarahkan ke
+                // form web, bukan dialihkan diam-diam ke antrean IT.
+                $patch['unit_id'] = (string) $unit->id;
+                $patch['unit'] = (string) $unit->name;
+                $patch['unit_external'] = true;
+                $patch['affected_system'] = $route['system'];
+            } elseif ($unit) {
                 $patch['unit_id'] = (string) $unit->id;
                 $patch['unit'] = (string) $unit->name;
                 $category = $this->findCategory((int) $unit->id, $route['category']);
@@ -264,7 +272,7 @@ class HelpdeskOperationalClassifier
             }
         }
 
-        if (! isset($patch['problem_category_id']) && isset($patch['unit_id'])) {
+        if (! isset($patch['problem_category_id']) && isset($patch['unit_id']) && ! ($patch['unit_external'] ?? false)) {
             $category = $this->unclassifiedCategory((int) $patch['unit_id']);
             if ($category) {
                 $patch['problem_category_id'] = (string) $category->id;
@@ -438,10 +446,14 @@ class HelpdeskOperationalClassifier
         ]);
     }
 
+    /**
+     * Antrean asumsi untuk laporan yang tidak cocok aturan mana pun; selalu
+     * unit tanpa integrasi karena tiketnya dibuat di helpdesk.
+     */
     private function defaultUnit(): ?Unit
     {
-        return $this->findUnit('IT')
-            ?: Unit::query()->orderBy('id')->first();
+        return $this->findUnit('IT', internalOnly: true)
+            ?: Unit::query()->internal()->orderBy('id')->first();
     }
 
     private function unclassifiedCategory(int $unitId): ?ProblemCategory
@@ -465,9 +477,13 @@ class HelpdeskOperationalClassifier
         ]);
     }
 
-    private function findUnit(string $name): ?Unit
+    private function findUnit(string $name, bool $internalOnly = false): ?Unit
     {
-        return Unit::query()->whereRaw('LOWER(name) = ?', [Str::lower($name)])->orderBy('id')->first();
+        return Unit::query()
+            ->when($internalOnly, fn ($query) => $query->internal())
+            ->whereRaw('LOWER(name) = ?', [Str::lower($name)])
+            ->orderBy('id')
+            ->first();
     }
 
     private function findCategory(int $unitId, string $name): ?ProblemCategory

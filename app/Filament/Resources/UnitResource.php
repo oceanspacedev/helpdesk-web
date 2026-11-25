@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\UnitResource\Pages;
+use App\Models\Integration;
 use App\Models\ProblemCategory;
 use App\Models\Unit;
 use Filament\Actions;
@@ -41,6 +42,14 @@ class UnitResource extends Resource
                     ->required()
                     ->maxLength(255)
                     ->columnSpan('full'),
+                Forms\Components\Select::make('integration_id')
+                    ->label('Integrasi')
+                    ->options(fn (): array => Integration::query()->orderBy('name')->pluck('name', 'id')->all())
+                    ->placeholder('Tanpa integrasi (data tiket di helpdesk)')
+                    ->helperText('Bila dipilih, form dan proses tiket divisi ini dimiliki sistem eksternal. Setiap kategori divisi wajib punya kode kategori eksternal.')
+                    ->searchable()
+                    ->nullable()
+                    ->columnSpan('full'),
             ]);
     }
 
@@ -50,6 +59,9 @@ class UnitResource extends Resource
             ->components([
                 Infolists\Components\TextEntry::make('name')
                     ->translateLabel(),
+                Infolists\Components\TextEntry::make('integration.name')
+                    ->label('Integrasi')
+                    ->placeholder('Tanpa integrasi'),
                 Infolists\Components\TextEntry::make('problem_categories')
                     ->label('Kategori tiket')
                     ->state(fn (Unit $record): array => $record->problemCategories()
@@ -84,6 +96,10 @@ class UnitResource extends Resource
                     ->translateLabel()
                     ->searchable()
                     ->sortable(),
+                Tables\Columns\TextColumn::make('integration.name')
+                    ->label('Integrasi')
+                    ->placeholder('-')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('problem_categories_count')
                     ->label('Kategori')
                     ->counts('problemCategories')

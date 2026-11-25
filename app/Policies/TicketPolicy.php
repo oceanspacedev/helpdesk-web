@@ -36,7 +36,10 @@ class TicketPolicy
 
     public function update(User $authUser, Ticket $ticket): bool
     {
+        // Tiket eksternal (tiket tipis) dikelola sistem eksternal: judul,
+        // unit, dan kategorinya tidak diubah dari helpdesk.
         return ! $ticket->trashed()
+            && ! $ticket->isExternal()
             && $authUser->can('Update:Ticket')
             && ($authUser->hasGlobalTicketAccess()
                 || ((int) $ticket->owner_id === (int) $authUser->getKey()
@@ -46,7 +49,10 @@ class TicketPolicy
     public function process(User $authUser, Ticket $ticket): bool
     {
         // Anggota divisi tujuan adalah penindak; tidak perlu role khusus.
+        // Tiket eksternal diproses di sistem eksternal; helpdesk tidak bisa
+        // memproses, menyelesaikan, membatalkan, atau memindahkannya.
         if ($ticket->trashed()
+            || $ticket->isExternal()
             || ! $authUser->is_active
             || ! $authUser->canProcessTicketsForUnit((int) $ticket->unit_id)) {
             return false;

@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Ticket;
 use App\Models\User;
+use App\Services\Integrations\External\ExternalTicketSnapshot;
 
 final class HelpdeskWhatsAppMessage
 {
@@ -17,6 +18,10 @@ final class HelpdeskWhatsAppMessage
     public static function forReporter(Ticket $ticket, ?string $footer = null): string
     {
         $number = self::ticketNumber($ticket);
+        $trackUrl = $ticket->isExternal() ? ExternalTicketSnapshot::trackUrl($ticket) : null;
+        $meta = $ticket->isExternal() && filled($ticket->external_ref)
+            ? 'Referensi: '.$ticket->external_ref
+            : null;
 
         return self::compose(
             'Laporan diterima',
@@ -24,6 +29,8 @@ final class HelpdeskWhatsAppMessage
             $ticket->title,
             self::destination($ticket),
             body: self::excerpt($ticket),
+            meta: $meta,
+            url: $trackUrl,
             footer: $footer ?? 'Tim akan menindaklanjuti.',
         );
     }
@@ -110,11 +117,18 @@ final class HelpdeskWhatsAppMessage
 
     public static function statusUpdate(Ticket $ticket, string $heading, string $footer): string
     {
+        $trackUrl = $ticket->isExternal() ? ExternalTicketSnapshot::trackUrl($ticket) : null;
+        $meta = $ticket->isExternal() && filled($ticket->external_ref)
+            ? 'Referensi: '.$ticket->external_ref
+            : null;
+
         return self::compose(
             $heading,
             self::ticketNumber($ticket),
             $ticket->title,
             self::destination($ticket),
+            meta: $meta,
+            url: $trackUrl,
             footer: $footer,
         );
     }
@@ -122,6 +136,7 @@ final class HelpdeskWhatsAppMessage
     public static function comment(Ticket $ticket, string $comment): string
     {
         $body = trim(html_entity_decode(strip_tags($comment), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        $trackUrl = $ticket->isExternal() ? ExternalTicketSnapshot::trackUrl($ticket) : null;
 
         return self::compose(
             'Komentar baru',
@@ -129,7 +144,7 @@ final class HelpdeskWhatsAppMessage
             $ticket->title,
             self::destination($ticket),
             meta: $body !== '' ? $body : null,
-            url: url('/admin/tickets/'.$ticket->id),
+            url: $trackUrl ?? url('/admin/tickets/'.$ticket->id),
         );
     }
 

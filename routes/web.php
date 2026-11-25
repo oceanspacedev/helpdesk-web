@@ -36,6 +36,18 @@ Route::controller(PublicTicketController::class)->group(function (): void {
         ->block(30, 10)
         ->name('public-tickets.store');
 
+    // Definisi form sistem eksternal diambil server helpdesk; browser tidak
+    // pernah menghubungi sistem eksternal maupun melihat tokennya.
+    Route::get('/lapor/kategori/{category}/form', 'externalForm')
+        ->middleware(['cache.headers:private;no_store;no_cache;must_revalidate', 'throttle:public-external-form'])
+        ->whereNumber('category')
+        ->name('public-tickets.external-form');
+    // Form pembuka unit berintegrasi (wizard: langkah sebelum pilihan kategori).
+    Route::get('/lapor/unit/{unit}/form', 'externalUnitForm')
+        ->middleware(['cache.headers:private;no_store;no_cache;must_revalidate', 'throttle:public-external-form'])
+        ->whereNumber('unit')
+        ->name('public-tickets.external-unit-form');
+
     Route::prefix('pelapor')->name('public-reporter.')->group(function (): void {
         Route::post('/identitas', 'identify')
             ->middleware(['throttle:public-reporter-identify', HandleInertiaRequests::class])

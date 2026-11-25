@@ -3,6 +3,7 @@
 namespace App\Services\Integrations;
 
 use App\Models\McpTicketCreationRequest;
+use App\Models\Unit;
 use App\Models\User;
 use App\Services\EmployeeService;
 use App\Services\WhatsAppOtpService;
@@ -960,6 +961,9 @@ class HelpdeskIntakeSession
             $target = $sequence[$index];
             $targetStep = $this->stepForClassificationField($target);
             $result = $this->resolver->validateField($target, $token, $this->ticketContext($state));
+            if (! $result['ok'] && ($result['reason'] ?? '') === 'external_unit') {
+                return $this->externalUnitReply((string) $result['message'], $result['form_url'] ?? null);
+            }
             if (! $result['ok']) {
                 $state['step'] = $targetStep;
 
@@ -1092,6 +1096,12 @@ class HelpdeskIntakeSession
             if ($errorCode === 'HELPDESK_REPORTER_ACCOUNT_REQUIRED') {
                 return $this->offerInlineRegistration($state, true);
             }
+            if ($errorCode === 'HELPDESK_EXTERNAL_UNIT') {
+                return $this->externalUnitReply(
+                    (string) ($result['message'] ?? 'Divisi tujuan hanya menerima laporan melalui form web.'),
+                    data_get($result, 'data.form_url'),
+                );
+            }
 
             return $this->reply('in_progress', false, $this->withGuide(self::STEP_CONFIRM, (string) ($result['message'] ?? 'Gagal menyimpan. Ketik *ya* untuk coba lagi.')), [
                 'step' => self::STEP_CONFIRM,
@@ -1179,7 +1189,35 @@ class HelpdeskIntakeSession
 
     private function advance(array $state): array
     {
+        // Divisi berintegrasi (mis. permintaan dokumen BUSDEV → Modul OD)
+        // langsung diarahkan ke form web sebelum rekap dan konfirmasi.
+        $unitId = (int) ($state['unit_id'] ?? 0);
+        $unit = $unitId > 0 ? Unit::query()->find($unitId) : null;
+        if ($unit?->isExternal()) {
+            $notice = HelpdeskTicketCreationService::externalUnitNotice($unit);
+
+            return $this->externalUnitReply($notice['message'], $notice['form_url']);
+        }
+
         return $this->goConfirm($state);
+    }
+
+    /**
+     * Laporan untuk divisi berintegrasi tidak dibuat lewat chat; sesi
+     * diakhiri dan pelapor diarahkan ke form web.
+     */
+    private function externalUnitReply(string $message, ?string $formUrl): array
+    {
+        return $this->reply(
+            'cancelled',
+            false,
+            $message."\n\nTidak ada tiket yang dibuat. Ketik *lapor* untuk laporan lain.",
+            [
+                'step' => self::STEP_IDLE,
+                'reason' => 'external_unit',
+                'form_url' => $formUrl,
+            ],
+        );
     }
 
     private function askClassification(array $state, string $field, string $step): array
@@ -1222,7 +1260,7 @@ class HelpdeskIntakeSession
     private function classificationPrompt(array $state, array $missing): string
     {
         $unitId = (int) ($state['unit_id'] ?? 0);
-        $options = $this->formOptions->formOptions($unitId > 0 ? $unitId : null);
+        $options = $this->formOptions->formOptions($unitId > 0 ? $unitId : null, internalOnly: true);
         $ask = $missing;
         if (($missing[0]['field'] ?? '') === 'unit_id') {
             $ask = [$missing[0]];
