@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\VerifyHelpdeskDashboardToken;
 use App\Http\Middleware\VerifyHelpdeskMcpToken;
 use App\Http\Middleware\VerifyHelpdeskStaffMcpToken;
 use App\Support\SafeUploadedFile;
@@ -31,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
         );
 
         $middleware->alias([
+            'helpdesk.dashboard' => VerifyHelpdeskDashboardToken::class,
             'helpdesk.mcp' => VerifyHelpdeskMcpToken::class,
             'helpdesk.staff.mcp' => VerifyHelpdeskStaffMcpToken::class,
         ]);

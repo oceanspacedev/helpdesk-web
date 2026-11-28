@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\DashboardTicketController;
 use App\Http\Controllers\Api\IntegrationEventController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -26,3 +27,23 @@ Route::post('/integrations/{integration}/events', [IntegrationEventController::c
     ->withoutMiddleware('throttle:api')
     ->middleware('throttle:integration-events')
     ->name('integrations.events');
+
+// Feed tiket read-only untuk dashboard luar (layar TV divisi IT).
+// Kontrak: docs/integrations/dashboard-api.md.
+Route::prefix('dashboard')
+    ->middleware('helpdesk.dashboard')
+    ->withoutMiddleware('throttle:api')
+    ->name('dashboard.')
+    ->group(function (): void {
+        Route::middleware('throttle:dashboard')->group(function (): void {
+            Route::get('/tickets', [DashboardTicketController::class, 'index'])->name('tickets.index');
+            Route::get('/tickets/summary', [DashboardTicketController::class, 'summary'])->name('tickets.summary');
+            Route::get('/tickets/{ticket}', [DashboardTicketController::class, 'show'])
+                ->whereNumber('ticket')
+                ->name('tickets.show');
+        });
+
+        Route::get('/tickets/stream', [DashboardTicketController::class, 'stream'])
+            ->middleware('throttle:dashboard-stream')
+            ->name('tickets.stream');
+    });
