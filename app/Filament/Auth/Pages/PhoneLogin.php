@@ -136,6 +136,7 @@ class PhoneLogin extends SimplePage
             'phone' => $phone,
             'name' => null,
             'otp' => null,
+            'remember' => (bool) ($data['remember'] ?? false),
         ]);
     }
 
@@ -197,7 +198,7 @@ class PhoneLogin extends SimplePage
 
         if (is_array($resolved) && ($resolved['user'] ?? null) instanceof User) {
             $this->resetAfterConsumedOtp($challengeId);
-            $this->loginResolvedUser($resolved['user'], (bool) ($resolved['is_new'] ?? false));
+            $this->loginResolvedUser($resolved['user'], (bool) ($resolved['is_new'] ?? false), (bool) ($data['remember'] ?? false));
 
             return;
         }
@@ -225,6 +226,7 @@ class PhoneLogin extends SimplePage
             'phone' => $verifiedPhone,
             'name' => null,
             'otp' => null,
+            'remember' => (bool) ($data['remember'] ?? false),
         ]);
 
         Notification::make()
@@ -269,7 +271,7 @@ class PhoneLogin extends SimplePage
         if (($result['ok'] ?? false) && $user instanceof User) {
             $this->clearRegistrationProof();
             $this->requiresRegistration = false;
-            $this->loginResolvedUser($user, (bool) ($result['created'] ?? false));
+            $this->loginResolvedUser($user, (bool) ($result['created'] ?? false), (bool) ($data['remember'] ?? false));
 
             return;
         }
@@ -402,9 +404,10 @@ class PhoneLogin extends SimplePage
         return $employeeService->createUser($currentEmployee, null, $phone);
     }
 
-    private function loginResolvedUser(User $user, bool $isNew): void
+    private function loginResolvedUser(User $user, bool $isNew, bool $remember): void
     {
-        Auth::login($user, false);
+        // "Ingat saya" membuat cookie remember, jadi pengguna tetap masuk setelah browser atau laptop ditutup.
+        Auth::login($user, $remember);
         session()->regenerate();
 
         if ($isNew) {
@@ -545,6 +548,7 @@ class PhoneLogin extends SimplePage
                     ->autocomplete('one-time-code')
                     ->autofocus()
                     ->visible(fn (): bool => $this->awaitingOtp),
+                EmailLogin::rememberFormComponent(),
             ]);
     }
 

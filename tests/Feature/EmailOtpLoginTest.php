@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Auth\Pages\EmailLogin;
+use App\Filament\Auth\Pages\Login;
 use App\Mail\EmailLoginMail;
 use App\Models\EmailOtp;
 use App\Models\User;
@@ -21,10 +22,13 @@ use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Livewire\Mechanisms\ComponentRegistry;
 use Symfony\Component\Mailer\Exception\TransportException;
+use Tests\Concerns\AssertsRememberedLogin;
 use Tests\TestCase;
 
 class EmailOtpLoginTest extends TestCase
 {
+    use AssertsRememberedLogin;
+
     private int $fillerCount = 0;
 
     protected function setUp(): void
@@ -162,6 +166,83 @@ class EmailOtpLoginTest extends TestCase
         $user->refresh();
         $this->assertSame('email_link', $user->email_verified_via);
         $this->assertTrue($user->canUseVerifiedEmail());
+    }
+
+    public function test_email_code_login_remembers_the_user_by_default_across_a_browser_restart(): void
+    {
+        $user = $this->createUser();
+
+        $component = Livewire::test(EmailLogin::class)
+            ->assertSee('Ingat saya')
+            ->assertSet('data.remember', true)
+            ->fillForm(['email' => 'staf@example.test'])
+            ->call('send')
+            ->assertSet('data.remember', true);
+
+        $component->set('data.otp', $this->sentLoginMail('staf@example.test')->otp)
+            ->call('verify')
+            ->assertHasNoFormErrors()
+            ->assertRedirect('/admin');
+
+        $this->assertStaysSignedInAfterBrowserRestart($user);
+    }
+
+    public function test_email_code_login_without_ingat_saya_ends_with_the_session(): void
+    {
+        $this->createUser();
+
+        Livewire::test(EmailLogin::class)
+            ->fillForm(['email' => 'staf@example.test', 'remember' => false])
+            ->call('send')
+            ->assertSet('data.remember', false)
+            ->set('data.otp', $this->sentLoginMail('staf@example.test')->otp)
+            ->call('verify')
+            ->assertHasNoFormErrors()
+            ->assertRedirect('/admin');
+
+        $this->assertNotRemembered();
+    }
+
+    public function test_magic_link_login_is_remembered_across_a_browser_restart(): void
+    {
+        $user = $this->createUser();
+        $mail = $this->requestCode('staf@example.test');
+
+        Livewire::test(EmailLogin::class, ['token' => $this->tokenFrom($mail)])
+            ->call('consumeMagicLink')
+            ->assertRedirect('/admin');
+
+        $this->assertStaysSignedInAfterBrowserRestart($user);
+    }
+
+    public function test_password_login_ticks_ingat_saya_by_default_and_survives_a_browser_restart(): void
+    {
+        $this->assertSame(Login::class, filament()->getPanel('admin')->getLoginRouteAction());
+
+        $user = $this->createUser(['password' => Hash::make('secret123')]);
+
+        Livewire::test(Login::class)
+            ->assertSee('Ingat saya')
+            ->assertSet('data.remember', true)
+            ->fillForm(['email' => 'staf@example.test', 'password' => 'secret123'])
+            ->call('authenticate')
+            ->assertHasNoFormErrors()
+            ->assertRedirect('/admin');
+
+        $this->assertStaysSignedInAfterBrowserRestart($user);
+    }
+
+    public function test_password_login_without_ingat_saya_ends_with_the_session(): void
+    {
+        $this->createUser(['password' => Hash::make('secret123')]);
+
+        Livewire::test(Login::class)
+            ->fillForm(['email' => 'staf@example.test', 'password' => 'secret123', 'remember' => false])
+            ->call('authenticate')
+            ->assertHasNoFormErrors()
+            ->assertRedirect('/admin');
+
+        $this->assertNotRemembered();
     }
 
     public function test_login_keeps_existing_trusted_email_provenance(): void

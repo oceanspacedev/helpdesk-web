@@ -8,6 +8,7 @@ use App\Services\EmailOtpService;
 use Filament\Actions\Action;
 use Filament\Auth\Http\Responses\Contracts\LoginResponse;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\TextInput;
 use Filament\Pages\SimplePage;
 use Filament\Schemas\Components\Actions;
@@ -102,7 +103,8 @@ class EmailLogin extends SimplePage
             ]);
         }
 
-        return $this->login($user);
+        // Link dibuka dari email milik pengguna sendiri, tanpa form; sama seperti "Ingat saya" yang dicentang default.
+        return $this->login($user, remember: true);
     }
 
     public function send(EmailOtpService $otpService): void
@@ -136,7 +138,7 @@ class EmailLogin extends SimplePage
         }
 
         $this->awaitingOtp = true;
-        $this->form->fill(['email' => $email, 'otp' => null]);
+        $this->form->fill(['email' => $email, 'otp' => null, 'remember' => (bool) ($data['remember'] ?? false)]);
     }
 
     public function verify(EmailOtpService $otpService): ?LoginResponse
@@ -161,7 +163,7 @@ class EmailLogin extends SimplePage
             ]);
         }
 
-        return $this->login($user);
+        return $this->login($user, (bool) ($data['remember'] ?? false));
     }
 
     public function changeEmail(): void
@@ -171,9 +173,13 @@ class EmailLogin extends SimplePage
         $this->form->fill();
     }
 
-    private function login(User $user): LoginResponse
+    /**
+     * "Ingat saya" membuat cookie remember, jadi pengguna tetap masuk setelah browser atau laptop ditutup lebih lama
+     * dari masa sesi.
+     */
+    private function login(User $user, bool $remember): LoginResponse
     {
-        Filament::auth()->login($user, false);
+        Filament::auth()->login($user, $remember);
         session()->regenerate();
 
         return app(LoginResponse::class);
@@ -238,7 +244,19 @@ class EmailLogin extends SimplePage
                 ->autocomplete('one-time-code')
                 ->autofocus()
                 ->visible(fn (): bool => $this->awaitingOtp),
+            self::rememberFormComponent(),
         ]);
+    }
+
+    /**
+     * Dipakai juga oleh login WhatsApp dan login kata sandi, agar ketiganya sama: dicentang kecuali pengguna
+     * melepasnya (misalnya di komputer bersama).
+     */
+    public static function rememberFormComponent(): Checkbox
+    {
+        return Checkbox::make('remember')
+            ->label('Ingat saya')
+            ->default(true);
     }
 
     public function loginAction(): Action
