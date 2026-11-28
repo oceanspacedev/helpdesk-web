@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Auth\Pages\Login;
 use App\Filament\Livewire\PersonalInfo;
 use App\Filament\Livewire\UpdatePassword;
 use App\Filament\Pages\Dashboard;
@@ -135,6 +136,8 @@ class AdminPanelProvider extends PanelProvider
             // login OTP WhatsApp dan email (kode atau magic link), bukan reset password.
             ->passwordReset(null, null)
             ->profile(null)
+            // Mekaya juga memasang halaman login-nya sendiri, jadi halaman ini harus didaftarkan setelah plugin.
+            ->login(Login::class)
             ->viteTheme('resources/css/admin/theme.css')
             ->maxContentWidth(Width::Full);
     }

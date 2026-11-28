@@ -22,10 +22,13 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
+use Tests\Concerns\AssertsRememberedLogin;
 use Tests\TestCase;
 
 class PhoneOtpLoginTest extends TestCase
 {
+    use AssertsRememberedLogin;
+
     private FakeWhatsAppGateway $whatsAppGateway;
 
     protected function setUp(): void
@@ -73,6 +76,38 @@ class PhoneOtpLoginTest extends TestCase
         $this->assertSame($user->id, Auth::id());
         $this->assertNull($user->fresh()->email_verified_at);
         $this->assertSame(1, User::count());
+    }
+
+    public function test_phone_otp_login_remembers_the_user_by_default_across_a_browser_restart(): void
+    {
+        $user = User::create(['name' => 'Budi', 'phone' => '6280000000011', 'is_active' => true]);
+
+        $component = Livewire::test(PhoneLogin::class)
+            ->assertSee('Ingat saya')
+            ->assertSet('data.remember', true)
+            ->fillForm(['phone' => '0800-0000-0011'])
+            ->call('send')
+            ->assertSet('data.remember', true);
+
+        $component->set('data.otp', $this->otpCode())->call('verify')->assertRedirect('/admin');
+
+        $this->assertNotNull($user->fresh()->remember_token);
+        $this->assertStaysSignedInAfterBrowserRestart($user);
+    }
+
+    public function test_phone_otp_login_without_ingat_saya_ends_with_the_session(): void
+    {
+        User::create(['name' => 'Budi', 'phone' => '6280000000012', 'is_active' => true]);
+
+        Livewire::test(PhoneLogin::class)
+            ->fillForm(['phone' => '0800-0000-0012', 'remember' => false])
+            ->call('send')
+            ->assertSet('data.remember', false)
+            ->set('data.otp', $this->otpCode())
+            ->call('verify')
+            ->assertRedirect('/admin');
+
+        $this->assertNotRemembered();
     }
 
     public function test_phone_login_does_not_expose_a_separate_web_verification_form(): void
