@@ -81,6 +81,16 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(600)->by('integration-events:'.(string) $request->route('integration').':'.$request->ip());
         });
 
+        // Dashboard TV memanggil daftar/ringkasan berkala; stream dibatasi
+        // karena tiap koneksi memegang satu worker PHP.
+        RateLimiter::for('dashboard', function (Request $request) {
+            return Limit::perMinute(120)->by('dashboard:'.$request->ip());
+        });
+
+        RateLimiter::for('dashboard-stream', function (Request $request) {
+            return Limit::perMinute(20)->by('dashboard-stream:'.$request->ip());
+        });
+
         RateLimiter::for('mcp', function (Request $request) {
             $perMinute = app(HelpdeskMcpConfiguration::class)->rateLimitPerMinute();
             $token = (string) $request->bearerToken();
